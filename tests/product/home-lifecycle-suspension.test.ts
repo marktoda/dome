@@ -951,22 +951,43 @@ describe("supervised Home lifecycle suspension", () => {
     }
   });
 
-  test("simultaneous first open initializes once and serializes every mutator", async () => {
+  test("concurrent first openers initialize once and serialize every in-process mutator", async () => {
     const f = await fixture(false);
     let inside = 0;
     let maximum = 0;
-    const results = await Promise.all(Array.from({ length: 16 }, (_, index) =>
-      withHomeLifecycleMutation(f.vault, async () => {
+    const callbackEntries = [0, 0, 0, 0];
+    let callersReady = 0;
+    let allCallersReady!: () => void;
+    const ready = new Promise<void>((resolve) => { allCallersReady = resolve; });
+    let releaseCallers!: () => void;
+    const start = new Promise<void>((resolve) => { releaseCallers = resolve; });
+    // Four callers cover a nontrivial queue without making the assertion's
+    // runtime proportional to an arbitrary stress cardinality. The adjacent
+    // multiprocess test supplies the heavier first-publication race coverage.
+    const operations = Array.from({ length: 4 }, async (_, index) => {
+      callersReady++;
+      if (callersReady === 4) allCallersReady();
+      await start;
+      return withHomeLifecycleMutation(f.vault, async () => {
+        callbackEntries[index] = (callbackEntries[index] ?? 0) + 1;
         inside++;
         maximum = Math.max(maximum, inside);
         await Bun.sleep(2);
         inside--;
         return index;
-      })));
+      });
+    });
+    await ready;
+    releaseCallers();
+    const results = await Promise.all(operations);
     expect(maximum).toBe(1);
-    expect(results.every((result) => result.kind === "owned")).toBeTrue();
+    expect(callbackEntries).toEqual([1, 1, 1, 1]);
+    expect(results).toEqual(Array.from({ length: 4 }, (_, value) => ({ kind: "owned", value })));
     expect((await inspectHomeLifecycleSuspension(f.vault)).kind).toBe("inactive");
-  }, { timeout: 15_000 });
+    // Product ownership waits are bounded at 30 seconds. Keep the harness
+    // watchdog beyond that seam so cleanup cannot delete the fixture while a
+    // legitimate product waiter may still be finishing its bounded attempt.
+  }, { timeout: 35_000 });
 
   test("inactive startup atomically acquires and returns a lifetime operational lease", async () => {
     const f = await fixture(false);

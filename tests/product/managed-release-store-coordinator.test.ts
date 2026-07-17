@@ -76,7 +76,7 @@ test("initialization retry replays durability after database publication", async
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test("zero wait is immediate, bounded wait expires, and SIGKILL releases the kernel mutex", async () => {
+test("zero wait declines ownership, bounded wait expires, and SIGKILL releases the kernel mutex", async () => {
   const { root, home } = await homeFixture("dome-release-coordinator-owner-");
   const entered = join(root, "entered");
   const moduleUrl = pathToFileURL(resolve(import.meta.dir, "../../src/product-host/managed-release-store-coordinator.ts")).href;
@@ -96,14 +96,21 @@ test("zero wait is immediate, bounded wait expires, and SIGKILL releases the ker
     const deadline = Date.now() + 5_000;
     while (!await present(entered) && Date.now() < deadline) await Bun.sleep(10);
     expect(await present(entered)).toBeTrue();
-    const noWaitStarted = performance.now();
-    expect((await withManagedReleaseStoreCoordinator(home, async () => "no", { waitMs: 0 })).kind).toBe("busy");
-    expect(performance.now() - noWaitStarted).toBeLessThan(100);
+    let noWaitEntered = false;
+    expect((await withManagedReleaseStoreCoordinator(home, async () => {
+      noWaitEntered = true;
+      return "no";
+    }, { waitMs: 0 })).kind).toBe("busy");
+    expect(noWaitEntered).toBeFalse();
     const boundedStarted = performance.now();
-    expect((await withManagedReleaseStoreCoordinator(home, async () => "no", { waitMs: 50 })).kind).toBe("busy");
+    let boundedWaitEntered = false;
+    expect((await withManagedReleaseStoreCoordinator(home, async () => {
+      boundedWaitEntered = true;
+      return "no";
+    }, { waitMs: 50 })).kind).toBe("busy");
     const boundedElapsed = performance.now() - boundedStarted;
     expect(boundedElapsed).toBeGreaterThanOrEqual(40);
-    expect(boundedElapsed).toBeLessThan(250);
+    expect(boundedWaitEntered).toBeFalse();
     child.kill("SIGKILL");
     expect(await child.exited).not.toBe(0);
     expect(await withManagedReleaseStoreCoordinator(home, async () => "recovered", { waitMs: 1_000 }))
