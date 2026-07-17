@@ -3,11 +3,28 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, test } from "bun:test";
 
 import {
+  assertHomePwaUpdateCaptureForTests,
   decidePwaStaticRequestForTests,
   exerciseHomePwaUpdateRehearsalForTests,
   synthesizePwaPredecessorForTests,
   type UpdateRehearsalOperations,
 } from "../../scripts/home-pwa-update-rehearsal";
+
+describe("Home PWA offline capture persistence", () => {
+  test("keeps an offline capture explicitly unbound across shell replacement", () => {
+    const capture = {
+      id: "11111111-1111-4111-8111-111111111111",
+      text: "offline update canary",
+      createdAt: "2026-07-17T12:00:00.000Z",
+      vaultId: null,
+      state: "saved-locally",
+      attempts: 0,
+    } as const;
+    expect(() => assertHomePwaUpdateCaptureForTests(capture, capture.text)).not.toThrow();
+    expect(() => assertHomePwaUpdateCaptureForTests({ ...capture, vaultId: "stale-vault" }, capture.text))
+      .toThrow("does not match the saved IndexedDB row");
+  });
+});
 
 function candidate(): { index: string; worker: string; revision: string } {
   const index = "<!doctype html><html><head><title>Dome</title></head><body></body></html>";

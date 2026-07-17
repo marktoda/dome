@@ -200,7 +200,7 @@ export async function runHomePwaUpdateRehearsal(
       await activePage.getByRole("button", { name: "Save capture" }).click();
       await activePage.getByText("1 queued", { exact: true }).waitFor({ timeout: WAIT_MS });
       capture = await readOnlyCapture(activePage);
-      assertCapture(capture, CAPTURE_TEXT);
+      assertHomePwaUpdateCaptureForTests(capture, CAPTURE_TEXT);
       signal.throwIfAborted();
     },
     publishCandidate: async (signal) => {
@@ -259,7 +259,7 @@ export async function runHomePwaUpdateRehearsal(
       if (capture === null || JSON.stringify(survived) !== JSON.stringify(capture)) {
         throw new Error("local capture row changed during activation");
       }
-      assertCapture(survived, CAPTURE_TEXT);
+      assertHomePwaUpdateCaptureForTests(survived, CAPTURE_TEXT);
       const remove = activePage.getByRole("button", { name: `remove local retry ${capture.id}` });
       await remove.waitFor({ timeout: WAIT_MS });
       await remove.click();
@@ -584,7 +584,7 @@ async function waitForServiceWorkerControl(page: Page): Promise<void> {
   await page.waitForFunction("navigator.serviceWorker.controller !== null", undefined, { timeout: WAIT_MS });
 }
 
-type StoredCapture = Readonly<{
+export type StoredCapture = Readonly<{
   id: string;
   text: string;
   createdAt: string;
@@ -646,10 +646,10 @@ function readCaptureRowsExpression(): string {
   })`;
 }
 
-function assertCapture(capture: StoredCapture, expectedText: string): void {
+export function assertHomePwaUpdateCaptureForTests(capture: StoredCapture, expectedText: string): void {
   if (!/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(capture.id) || capture.text !== expectedText ||
     capture.state !== "saved-locally" || capture.attempts !== 0 ||
-    typeof capture.vaultId !== "string" || capture.vaultId.length === 0 ||
+    capture.vaultId !== null ||
     !Number.isFinite(Date.parse(capture.createdAt))) {
     throw new Error("local capture does not match the saved IndexedDB row");
   }
