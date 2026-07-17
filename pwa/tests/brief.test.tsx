@@ -35,7 +35,7 @@ describe("Brief", () => {
     };
     render(<Brief today={today} onResolve={noop} onReviewBacklog={onReviewBacklog} />);
 
-    const entry = screen.getByRole("button", { name: "Review backlog · 1 open commitment" });
+    const entry = screen.getByRole("button", { name: "Review backlog" });
     expect(screen.getAllByRole("button", { name: /Review backlog/ })).toHaveLength(1);
     fireEvent.click(entry);
     expect(onReviewBacklog).toHaveBeenCalledTimes(1);

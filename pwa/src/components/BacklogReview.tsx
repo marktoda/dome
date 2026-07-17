@@ -113,12 +113,14 @@ function Confirmation({
   onCancel,
   onConfirm,
   returnFocus,
+  interactive,
 }: {
   readonly decisions: ReadonlyMap<string, SelectedDecision>;
   readonly submitting: boolean;
   readonly onCancel: () => void;
   readonly onConfirm: () => void;
   readonly returnFocus: HTMLElement | null;
+  readonly interactive: boolean;
 }): React.ReactElement {
   const dialogRef = useRef<HTMLElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
@@ -151,7 +153,7 @@ function Confirmation({
         {counts.keep > 0 ? <p>Leave open is explicit, makes no Markdown change, and can reappear in later reviews.</p> : null}
         <div className="backlog-confirm-actions">
           <button ref={cancelRef} type="button" disabled={submitting} onClick={onCancel}>Cancel</button>
-          <button type="button" disabled={submitting} onClick={onConfirm}>
+          <button type="button" disabled={submitting || !interactive} onClick={onConfirm}>
             {submitting ? "Applying…" : `Apply ${decisions.size} selected`}
           </button>
         </div>
@@ -263,7 +265,7 @@ function ReviewUnit({
         <div className="backlog-tags">
           <span className={`backlog-tag ${unit.classification.timing}`}>{timing}</span>
           {unit.classification.exactDuplicateCandidate
-            ? <span className="backlog-tag duplicate">Exact duplicate candidate · {unit.members.length} sources</span>
+            ? <span className="backlog-tag duplicate">Exact duplicate candidate · {unit.members.length} commitments</span>
             : null}
         </div>
         <h3 id={`backlog-unit-${unit.id}`}>{unit.text}</h3>
@@ -397,7 +399,7 @@ export function BacklogReview({
   };
 
   const submitRequest = (request: TaskBacklogReviewRequest): void => {
-    if (submitInFlight.current) return;
+    if (!interactive || submitInFlight.current) return;
     submitInFlight.current = true;
     setSubmitting(true);
     setSubmitProblem(null);
@@ -439,7 +441,7 @@ export function BacklogReview({
   };
 
   const submit = (): void => {
-    if (current === undefined || decisions.size === 0 || submitting) return;
+    if (!interactive || current === undefined || decisions.size === 0 || submitting) return;
     const invalid = [...decisions.values()].find((decision) => deferProblem(decision, current.date) !== null);
     if (invalid !== undefined) {
       setConfirming(false);
@@ -548,6 +550,7 @@ export function BacklogReview({
           onCancel={() => setConfirming(false)}
           onConfirm={submit}
           returnFocus={reviewButtonRef.current}
+          interactive={interactive}
         />
       ) : null}
       {opened !== null ? (

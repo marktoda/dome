@@ -133,7 +133,7 @@ describe("BacklogReview", () => {
         duplicate: true,
         members: [
           member({ id: "m1", path: "wiki/a.md", line: 3, blockId: "task-a", dueDate: "2026-07-01" }),
-          member({ id: "m2", path: "wiki/b.md", line: 8, blockId: "task-b" }),
+          member({ id: "m2", path: "wiki/a.md", line: 8, blockId: "task-b" }),
         ],
         timing: "overdue",
       })],
@@ -154,7 +154,7 @@ describe("BacklogReview", () => {
     await waitFor(() => expect(screen.getByText("Ship the launch")).toBeDefined());
     expect(screen.getByText("26 review units")).toBeDefined();
     expect(screen.getByText("27 commitments")).toBeDefined();
-    expect(screen.getByText(/Exact duplicate candidate · 2 sources/)).toBeDefined();
+    expect(screen.getByText(/Exact duplicate candidate · 2 commitments/)).toBeDefined();
     expect(screen.getByText(/Due 2026-07-01/)).toBeDefined();
     expect(screen.getByText(/No due date/)).toBeDefined();
     expect(taskBacklog).toHaveBeenNthCalledWith(1, { limit: 25 });
@@ -379,6 +379,23 @@ describe("BacklogReview", () => {
     expect(screen.getByText(/appears more than once/i)).toBeDefined();
     expect((screen.getByRole("button", { name: "Alpha · wiki/a.md:3" }) as HTMLButtonElement).disabled).toBe(false);
     expect((screen.getByRole("button", { name: "Review selected" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(review).not.toHaveBeenCalled();
+  });
+
+  test("revoking resolve access disables an already-open confirmation and guards submission", async () => {
+    const review = mock(async (_request: unknown) => settled());
+    const client = fakeClient({ review });
+    const rendered = render(<BacklogReview client={client} interactive onReviewed={() => {}} />);
+    await screen.findByText("Ship the launch");
+    fireEvent.click(screen.getByRole("radio", { name: "Close" }));
+    fireEvent.click(screen.getByRole("button", { name: "Review selected" }));
+    const apply = screen.getByRole("button", { name: "Apply 1 selected" }) as HTMLButtonElement;
+    expect(apply.disabled).toBe(false);
+
+    rendered.rerender(<BacklogReview client={client} interactive={false} onReviewed={() => {}} />);
+    expect((screen.getByRole("button", { name: "Apply 1 selected" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Apply 1 selected" }));
+    await Promise.resolve();
     expect(review).not.toHaveBeenCalled();
   });
 });

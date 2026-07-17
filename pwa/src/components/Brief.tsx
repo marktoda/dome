@@ -307,7 +307,7 @@ export function Brief(
           ) : null}
           {openCount > 0 && onReviewBacklog !== undefined ? (
             <button type="button" className="review-backlog-entry" onClick={onReviewBacklog}>
-              Review backlog · {openCount} open {openCount === 1 ? "commitment" : "commitments"}
+              Review backlog
             </button>
           ) : null}
         </div>
