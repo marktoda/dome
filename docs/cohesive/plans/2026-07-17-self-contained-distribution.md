@@ -148,13 +148,17 @@ Work:
    repository commit.
 3. Run `bun run test` at the repository root. Its typed orchestrator discovers
    every current `tests/**/*.test.ts` file, sorts the inventory, assigns each
-   file exactly once to the ordered scripts, harness, product, or runtime
-   partition, and runs each nonempty partition in a fresh Bun process. Hosted
-   evidence showed that one 4,001-test process accumulated enough scheduler
-   and SQLite pressure for late tests to exceed their own bounds even though
-   every failure passed in isolation. Process isolation replaces that measured
-   failure mode without retries, global timeout changes, or coverage loss. Do
-   not use bare recursive `bun test`, which also crosses into nested packages.
+   file exactly once to the ordered scripts, harness, product, or runtime area,
+   and runs every file in its own fresh Bun process. Hosted run 29617625950
+   showed that one 4,001-test process accumulated enough scheduler and SQLite
+   pressure for late tests to exceed their own bounds even though every failure
+   passed in isolation. Hosted run 29618942932 then showed that four area-sized
+   processes remained too coarse: after 120 runtime files, unrelated home
+   lifecycle and serve-cleanup tests cascaded. Per-file process ownership is the
+   smallest uniform isolation seam and replaces both measured failure modes
+   without retries, global timeout changes, allowlists, or coverage loss. The
+   four areas remain progress groupings, not isolation boundaries. Do not use
+   bare recursive `bun test`, which also crosses into nested packages.
 4. Run `bun run check:pwa` as its own explicit gate, alongside typecheck and
    the root tests, so the PWA remains required without conflating test roots.
    Keep one macOS job with named attributable steps unless measured latency or
@@ -166,7 +170,7 @@ Work:
    These are real product/substrate corrections, not runner noise.
 6. Change README and contributor guidance to the canonical scoped root command,
    `bun run test`, so local guidance, package scripts, and CI exercise the same
-   exhaustive partition plan.
+   exhaustive per-file plan.
 
 Acceptance gate:
 
@@ -175,7 +179,7 @@ Acceptance gate:
 - typecheck, `check:pwa`, and `bun run test` are named, separately
   attributable required steps in the same job;
 - the root runner proves a lossless, duplicate-free inventory and a deliberate
-  failing test stops at its named partition rather than producing a late
+  failing test stops at its named file rather than producing a late
   cross-suite resource cascade;
 - the CI and artifact toolchain versions are explicit and reviewable; and
 - no test is disabled merely to make `main` green.

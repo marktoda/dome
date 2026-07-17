@@ -131,10 +131,11 @@ bun run typecheck
 bun run test
 ```
 
-`bun run test` discovers every root `tests/**/*.test.ts` file and runs the
-scripts, harness, product, and remaining runtime partitions in fresh Bun
-processes. This preserves complete root coverage without carrying one test
-VM's scheduler and SQLite pressure across the whole repository. Run
+`bun run test` discovers every root `tests/**/*.test.ts` file, organizes the
+sorted inventory into scripts, harness, product, and remaining runtime areas,
+and runs each file in its own fresh Bun process. This preserves complete root
+coverage without carrying one test file's scheduler, SQLite, server, or
+lifecycle state into another file. Run
 `bun run check:pwa` separately for the PWA package.
 
 Useful narrower gates include `bun test tests/invariants` and
