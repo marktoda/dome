@@ -1037,11 +1037,26 @@ calendars from `icalBuddy`; Calendar privacy permission for the stable
 executable is the leading diagnosis but remains to be confirmed. Do not turn
 that failure into repeated background retries.
 
-After that bounded workflow, deepen the existing local Capture Queue with
-visible queued/sending/failed/filed states and give Ask its own primary action
-instead of overloading global Capture. Then return to the P6 external-owner
-beta gates. No collaboration, hosted relay, embeddings, generic workflow
-builder, or new engine primitive begins before that evidence.
+**Shipped release-candidate checkpoint (2026-07-17).** The PWA now gives Ask
+and Capture distinct primary actions over one neutral draft. Capture opens a
+separate text/voice review sheet and stays usable while Ask is streaming or
+the Home connection is unavailable. Its durable queue persists only queued or
+failed plaintext, binds new rows to the validated opaque vault identity, and
+requires an explicit one-way bind for legacy unbound rows. Sending is live UI
+state only. A matching committed or duplicate receipt removes plaintext and
+creates the only transient **Filed** acknowledgement; it does not claim
+adoption. Transport, timeout, rate-limit, server, and outcome-unknown failures
+say **Not confirmed — safe to retry**, while definite rejections say **Needs
+attention**. One failed row does not block later rows, cross-vault drains do
+not alias, and an in-flight row cannot be removed locally as if that cancelled
+delivery. Paired capture receipts expose the opaque vault id, never an
+absolute vault path. This is the Dome Home 0.3.9 release candidate; it is not
+claimed installed until the gated artifact is explicitly activated.
+
+With Backlog Review and the truthful Capture Queue shipped, return to the P6
+external-owner beta gates. No collaboration, hosted relay, embeddings,
+generic workflow builder, or new engine primitive begins before that
+evidence.
 
 ## Cross-cutting release gates
 

@@ -597,7 +597,7 @@ describe("Dome Home artifact", () => {
     const pkg = JSON.parse(await readFile(join(import.meta.dir, "..", "..", "package.json"), "utf8")) as {
       readonly version: string;
     };
-    expect(pkg.version).toBe("0.3.8");
+    expect(pkg.version).toBe("0.3.9");
     const root = await fixture();
     try {
       const manifest = await writeArtifactMetadata(root, "9.8.7");

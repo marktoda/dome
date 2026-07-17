@@ -95,7 +95,7 @@ const ACTIVATION_SCENARIOS = Object.freeze([
   "committed-exact-repair",
 ] as const);
 const HOME_ARTIFACT_RELEASE_CLAIM = Object.freeze({
-  version: "0.3.8",
+  version: "0.3.9",
   upgradeSupported: true,
 } as const);
 
