@@ -1022,18 +1022,20 @@ The next product mission is a **Backlog Review**, not another broad feature:
 4. never infer closure, delete prose, or mutate a task merely because it looks
    old or duplicated.
 
-**Live migration checkpoint (2026-07-16).** Dome Home 0.3.7 is installed on
+**Live migration checkpoint (2026-07-16).** Dome Home 0.3.8 is installed on
 the owner vault from the gated artifact and runs through the stable host-wide
-macOS executable identity. The model-provider probe is healthy, and the new
-scheduled-processor recovery path replaced the failed morning fallback with an
-adopted, source-backed brief. Today's derived task count fell from 311 to 112
-because the shared open-loop selector removed 199 ordinary checklist items
-from the global commitment surface; no Markdown task was silently closed. The
-remaining 112 are 7 daily commitments and 105 backlog commitments (2 overdue,
-110 undated), so further reduction requires the explicit reviewed workflow
-above. Calendar ingestion remains an owner-visible degraded dependency until
-the stable Home executable passes the signed-Mac Calendar privacy gate; do not
-turn that permission failure into repeated background retries.
+macOS executable identity. The served PWA includes the shipped Backlog Review,
+and the model-provider probe is healthy. The scheduled-processor recovery path
+replaced the failed morning fallback with an adopted, source-backed brief.
+Today's derived task count fell from 311 to 111 because the shared open-loop
+selector removed ordinary checklist items from the global commitment surface;
+no Markdown task was silently closed. The remaining 111 are 7 daily
+commitments and 104 backlog commitments (2 overdue, 109 undated), so further
+reduction now belongs in the explicit reviewed workflow above. Calendar
+ingestion remains an owner-visible degraded dependency while Home receives no
+calendars from `icalBuddy`; Calendar privacy permission for the stable
+executable is the leading diagnosis but remains to be confirmed. Do not turn
+that failure into repeated background retries.
 
 After that bounded workflow, deepen the existing local Capture Queue with
 visible queued/sending/failed/filed states and give Ask its own primary action
