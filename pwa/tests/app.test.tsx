@@ -216,7 +216,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: /pair device/i }));
     await waitFor(() => expect(screen.getByText("Connecting to Dome Home")).toBeDefined());
     expect(document.querySelector(".availability-dot.healthy")).toBeNull();
-    expect((screen.getByRole("button", { name: "send" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Ask" }) as HTMLButtonElement).disabled).toBe(true);
 
     releaseReadiness(readinessResponse());
     await waitFor(() => expect(screen.getByText(/you're clear/i)).toBeDefined());
@@ -384,7 +384,7 @@ describe("App", () => {
     await waitFor(() => expect(screen.getByText(/Conversation ended\. Retry may repeat actions/i)).toBeDefined());
     expect(screen.getByText("preserve this question")).toBeDefined();
     expect(input.disabled).toBe(false); // local capture remains available after a remote session ends
-    expect((screen.getByRole("button", { name: "send" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Ask" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.submit(input.closest("form")!);
     expect(messages).toBe(1);
     expect(sessions).toBe(1);
@@ -405,12 +405,14 @@ describe("App", () => {
     expect(screen.getByText(/Live information is unavailable/i)).toBeDefined();
     const recovery = screen.getByText("You're offline").closest(".recovery-card")!;
     expect(primaryRecoveryCount(recovery)).toBe(1);
-    const input = screen.getByLabelText("ask your brain") as HTMLInputElement;
+    const input = screen.getByLabelText("ask or capture") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "offline app capture" } });
-    expect((screen.getByRole("button", { name: "send" }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "capture thought" }));
-    await waitFor(() => expect(screen.getByText("offline app capture")).toBeDefined());
-    const queued = screen.getByText("offline app capture").closest(".capture-outbox-item") as HTMLElement;
+    expect((screen.getByRole("button", { name: "Ask" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Capture" }));
+    fireEvent.click(screen.getByRole("button", { name: "File it" }));
+    await waitFor(() => expect(screen.getByLabelText("capture queue")).toBeDefined());
+    const queued = screen.getByLabelText("capture queue").querySelector('[data-queue-state="saved-locally"]') as HTMLElement;
+    expect(queued.textContent).toContain("offline app capture");
     expect(queued.dataset["queueState"]).toBe("saved-locally");
     expect(queued.dataset["attemptCategory"]).toBe("zero");
     expect(Object.keys(queued.dataset).sort()).toEqual(["attemptCategory", "queueState"]);
@@ -482,7 +484,7 @@ describe("App", () => {
     expect(screen.getByText(/Showing the last loaded information/i)).toBeDefined();
     expect(screen.getByText(/Connection · needs attention/i)).toBeDefined();
     expect(document.querySelector(".availability-dot.healthy")).toBeNull();
-    expect((screen.getByRole("button", { name: "send" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Ask" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "Refresh Today" }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText(/Live actions are paused/i)).toBeDefined();
     expect(screen.getByText("Showing previously loaded Today information.")).toBeDefined();
@@ -511,8 +513,8 @@ describe("App", () => {
     }) as never;
     render(<App />);
     await waitFor(() => expect(screen.getByText(/you're clear/i)).toBeDefined());
-    expect((screen.getByRole("button", { name: "send" }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole("button", { name: "record" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Ask" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Capture" }) as HTMLButtonElement).disabled).toBe(false);
     const recovery = screen.getByText("Dome Home is not accepting changes").closest(".recovery-card")!;
     expect(primaryRecoveryCount(recovery)).toBe(1);
     fireEvent.click(screen.getByText(/Connection · limited/i));
@@ -520,10 +522,12 @@ describe("App", () => {
     expect(screen.getByText(/Available now: Today and Activity/i)).toBeDefined();
     expect(screen.queryByText(/Ask needs model setup on your Mac/i)).toBeNull();
 
-    const input = screen.getByLabelText("ask your brain") as HTMLInputElement;
+    const input = screen.getByLabelText("ask or capture") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "still saved locally" } });
-    fireEvent.click(screen.getByRole("button", { name: "capture thought" }));
-    await waitFor(() => expect(screen.getByText("still saved locally")).toBeDefined());
+    fireEvent.click(screen.getByRole("button", { name: "Capture" }));
+    fireEvent.click(screen.getByRole("button", { name: "File it" }));
+    await waitFor(() => expect(screen.getByLabelText("capture queue")).toBeDefined());
+    expect(screen.getByLabelText("capture queue").textContent).toContain("still saved locally");
     expect((screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: /delete pending capture/i }));
   });
@@ -553,9 +557,10 @@ describe("App", () => {
     }) as never;
     render(<App />);
     await waitFor(() => expect(screen.getByText(/you're clear/i)).toBeDefined());
-    const input = screen.getByLabelText("ask your brain") as HTMLInputElement;
+    const input = screen.getByLabelText("ask or capture") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "survive revoked auth" } });
-    fireEvent.click(screen.getByRole("button", { name: "capture thought" }));
+    fireEvent.click(screen.getByRole("button", { name: "Capture" }));
+    fireEvent.click(screen.getByRole("button", { name: "File it" }));
     await waitFor(() => expect(screen.getByLabelText("New pairing code")).toBeDefined());
     const recovery = screen.getByLabelText("New pairing code").closest(".recovery-card")!;
     expect(primaryRecoveryCount(recovery)).toBe(1);
@@ -563,8 +568,9 @@ describe("App", () => {
     expect(screen.getByText(/you're clear/i)).toBeDefined();
     await waitFor(() => expect(screen.getByText(/failed · device-revoked/i)).toBeDefined());
 
-    fireEvent.change(input, { target: { value: "local during repair" } });
-    fireEvent.click(screen.getByRole("button", { name: "capture thought" }));
+    fireEvent.change(screen.getByLabelText("ask or capture"), { target: { value: "local during repair" } });
+    fireEvent.click(screen.getByRole("button", { name: "Capture" }));
+    fireEvent.click(screen.getByRole("button", { name: "File it" }));
     await waitFor(() => expect(screen.getByText("local during repair")).toBeDefined());
     const repairItem = screen.getByText("local during repair").closest(".capture-outbox-item");
     expect(repairItem).not.toBeNull();
@@ -599,7 +605,7 @@ describe("App", () => {
           return new Response(JSON.stringify({ error: "device-revoked" }), { status: 401 });
         }
         return new Response(JSON.stringify({
-          schema: "dome.capture/v1", status: "captured", vault: "vault",
+          schema: "dome.capture/v1", status: "captured", vault: "vault-test",
           path: "inbox/raw/repaired.md", commit: "abc", capture_id: body.captureId,
           title: "repaired", captured_at: "2026-07-15T12:00:00.000Z", source: "pwa",
           branch: "main", serve_status: "running", adopted_initialized: true,
@@ -617,9 +623,10 @@ describe("App", () => {
 
     render(<App />);
     await waitFor(() => expect(screen.getByText(/you're clear/i)).toBeDefined());
-    const input = screen.getByLabelText("ask your brain") as HTMLInputElement;
+    const input = screen.getByLabelText("ask or capture") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "replay after auth repair" } });
-    fireEvent.click(screen.getByRole("button", { name: "capture thought" }));
+    fireEvent.click(screen.getByRole("button", { name: "Capture" }));
+    fireEvent.click(screen.getByRole("button", { name: "File it" }));
     await waitFor(() => expect(screen.getByLabelText("New pairing code")).toBeDefined());
     await waitFor(() => expect(screen.getByText(/failed · device-revoked/i)).toBeDefined());
 
@@ -629,8 +636,57 @@ describe("App", () => {
     await waitFor(() => expect(captureIds).toHaveLength(2));
     expect(captureIds[0]).not.toBe("");
     expect(captureIds[1]).toBe(captureIds[0]);
-    await waitFor(() => expect(screen.queryByText("replay after auth repair")).toBeNull());
     expect(await new CaptureQueue().all()).toEqual([]);
+    expect(screen.getByText(/Filed · committed to the vault/)).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: /dismiss filed capture/i }));
+  });
+
+  test("sending is live UI only and a validated receipt becomes transient filed state", async () => {
+    document.cookie = "dome_csrf=sending-state; Path=/";
+    let releaseCapture!: (response: Response) => void;
+    globalThis.fetch = mock(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/readyz") return readinessResponse();
+      if (path === "/pair/status") {
+        return new Response(JSON.stringify({ schema: "dome.device.pairing/v1", available: true, paired: true }), { status: 200 });
+      }
+      if (path === "/tasks") return new Response(TODAY_BODY, { status: 200 });
+      if (path === "/recents") return new Response(RECENTS_BODY, { status: 200 });
+      if (path === "/capture") {
+        const body = await request.json() as { captureId?: unknown };
+        return await new Promise<Response>((resolve) => {
+          releaseCapture = (response) => resolve(response);
+          expect(typeof body.captureId).toBe("string");
+        });
+      }
+      throw new Error(`unexpected remote request: ${path}`);
+    }) as never;
+
+    render(<App />);
+    await waitFor(() => expect(screen.getByText(/you're clear/i)).toBeDefined());
+    fireEvent.change(screen.getByLabelText("ask or capture"), { target: { value: "show the honest lifecycle" } });
+    fireEvent.click(screen.getByRole("button", { name: "Capture" }));
+    fireEvent.click(screen.getByRole("button", { name: "File it" }));
+
+    await waitFor(() => expect(screen.getByText("Sending")).toBeDefined());
+    const durable = await new CaptureQueue().all();
+    expect(durable).toHaveLength(1);
+    expect(durable[0]?.state).toBe("saved-locally");
+    const captureId = durable[0]!.id;
+    releaseCapture(new Response(JSON.stringify({
+      schema: "dome.capture/v1", status: "captured", vault: "vault-test",
+      path: "inbox/raw/honest-lifecycle.md", commit: "abc", capture_id: captureId,
+      title: "honest lifecycle", captured_at: "2026-07-15T12:00:00.000Z", source: "pwa",
+      branch: "main", serve_status: "running", adopted_initialized: true,
+      compile_pending: false, commit_status: "committed", adoption_status: "pending",
+    }), { status: 200 }));
+
+    await waitFor(() => expect(screen.getByText(/Filed · committed to the vault/)).toBeDefined());
+    expect(await new CaptureQueue().all()).toEqual([]);
+    expect(screen.getByText(/0 queued · 1 filed/)).toBeDefined();
+    expect((screen.getByRole("button", { name: "Export" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: /dismiss filed capture/i }));
+    expect(screen.queryByLabelText("capture queue")).toBeNull();
   });
 
   test("two transport failures feed unreachable truth back to the pairing owner", async () => {
@@ -645,7 +701,7 @@ describe("App", () => {
     document.cookie = "dome_csrf=transport-evidence; Path=/";
     render(<App />);
     await waitFor(() => expect(screen.getByText("Dome Home can't be reached")).toBeDefined());
-    expect((screen.getByRole("button", { name: "send" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Ask" }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByRole("button", { name: "Try again" })).toBeDefined();
   });
 
@@ -665,14 +721,15 @@ describe("App", () => {
 
     render(<App />);
     await waitFor(() => expect(screen.getByText(/you're clear/i)).toBeDefined());
-    const input = screen.getByLabelText("ask your brain") as HTMLInputElement;
+    const input = screen.getByLabelText("ask or capture") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "keep this locally" } });
-    fireEvent.click(screen.getByRole("button", { name: "capture thought" }));
+    fireEvent.click(screen.getByRole("button", { name: "Capture" }));
+    fireEvent.click(screen.getByRole("button", { name: "File it" }));
 
     await waitFor(() => expect(screen.getByText("Dome Home can't be reached")).toBeDefined());
     expect(screen.getByText("keep this locally")).toBeDefined();
-    expect((screen.getByRole("button", { name: "send" }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole("button", { name: "record" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Ask" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Capture" }) as HTMLButtonElement).disabled).toBe(false);
     expect((screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: /delete pending capture/i }));
   });
@@ -730,14 +787,14 @@ describe("App", () => {
 
     render(<App />);
     await waitFor(() => expect(screen.getByText(/you're clear/i)).toBeDefined());
-    const input = screen.getByLabelText("ask your brain") as HTMLInputElement;
+    const input = screen.getByLabelText("ask or capture") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "question during outage" } });
     fireEvent.submit(input.closest("form")!);
 
     await waitFor(() => expect(screen.getByText("Dome Home can't be reached")).toBeDefined());
     expect(screen.getByText("question during outage")).toBeDefined();
-    expect((screen.getByRole("button", { name: "send" }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole("button", { name: "record" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Ask" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Capture" }) as HTMLButtonElement).disabled).toBe(false);
     expect(screen.getByRole("button", { name: "Try again" })).toBeDefined();
   });
 
@@ -756,8 +813,10 @@ describe("App", () => {
       if (path === "/recents") return new Response(RECENTS_BODY, { status: 200 });
       if (path === "/capture") {
         captureCalls++;
+        const body = await request.json() as { captureId?: unknown };
         return new Response(JSON.stringify({
-          schema: "dome.capture/v1", status: "captured", vault: "vault", path: "inbox/raw/recovered.md",
+          schema: "dome.capture/v1", status: "captured", vault: "vault-test", path: "inbox/raw/recovered.md",
+          capture_id: body.captureId,
           commit: "abc", title: "recovered", captured_at: "2026-07-15T12:00:00.000Z", source: "pwa",
           branch: "main", serve_status: "running", adopted_initialized: true, compile_pending: false,
           commit_status: "committed", adoption_status: "pending",
@@ -767,16 +826,18 @@ describe("App", () => {
     }) as never;
     render(<App />);
     await waitFor(() => expect(screen.getByText("Dome Home can't be reached")).toBeDefined());
-    const input = screen.getByLabelText("ask your brain") as HTMLInputElement;
+    const input = screen.getByLabelText("ask or capture") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "replay after reconnect" } });
-    fireEvent.click(screen.getByRole("button", { name: "capture thought" }));
+    fireEvent.click(screen.getByRole("button", { name: "Capture" }));
+    fireEvent.click(screen.getByRole("button", { name: "File it" }));
     await waitFor(() => expect(screen.getByText("replay after reconnect")).toBeDefined());
     serverUp = true;
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     await waitFor(() => expect(captureCalls).toBe(1));
-    await waitFor(() => expect(screen.queryByText("replay after reconnect")).toBeNull());
-    fireEvent.change(input, { target: { value: "ask after reconnect" } });
-    expect((screen.getByRole("button", { name: "send" }) as HTMLButtonElement).disabled).toBe(false);
+    await waitFor(async () => expect(await new CaptureQueue().all()).toEqual([]));
+    expect(screen.getByText(/Filed · committed to the vault/)).toBeDefined();
+    fireEvent.change(screen.getByLabelText("ask or capture"), { target: { value: "ask after reconnect" } });
+    expect((screen.getByRole("button", { name: "Ask" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   test("delayed old view failures cannot downgrade a successful connection recheck", async () => {

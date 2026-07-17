@@ -11,6 +11,7 @@ import { CaptureQueue, type QueuedCapture } from "./capture/captureQueue";
 import { UpdatePrompt } from "./offline/UpdatePrompt";
 import { Connection, RecoveryCard } from "./components/Connection";
 import { deriveProductSession } from "./connection/product-session";
+import type { CaptureReceipt } from "../../contracts/capture";
 
 const BacklogReview = lazy(async () => {
   const module = await import("./components/BacklogReview");
@@ -40,6 +41,12 @@ export function reconcileStoppedTurn(stream: AgentStreamOutcome, stop: AgentStop
 type ViewLoadState = "idle" | "loading" | "ready" | "failed";
 type TodayRefreshState = "idle" | "loading" | "ready" | "failed";
 
+type FiledCapture = Readonly<{
+  id: string;
+  text: string;
+  receipt: Exclude<CaptureReceipt, { readonly status: "error" }>;
+}>;
+
 function Screen({ client, availability, connection }: {
   client: DomeClient;
   availability: HomeAvailability;
@@ -53,6 +60,8 @@ function Screen({ client, availability, connection }: {
   const [reviewingBacklog, setReviewingBacklog] = useState(false);
   const [ack, setAck] = useState<string | null>(null);
   const [pendingCaptures, setPendingCaptures] = useState<QueuedCapture[]>([]);
+  const [sendingCaptureIds, setSendingCaptureIds] = useState<ReadonlySet<string>>(new Set());
+  const [filedCaptures, setFiledCaptures] = useState<ReadonlyArray<FiledCapture>>([]);
   const [storageStatus, setStorageStatus] = useState<"persistent" | "best-effort" | "unknown">("unknown");
   const [turnPhase, setTurnPhase] = useState<"idle" | "streaming" | "stopping" | "retryable" | "session-ended">("idle");
   const [todayRefreshState, setTodayRefreshState] = useState<TodayRefreshState>("idle");
@@ -68,6 +77,7 @@ function Screen({ client, availability, connection }: {
     authRepair: connection.authRepair !== null,
   }), [availability, connection.authRepair, connection.readiness]);
   const access = session.access;
+  const currentVaultId = session.document?.vault.id ?? null;
   const priorReadAccess = useRef(access.read);
 
   useLayoutEffect(() => {
@@ -125,11 +135,33 @@ function Screen({ client, availability, connection }: {
   }, [captureQueue]);
 
   const drainCaptures = useCallback(async (): Promise<void> => {
-    if (!access.captureReplay) return;
-    const completed = await captureQueue.drain((request) => client.capture(request));
+    if (!access.captureReplay || currentVaultId === null) return;
+    const completed = await captureQueue.drain(currentVaultId, async (request) => {
+      const id = request.captureId!;
+      setSendingCaptureIds((current) => new Set(current).add(id));
+      try {
+        return await client.capture(request);
+      } finally {
+        setSendingCaptureIds((current) => {
+          const next = new Set(current);
+          next.delete(id);
+          return next;
+        });
+      }
+    });
     await refreshPending();
-    if (completed.length > 0) refreshAll();
-  }, [access.captureReplay, captureQueue, client, refreshAll, refreshPending]);
+    if (completed.length > 0) {
+      setFiledCaptures((current) => [
+        ...completed.map((item) => ({
+          id: item.id,
+          text: item.text,
+          receipt: item.receipt,
+        })),
+        ...current.filter((item) => !completed.some((done) => done.id === item.id)),
+      ]);
+      refreshAll();
+    }
+  }, [access.captureReplay, captureQueue, client, currentVaultId, refreshAll, refreshPending]);
 
   useEffect(() => {
     refreshAll();
@@ -159,7 +191,14 @@ function Screen({ client, availability, connection }: {
   }, []);
 
   const captureText = async (text: string): Promise<void> => {
-    await captureQueue.save({ text });
+    await captureQueue.save({ text }, currentVaultId);
+    await refreshPending();
+    void drainCaptures();
+  };
+
+  const bindCapture = async (id: string): Promise<void> => {
+    if (currentVaultId === null) return;
+    await captureQueue.bind(id, currentVaultId);
     await refreshPending();
     void drainCaptures();
   };
@@ -296,24 +335,52 @@ function Screen({ client, availability, connection }: {
       {session.recovery !== null ? (
         <RecoveryCard session={session} onRetry={connection.recheck} authRepair={connection.authRepair} />
       ) : null}
-      {pendingCaptures.length > 0 ? (
-        <section className="capture-outbox" aria-label="pending captures">
+      {pendingCaptures.length > 0 || filedCaptures.length > 0 ? (
+        <section className="capture-outbox" aria-label="capture queue">
           <div className="capture-outbox-head">
-            <strong>{pendingCaptures.length} saved locally</strong>
+            <strong>{pendingCaptures.length} queued{filedCaptures.length > 0 ? ` · ${filedCaptures.length} filed` : ""}</strong>
             <span>offline storage: {storageStatus}</span>
-            <button type="button" disabled={!access.captureReplay} onClick={() => { void drainCaptures(); }}>Retry</button>
-            <button type="button" onClick={() => { void exportPending(); }}>Export</button>
+            <button
+              type="button"
+              disabled={!access.captureReplay || currentVaultId === null || !pendingCaptures.some((item) => item.vaultId === currentVaultId)}
+              onClick={() => { void drainCaptures(); }}
+            >Retry</button>
+            <button type="button" disabled={pendingCaptures.length === 0} onClick={() => { void exportPending(); }}>Export</button>
           </div>
           {pendingCaptures.map((item) => (
             <div
               className="capture-outbox-item"
-              data-queue-state={item.state}
+              data-queue-state={sendingCaptureIds.has(item.id) ? "sending" : item.state}
               data-attempt-category={item.attempts === 0 ? "zero" : item.attempts === 1 ? "one" : "many"}
               key={item.id}
             >
               <span>{item.text}</span>
-              <small>{item.state}{item.lastError !== undefined ? ` · ${item.lastError}` : ""}</small>
+              <small>{sendingCaptureIds.has(item.id)
+                ? "Sending"
+                : item.state === "failed"
+                  ? `Failed${item.lastError !== undefined ? ` · ${item.lastError}` : ""}`
+                  : "Queued · saved on this device"}</small>
+              {item.vaultId === null && currentVaultId !== null ? (
+                <button type="button" onClick={() => { void bindCapture(item.id); }}>Bind to this vault</button>
+              ) : item.vaultId === null ? (
+                <small>Unbound · connect before choosing a vault</small>
+              ) : item.vaultId !== null && currentVaultId !== null && item.vaultId !== currentVaultId ? (
+                <small>Saved for another vault</small>
+              ) : null}
               <button type="button" aria-label={`delete pending capture ${item.id}`} onClick={() => removePending(item.id)}>Delete</button>
+            </div>
+          ))}
+          {filedCaptures.map((item) => (
+            <div className="capture-outbox-item" data-queue-state="filed" key={`filed:${item.id}`}>
+              <span>{item.text}</span>
+              <small>{item.receipt.status === "captured"
+                ? "Filed · committed to the vault; Dome may still be processing it"
+                : "Filed · already present in the vault; adoption is not confirmed"}</small>
+              <button
+                type="button"
+                aria-label={`dismiss filed capture ${item.id}`}
+                onClick={() => setFiledCaptures((current) => current.filter((entry) => entry.id !== item.id))}
+              >Dismiss</button>
             </div>
           ))}
         </section>
@@ -375,7 +442,6 @@ function Screen({ client, availability, connection }: {
         onNewConversation={newConversation}
         onCapture={captureText}
         onTranscribe={(blob) => client.transcribe(blob).then((t) => t.text)}
-        onFile={captureText}
         availability={availability}
         askEnabled={access.converse}
         voiceEnabled={access.voice}

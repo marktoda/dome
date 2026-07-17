@@ -37,7 +37,7 @@ type ConnectionSummary = Readonly<{
 }>;
 
 export type ComposerPresentation = Readonly<{
-  placeholder: "ask your brain…" | "capture a thought…";
+  placeholder: "ask or capture…";
   hint: string | null;
 }>;
 
@@ -118,24 +118,24 @@ function composerPresentation(
 ): ComposerPresentation {
   if (recoveryVisible) {
     return Object.freeze({
-      placeholder: access.converse ? "ask your brain…" : "capture a thought…",
+      placeholder: "ask or capture…",
       hint: null,
     });
   }
   if (cause === "offline" || cause === "unreachable" || cause === "connection") {
     return Object.freeze({
-      placeholder: "capture a thought…",
+      placeholder: "ask or capture…",
       hint: "Ask and voice need a live Dome Home connection. Text capture stays on this device.",
     });
   }
   if (cause === "auth") {
     return Object.freeze({
-      placeholder: "capture a thought…",
+      placeholder: "ask or capture…",
       hint: "Pair this device again to use Ask and voice. Text capture stays on this device.",
     });
   }
   if (document === null) {
-    return Object.freeze({ placeholder: "capture a thought…", hint: null });
+    return Object.freeze({ placeholder: "ask or capture…", hint: null });
   }
 
   const capabilities = new Set(document.device.capabilities);
@@ -151,7 +151,7 @@ function composerPresentation(
     else unavailable.push("Voice transcription is temporarily unavailable");
   }
   return Object.freeze({
-    placeholder: access.converse ? "ask your brain…" : "capture a thought…",
+    placeholder: "ask or capture…",
     hint: unavailable.length === 0 ? null : `${unavailable.join(". ")}. Text capture still works.`,
   });
 }

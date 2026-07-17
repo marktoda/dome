@@ -195,9 +195,10 @@ export async function runHomePwaUpdateRehearsal(
     },
     saveLocalCapture: async (signal) => {
       const activePage = requirePage();
-      await activePage.getByLabel("ask your brain").fill(CAPTURE_TEXT);
-      await activePage.getByRole("button", { name: "capture thought" }).click();
-      await activePage.getByText("1 saved locally", { exact: true }).waitFor({ timeout: WAIT_MS });
+      await activePage.getByLabel("ask or capture").fill(CAPTURE_TEXT);
+      await activePage.getByRole("button", { name: "Capture" }).click();
+      await activePage.getByRole("button", { name: "File it" }).click();
+      await activePage.getByText("1 queued", { exact: true }).waitFor({ timeout: WAIT_MS });
       capture = await readOnlyCapture(activePage);
       assertCapture(capture, CAPTURE_TEXT);
       signal.throwIfAborted();
@@ -262,7 +263,7 @@ export async function runHomePwaUpdateRehearsal(
       const remove = activePage.getByRole("button", { name: `delete pending capture ${capture.id}` });
       await remove.waitFor({ timeout: WAIT_MS });
       await remove.click();
-      await activePage.getByText("1 saved locally", { exact: true })
+      await activePage.getByText("1 queued", { exact: true })
         .waitFor({ state: "hidden", timeout: WAIT_MS });
       await waitForNoCaptures(activePage);
       signal.throwIfAborted();
@@ -587,6 +588,7 @@ type StoredCapture = Readonly<{
   id: string;
   text: string;
   createdAt: string;
+  vaultId: string | null;
   state: string;
   attempts: number;
 }>;
@@ -598,16 +600,18 @@ async function readOnlyCapture(page: Page): Promise<StoredCapture> {
   if (typeof row !== "object" || row === null || Array.isArray(row)) throw new Error("local capture row is malformed");
   const value = row as Record<string, unknown>;
   if (JSON.stringify(Object.keys(value).sort()) !==
-    JSON.stringify(["attempts", "createdAt", "id", "state", "text"])) {
+    JSON.stringify(["attempts", "createdAt", "id", "state", "text", "vaultId"])) {
     throw new Error("local capture row has unexpected fields");
   }
   if (typeof value.id !== "string" || typeof value.text !== "string" ||
     typeof value.createdAt !== "string" || typeof value.state !== "string" ||
+    (typeof value.vaultId !== "string" && value.vaultId !== null) ||
     typeof value.attempts !== "number") throw new Error("local capture row has invalid fields");
   return Object.freeze({
     id: value.id,
     text: value.text,
     createdAt: value.createdAt,
+    vaultId: value.vaultId,
     state: value.state,
     attempts: value.attempts,
   });
@@ -645,6 +649,7 @@ function readCaptureRowsExpression(): string {
 function assertCapture(capture: StoredCapture, expectedText: string): void {
   if (!/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(capture.id) || capture.text !== expectedText ||
     capture.state !== "saved-locally" || capture.attempts !== 0 ||
+    typeof capture.vaultId !== "string" || capture.vaultId.length === 0 ||
     !Number.isFinite(Date.parse(capture.createdAt))) {
     throw new Error("local capture does not match the saved IndexedDB row");
   }

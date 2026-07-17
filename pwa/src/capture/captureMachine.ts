@@ -3,6 +3,7 @@ export type CaptureState = { phase: CapturePhase; draft: string; error: string |
 export const INITIAL: CaptureState = { phase: "idle", draft: "", error: null };
 
 export type CaptureAction =
+  | { kind: "start-capture"; text: string }
   | { kind: "start-recording" } | { kind: "stop-recording" }
   | { kind: "transcribed"; text: string } | { kind: "edit"; text: string }
   | { kind: "file" } | { kind: "filed" }
@@ -10,7 +11,8 @@ export type CaptureAction =
 
 export function captureReducer(s: CaptureState, a: CaptureAction): CaptureState {
   switch (a.kind) {
-    case "start-recording": return s.phase === "idle" ? { phase: "recording", draft: "", error: null } : s;
+    case "start-capture": return s.phase === "idle" ? { phase: "review", draft: a.text, error: null } : s;
+    case "start-recording": return s.phase === "idle" || s.phase === "review" ? { phase: "recording", draft: "", error: null } : s;
     case "stop-recording": return s.phase === "recording" ? { ...s, phase: "transcribing" } : s;
     case "transcribed": return s.phase === "transcribing" ? { phase: "review", draft: a.text, error: null } : s;
     case "edit": return s.phase === "review" ? { ...s, draft: a.text } : s;

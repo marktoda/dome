@@ -19,7 +19,7 @@ describe("deriveProductSession", () => {
       recovery: null,
       connection: { label: "ready", tone: "healthy" },
       operational: { host: "ready", adoption: "current", current: true },
-      composer: { placeholder: "ask your brain…", hint: null },
+      composer: { placeholder: "ask or capture…", hint: null },
     });
   });
 
@@ -124,7 +124,7 @@ describe("deriveProductSession", () => {
     });
     expect(session.kind).toBe("current");
     expect(session.composer).toEqual({
-      placeholder: "capture a thought…",
+      placeholder: "ask or capture…",
       hint: "Ask is not enabled for this device. Voice is not enabled for this device. Text capture still works.",
     });
     expect(session.composer.hint).not.toContain("setup");

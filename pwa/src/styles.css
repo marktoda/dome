@@ -481,16 +481,12 @@ input.box:checked { background: var(--amber); border-color: var(--amber); }
 .turn-control button { min-height: 44px; padding: 0 11px; border: 1px solid var(--control-border); border-radius: 8px; color: var(--text); background: var(--surface-2); }
 .turn-control button:disabled { opacity: .55; }
 .composer .pill { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; background: var(--input); border: 1px solid var(--control-border); border-radius: 28px; padding: 5px; }
-.mic { width: 44px; height: 44px; flex: none; border-radius: 50%; background: var(--sage); display: flex; align-items: center; justify-content: center; }
-.mic[disabled] { opacity: .4; }
-.mic .glyph { display: flex; flex-direction: column; align-items: center; gap: 2px; }
-.mic .glyph .stem { width: 9px; height: 14px; border-radius: 5px; background: var(--sage-ink); }
-.mic .glyph .base { width: 13px; height: 6px; border: 1.5px solid var(--sage-ink); border-top: none; border-radius: 0 0 7px 7px; }
 .composer input { flex: 1; min-width: 0; font-size: 16px; padding: 0 4px; } /* >=16px: stops iOS focus-zoom */
 .composer input::placeholder { color: var(--text-faint); }
-.capture-text { width: 44px; height: 44px; flex: none; border-radius: 50%; border: 1px solid var(--control-border); color: var(--text-dim); font-size: 20px; }
+.capture-text, .send { min-height: 44px; flex: none; border-radius: 22px; padding: 0 14px; font-size: 13px; font-weight: 600; }
+.capture-text { border: 1px solid var(--control-border); color: var(--text-soft); }
 .capture-text:disabled { opacity: .35; }
-.send { width: 44px; height: 44px; flex: none; border-radius: 50%; background: #262624; display: flex; align-items: center; justify-content: center; color: var(--text-dim); font-size: 17px; transition: background .15s, color .15s; }
+.send { background: #262624; color: var(--text-dim); transition: background .15s, color .15s; }
 .send.active { background: var(--peri); color: #14162a; }
 .composer .err { position: absolute; top: -22px; left: var(--pad); font: 500 11px var(--mono); color: var(--coral); }
 
@@ -541,15 +537,10 @@ input.box:checked { background: var(--amber); border-color: var(--amber); }
 .sheet textarea { width: 100%; min-height: 84px; resize: none; background: var(--bg-screen); border: 1px solid var(--control-border); border-radius: 14px; padding: 15px; font-size: 16px; line-height: 1.5; color: var(--text-strong); margin-bottom: 8px; }
 .sheet .target { font: 500 11px var(--mono); color: var(--text-faint); margin-bottom: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sheet .actions { display: flex; gap: 10px; }
-.sheet .cancel { flex: none; padding: 14px 22px; border-radius: 14px; border: 1px solid var(--control-border); color: var(--text-dim); font-size: 14px; font-weight: 500; }
+.sheet .cancel, .sheet .record-capture { flex: none; padding: 14px 16px; border-radius: 14px; border: 1px solid var(--control-border); color: var(--text-dim); font-size: 14px; font-weight: 500; }
+.sheet .record-capture { color: var(--sage); }
+.sheet .record-capture:disabled { opacity: .4; }
 .sheet .fileit { flex: 1; text-align: center; padding: 14px; border-radius: 14px; background: var(--sage); color: var(--sage-ink); font-size: 15px; font-weight: 600; }
-
-/* captured */
-.captured .check { width: 66px; height: 66px; border-radius: 50%; background: var(--sage-bg); display: flex; align-items: center; justify-content: center; margin-bottom: 22px; animation: pop .4s ease-out; }
-.captured .check .mark { width: 22px; height: 12px; border-left: 3px solid var(--sage); border-bottom: 3px solid var(--sage); transform: rotate(-45deg) translate(2px,-3px); }
-.captured h2 { font-size: 20px; font-weight: 600; color: var(--text-strong); margin-bottom: 10px; }
-.captured p { font-size: 14px; line-height: 1.5; color: var(--text-dim); margin-bottom: 20px; text-wrap: pretty; }
-.captured .path { font: 500 11px var(--mono); color: var(--text-faint); background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: 8px; padding: 9px 12px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ── Token gate (first run) ── */
 .gate { height: 100%; height: 100svh; height: 100dvh; display: flex; flex-direction: column; justify-content: center; max-width: var(--max-w); margin: 0 auto; padding: calc(20px + var(--safe-top)) calc(30px + var(--safe-right)) calc(20px + var(--safe-bottom)) calc(30px + var(--safe-left)); background: #0e0e0d; overflow: auto; }

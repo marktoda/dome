@@ -7,7 +7,7 @@ afterEach(cleanup);
 describe("Composer", () => {
   test("typing + send calls onAsk and clears the field", () => {
     const onAsk = mock(() => {});
-    render(<Composer onAsk={onAsk} onCapture={async () => {}} onTranscribe={async () => ""} onFile={async () => {}} />);
+    render(<Composer onAsk={onAsk} onCapture={async () => {}} onTranscribe={async () => ""} />);
     const input = screen.getByPlaceholderText(/ask/i) as HTMLInputElement;
     fireEvent.change(input, { target: { value: "what's open?" } });
     fireEvent.submit(input.closest("form")!);
@@ -15,22 +15,26 @@ describe("Composer", () => {
     expect(input.value).toBe("");
   });
 
-  test("mic button is present (recording support is feature-detected)", () => {
-    render(<Composer onAsk={() => {}} onCapture={async () => {}} onTranscribe={async () => ""} onFile={async () => {}} />);
-    expect(screen.getByRole("button", { name: /record|mic|🎤/i })).toBeDefined();
+  test("Capture opens the separate text and voice sheet", () => {
+    render(<Composer onAsk={() => {}} onCapture={async () => {}} onTranscribe={async () => ""} />);
+    fireEvent.click(screen.getByRole("button", { name: "Capture" }));
+    expect(screen.getByRole("dialog", { name: "CAPTURE A THOUGHT" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Record voice" })).toBeDefined();
   });
 
   test("an active turn disables asks and exposes an accessible stop control", () => {
     const onAsk = mock(() => {});
     const onStop = mock(() => {});
-    render(<Composer turnPhase="streaming" onAsk={onAsk} onStop={onStop} onCapture={async () => {}} onTranscribe={async () => ""} onFile={async () => {}} />);
-    expect((screen.getByLabelText("ask your brain") as HTMLInputElement).disabled).toBe(true);
+    render(<Composer turnPhase="streaming" onAsk={onAsk} onStop={onStop} onCapture={async () => {}} onTranscribe={async () => ""} />);
+    expect((screen.getByLabelText("ask or capture") as HTMLInputElement).disabled).toBe(false);
+    expect((screen.getByRole("button", { name: "Ask" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Capture" }) as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "stop response" }));
     expect(onStop).toHaveBeenCalledTimes(1);
   });
 
   test("stopping remains visible and cannot issue a second stop", () => {
-    render(<Composer turnPhase="stopping" onAsk={() => {}} onStop={() => {}} onCapture={async () => {}} onTranscribe={async () => ""} onFile={async () => {}} />);
+    render(<Composer turnPhase="stopping" onAsk={() => {}} onStop={() => {}} onCapture={async () => {}} onTranscribe={async () => ""} />);
     expect(screen.getByText("Stopping…")).toBeDefined();
     expect((screen.getByRole("button", { name: "stop response" }) as HTMLButtonElement).disabled).toBe(true);
   });
@@ -38,7 +42,7 @@ describe("Composer", () => {
   test("retry and new conversation are explicit controls", () => {
     const onRetry = mock(() => {});
     const onNewConversation = mock(() => {});
-    render(<Composer turnPhase="session-ended" onAsk={() => {}} onRetry={onRetry} onNewConversation={onNewConversation} onCapture={async () => {}} onTranscribe={async () => ""} onFile={async () => {}} />);
+    render(<Composer turnPhase="session-ended" onAsk={() => {}} onRetry={onRetry} onNewConversation={onNewConversation} onCapture={async () => {}} onTranscribe={async () => ""} />);
     fireEvent.click(screen.getByRole("button", { name: "Retry question" }));
     fireEvent.click(screen.getByRole("button", { name: "New conversation" }));
     expect(onRetry).toHaveBeenCalledTimes(1);
@@ -48,15 +52,16 @@ describe("Composer", () => {
   test("offline keeps text capture available while Ask, voice, and retry stay disabled", () => {
     const capture = mock(async () => {});
     const ask = mock(() => {});
-    render(<Composer availability="offline" turnPhase="retryable" onAsk={ask} onCapture={capture} onTranscribe={async () => ""} onFile={async () => {}} />);
-    const input = screen.getByLabelText("ask your brain") as HTMLInputElement;
+    render(<Composer availability="offline" turnPhase="retryable" onAsk={ask} onCapture={capture} onTranscribe={async () => ""} />);
+    const input = screen.getByLabelText("ask or capture") as HTMLInputElement;
     expect(input.disabled).toBe(false);
     fireEvent.change(input, { target: { value: "save this offline" } });
-    expect((screen.getByRole("button", { name: "send" }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole("button", { name: "record" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Ask" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "Retry question" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "New conversation" }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "capture thought" }));
+    fireEvent.click(screen.getByRole("button", { name: "Capture" }));
+    expect((screen.getByRole("button", { name: "Record voice" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "File it" }));
     expect(capture).toHaveBeenCalledWith("save this offline");
     expect(ask).not.toHaveBeenCalled();
   });
@@ -66,19 +71,18 @@ describe("Composer", () => {
       onAsk: () => {},
       onCapture: async () => {},
       onTranscribe: async () => "",
-      onFile: async () => {},
     };
     render(<Composer
       {...props}
       askEnabled={false}
       voiceEnabled={false}
       presentation={{
-        placeholder: "capture a thought…",
+        placeholder: "ask or capture…",
         hint: "Pair this device again to use Ask and voice. Text capture stays on this device.",
       }}
     />);
     expect(screen.getByText(/Pair this device again/i)).toBeDefined();
-    expect(screen.getByPlaceholderText("capture a thought…")).toBeDefined();
+    expect(screen.getByPlaceholderText("ask or capture…")).toBeDefined();
     expect(screen.queryByText(/setup/i)).toBeNull();
   });
 
@@ -101,10 +105,11 @@ describe("Composer", () => {
     globalThis.MediaRecorder = FakeRecorder as unknown as typeof MediaRecorder;
     const transcribe = mock(async () => "must not run");
     try {
-      const view = render(<Composer availability="available" onAsk={() => {}} onCapture={async () => {}} onTranscribe={transcribe} onFile={async () => {}} />);
-      fireEvent.click(screen.getByRole("button", { name: "record" }));
+      const view = render(<Composer availability="available" onAsk={() => {}} onCapture={async () => {}} onTranscribe={transcribe} />);
+      fireEvent.click(screen.getByRole("button", { name: "Capture" }));
+      fireEvent.click(screen.getByRole("button", { name: "Record voice" }));
       await waitFor(() => expect(screen.getByText("LISTENING")).toBeDefined());
-      view.rerender(<Composer availability="unreachable" onAsk={() => {}} onCapture={async () => {}} onTranscribe={transcribe} onFile={async () => {}} />);
+      view.rerender(<Composer availability="unreachable" onAsk={() => {}} onCapture={async () => {}} onTranscribe={transcribe} />);
       await waitFor(() => expect(screen.getByText(/Recording discarded because Dome Home is unavailable/i)).toBeDefined());
       expect(transcribe).not.toHaveBeenCalled();
       expect(stopTrack).toHaveBeenCalledTimes(1);
@@ -139,23 +144,18 @@ describe("Composer", () => {
     const transcribe = mock(async (audio: Blob) => { receivedBytes = audio.size; return "heard"; });
     const file = mock(async () => {});
     try {
-      render(<Composer availability="available" onAsk={() => {}} onCapture={async () => {}} onTranscribe={transcribe} onFile={file} />);
-      fireEvent.click(screen.getByRole("button", { name: "record" }));
+      render(<Composer availability="available" onAsk={() => {}} onCapture={file} onTranscribe={transcribe} />);
+      fireEvent.click(screen.getByRole("button", { name: "Capture" }));
+      fireEvent.click(screen.getByRole("button", { name: "Record voice" }));
       await waitFor(() => expect(screen.getByText("LISTENING")).toBeDefined());
       fireEvent.click(screen.getByRole("button", { name: "stop recording" }));
       await waitFor(() => expect(screen.getByLabelText("capture draft")).toBeDefined());
       expect(receivedBytes).toBeGreaterThan(0);
       fireEvent.click(screen.getByRole("button", { name: "File it" }));
-      await waitFor(() => expect(screen.getByText("Saved locally")).toBeDefined());
-      const saved = screen.getByRole("status");
-      expect(saved.getAttribute("aria-live")).toBe("polite");
-      expect(saved.getAttribute("aria-atomic")).toBe("true");
-      expect(screen.getByText("Pending sync to Dome Home.")).toBeDefined();
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
       expect(screen.queryByText("Captured")).toBeNull();
       expect(screen.queryByText(/Filed to your inbox/i)).toBeNull();
-      await new Promise((resolve) => setTimeout(resolve, 1_700));
-      await waitFor(() => expect(screen.queryByText("Saved locally")).toBeNull());
-      expect(document.activeElement).toBe(screen.getByLabelText("ask your brain"));
+      expect(document.activeElement).toBe(screen.getByLabelText("ask or capture"));
     } finally {
       globalThis.MediaRecorder = originalRecorder;
       if (originalMediaDevices === undefined) Reflect.deleteProperty(navigator, "mediaDevices");
@@ -185,8 +185,9 @@ describe("Composer", () => {
     });
     globalThis.MediaRecorder = FakeRecorder as unknown as typeof MediaRecorder;
     try {
-      render(<Composer availability="available" onAsk={() => {}} onCapture={async () => {}} onTranscribe={async () => await new Promise<string>((resolve) => { resolveTranscript = resolve; })} onFile={async () => {}} />);
-      fireEvent.click(screen.getByRole("button", { name: "record" }));
+      render(<Composer availability="available" onAsk={() => {}} onCapture={async () => {}} onTranscribe={async () => await new Promise<string>((resolve) => { resolveTranscript = resolve; })} />);
+      fireEvent.click(screen.getByRole("button", { name: "Capture" }));
+      fireEvent.click(screen.getByRole("button", { name: "Record voice" }));
       await screen.findByRole("dialog", { name: "LISTENING" });
       const stop = screen.getByRole("button", { name: "stop recording" });
       expect(document.activeElement).toBe(stop);
@@ -201,7 +202,7 @@ describe("Composer", () => {
       expect(document.activeElement).toBe(transcribing);
 
       resolveTranscript("heard words");
-      const review = await screen.findByRole("dialog", { name: /heard this/i });
+      const review = await screen.findByRole("dialog", { name: /capture a thought/i });
       const textarea = screen.getByLabelText("capture draft");
       const fileButton = screen.getByRole("button", { name: "File it" });
       expect(document.activeElement).toBe(textarea);
@@ -213,7 +214,7 @@ describe("Composer", () => {
       expect(document.activeElement).toBe(fileButton);
       fireEvent.keyDown(document, { key: "Escape" });
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-      expect(document.activeElement).toBe(screen.getByLabelText("ask your brain"));
+      expect(document.activeElement).toBe(screen.getByLabelText("ask or capture"));
       expect(review.isConnected).toBe(false);
     } finally {
       globalThis.MediaRecorder = originalRecorder;

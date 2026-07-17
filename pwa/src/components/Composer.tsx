@@ -11,7 +11,6 @@ type Props = {
   onNewConversation?: () => void;
   onCapture: (text: string) => Promise<string | void>;
   onTranscribe: (audio: Blob) => Promise<string>;
-  onFile: (text: string) => Promise<string | void>;
   availability?: "available" | "offline" | "unreachable";
   askEnabled?: boolean;
   voiceEnabled?: boolean;
@@ -40,16 +39,14 @@ export function Composer({
   onNewConversation,
   onCapture,
   onTranscribe,
-  onFile,
   availability = "available",
   askEnabled = true,
   voiceEnabled = true,
-  presentation = { placeholder: "ask your brain…", hint: null },
+  presentation = { placeholder: "ask or capture…", hint: null },
 }: Props): React.ReactElement {
   const [text, setText] = useState("");
   const [cap, dispatch] = useReducer(captureReducer, INITIAL);
   const [secs, setSecs] = useState(0);
-  const [captured, setCaptured] = useState<string | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const availabilityRef = useRef(availability);
@@ -62,8 +59,8 @@ export function Composer({
   availabilityRef.current = availability;
   voiceEnabledRef.current = voiceEnabled;
 
-  const captureModalActive = captured !== null || cap.phase === "recording" || cap.phase === "transcribing" || cap.phase === "review" || cap.phase === "filing";
-  const captureFocusKey = captured !== null ? "saved" : cap.phase;
+  const captureModalActive = cap.phase === "recording" || cap.phase === "transcribing" || cap.phase === "review" || cap.phase === "filing";
+  const captureFocusKey = cap.phase;
   useModalFocus({
     active: captureModalActive,
     focusKey: captureFocusKey,
@@ -132,25 +129,11 @@ export function Composer({
     if (cap.draft.trim().length === 0) return;
     dispatch({ kind: "file" });
     try {
-      const path = await onFile(cap.draft);
-      setCaptured(typeof path === "string" ? path : "");
-      setTimeout(() => { setCaptured(null); dispatch({ kind: "filed" }); }, 1600);
+      await onCapture(cap.draft);
+      setText("");
+      dispatch({ kind: "filed" });
     } catch (e) { dispatch({ kind: "fail", error: e instanceof Error ? e.message : String(e) }); }
   };
-
-  // Local-save confirmation — remote commit/adoption is acknowledged only from a receipt.
-  if (captured !== null) {
-    return (
-      <section ref={captureContainerRef} className="overlay captured" tabIndex={-1} role="status" aria-live="polite" aria-atomic="true">
-        <div className="center">
-          <div className="check"><span className="mark" /></div>
-          <h2>Saved locally</h2>
-          <p>Pending sync to Dome Home.</p>
-          {captured.length > 0 ? <div className="path">{captured}</div> : null}
-        </div>
-      </section>
-    );
-  }
 
   if (cap.phase === "recording") {
     return (
@@ -188,11 +171,17 @@ export function Composer({
       <div className="sheet-backdrop">
         <section ref={captureContainerRef} className="sheet" tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="capture-review-title">
           <div className="grip" />
-          <div className="tag"><span className="dot" /><span id="capture-review-title" className="label">HEARD THIS — FIX IF NEEDED</span></div>
+          <div className="tag"><span className="dot" /><span id="capture-review-title" className="label">CAPTURE A THOUGHT</span></div>
           <textarea ref={reviewTextareaRef} aria-label="capture draft" value={cap.draft} disabled={filing} onChange={(e) => dispatch({ kind: "edit", text: e.target.value })} />
           <div className="actions">
             <button type="button" className="cancel" disabled={filing} onClick={() => dispatch({ kind: "cancel" })}>Cancel</button>
-            <button type="button" className="fileit" disabled={filing} onClick={() => { void file(); }}>{filing ? "Filing…" : "File it"}</button>
+            <button
+              type="button"
+              className="record-capture"
+              disabled={filing || !canRecord() || availability !== "available" || !voiceEnabled}
+              onClick={() => { void startRecording(); }}
+            >Record voice</button>
+            <button type="button" className="fileit" disabled={filing || cap.draft.trim().length === 0} onClick={() => { void file(); }}>{filing ? "Filing…" : "File it"}</button>
           </div>
         </section>
       </div>
@@ -203,7 +192,6 @@ export function Composer({
   const activeTurn = turnPhase === "streaming" || turnPhase === "stopping";
   const remoteAvailable = availability === "available";
   const askBlocked = activeTurn || turnPhase === "session-ended" || !remoteAvailable || !askEnabled;
-  const inputBlocked = activeTurn;
   return (
     <form className="composer" aria-label="Message composer" onSubmit={(e) => { e.preventDefault(); const q = text.trim(); if (!askBlocked && q.length > 0) { onAsk(q); setText(""); } }}>
       {activeTurn ? (
@@ -222,21 +210,16 @@ export function Composer({
         </div>
       ) : null}
       <div className="pill">
-        <button type="button" className="mic" aria-label="record" disabled={!canRecord() || activeTurn || !remoteAvailable || !voiceEnabled} onClick={() => { void startRecording(); }}>
-          <span className="glyph"><span className="stem" /><span className="base" /></span>
-        </button>
-        <input ref={composerInputRef} aria-label="ask your brain" placeholder={presentation.placeholder} value={text} disabled={inputBlocked} onChange={(e) => setText(e.target.value)} />
+        <input ref={composerInputRef} aria-label="ask or capture" placeholder={presentation.placeholder} value={text} onChange={(e) => setText(e.target.value)} />
         <button
           type="button"
           className="capture-text"
-          aria-label="capture thought"
-          disabled={inputBlocked || text.trim().length === 0}
+          aria-label="Capture"
           onClick={() => {
-            const draft = text.trim();
-            if (draft.length > 0) void onCapture(draft).then(() => setText(""));
+            dispatch({ kind: "start-capture", text });
           }}
-        >+</button>
-        <button type="submit" disabled={askBlocked || text.trim().length === 0} className={`send${text.trim().length > 0 ? " active" : ""}`} aria-label="send">↑</button>
+        >Capture</button>
+        <button type="submit" aria-label="Ask" disabled={askBlocked || text.trim().length === 0} className={`send${text.trim().length > 0 ? " active" : ""}`}>Ask</button>
       </div>
       {presentation.hint === null ? null : <span className="connection-hint">{presentation.hint}</span>}
       {cap.error !== null ? <span className="err" role="alert">{cap.error}</span> : null}

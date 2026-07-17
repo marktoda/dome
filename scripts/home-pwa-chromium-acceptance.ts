@@ -282,7 +282,7 @@ export async function runHomePwaChromiumAcceptance(
       await activePage.reload({ waitUntil: "domcontentloaded", timeout: WAIT_MS });
       await activePage.getByRole("region", { name: "You're offline", exact: true })
         .waitFor({ timeout: WAIT_MS });
-      if (!await activePage.getByRole("button", { name: "send" }).isDisabled()) {
+      if (!await activePage.getByRole("button", { name: "Ask" }).isDisabled()) {
         throw new Error("Ask remained enabled offline");
       }
       const readinessResolved = await activePage.evaluate(`fetch("/readyz", { cache: "no-store" })
@@ -294,16 +294,17 @@ export async function runHomePwaChromiumAcceptance(
     saveLocalCapture: async (signal) => {
       const activePage = requirePage();
       await atLocalCaptureStage("save", async () => {
-        await activePage.getByLabel("ask your brain").fill(CAPTURE_TEXT);
-        await activePage.getByRole("button", { name: "capture thought" }).click();
+        await activePage.getByLabel("ask or capture").fill(CAPTURE_TEXT);
+        await activePage.getByRole("button", { name: "Capture" }).click();
+        await activePage.getByRole("button", { name: "File it" }).click();
         signal.throwIfAborted();
       });
-      const outbox = activePage.getByLabel("pending captures");
+      const outbox = activePage.getByLabel("capture queue");
       await atLocalCaptureStage("outbox", async () => {
-        await outbox.getByText("1 saved locally", { exact: true }).waitFor({ timeout: WAIT_MS });
+        await outbox.getByText("1 queued", { exact: true }).waitFor({ timeout: WAIT_MS });
         const rows = outbox.locator(".capture-outbox-item");
         await rows.getByText(CAPTURE_TEXT, { exact: true }).waitFor({ timeout: WAIT_MS });
-        await rows.getByText("saved-locally", { exact: true }).waitFor({ timeout: WAIT_MS });
+        await rows.getByText("Queued · saved on this device", { exact: true }).waitFor({ timeout: WAIT_MS });
         if (await rows.count() !== 1) throw new Error("pending capture row is not unique");
         signal.throwIfAborted();
       });
@@ -324,7 +325,7 @@ export async function runHomePwaChromiumAcceptance(
         } finally {
           await download.delete();
         }
-        await outbox.getByText("1 saved locally", { exact: true }).waitFor({ timeout: WAIT_MS });
+        await outbox.getByText("1 queued", { exact: true }).waitFor({ timeout: WAIT_MS });
         signal.throwIfAborted();
       });
     },
@@ -336,7 +337,7 @@ export async function runHomePwaChromiumAcceptance(
     repairAuthentication: async (signal) => {
       const activePage = requirePage();
       await activePage.getByText("Pair this device again", { exact: true }).waitFor({ timeout: WAIT_MS });
-      await activePage.getByText("1 saved locally", { exact: true }).waitFor({ timeout: WAIT_MS });
+      await activePage.getByText("1 queued", { exact: true }).waitFor({ timeout: WAIT_MS });
       repairCode = await input.mintPairingCode(REPAIRED_DEVICE_NAME, signal);
       signal.throwIfAborted();
       await activePage.getByLabel("New pairing code").fill(repairCode);
@@ -349,7 +350,7 @@ export async function runHomePwaChromiumAcceptance(
     assertReplay: async (signal) => {
       try {
         await atReplayStage("outbox", async () => {
-          const pending = requirePage().getByText("1 saved locally", { exact: true });
+          const pending = requirePage().getByText("1 queued", { exact: true });
           await pending.waitFor({ state: "hidden", timeout: WAIT_MS });
           if (captureId === "") throw new Error("exported capture identity is unavailable");
           signal.throwIfAborted();
@@ -401,7 +402,7 @@ async function assertAdaptiveAccessibility(page: Page): Promise<void> {
         const rect = target.getBoundingClientRect();
         return rect.width < 43.5 || rect.height < 43.5;
       }).map((element) => element.getAttribute("aria-label") || element.textContent?.trim().slice(0, 40) || element.tagName);
-      const critical = [".composer", '[aria-label="Refresh Today"]', '[aria-label="ask your brain"]', '[aria-label="capture thought"]', '[aria-label="send"]']
+      const critical = [".composer", '[aria-label="Refresh Today"]', '[aria-label="ask or capture"]', '[aria-label="Capture"]', '[aria-label="Ask"]']
         .map((selector) => document.querySelector(selector));
       const refresh = document.querySelector('[aria-label="Refresh Today"]');
       const scroll = document.querySelector(".scroll");
@@ -941,10 +942,11 @@ export function parseHomePwaCaptureExportForTests(bytes: Uint8Array, expectedTex
     !Array.isArray(root["captures"]) || root["captures"].length !== 1) {
     throw new Error("pending capture export envelope is invalid");
   }
-  const capture = exactRecord(root["captures"][0], ["id", "text", "createdAt", "state", "attempts"]);
+  const capture = exactRecord(root["captures"][0], ["id", "text", "createdAt", "vaultId", "state", "attempts"]);
   if (typeof capture["id"] !== "string" ||
     !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(capture["id"]) ||
     capture["text"] !== expectedText || !exactTimestamp(capture["createdAt"]) ||
+    typeof capture["vaultId"] !== "string" || capture["vaultId"].length === 0 ||
     capture["state"] !== "saved-locally" || capture["attempts"] !== 0) {
     throw new Error("pending capture export item is invalid");
   }

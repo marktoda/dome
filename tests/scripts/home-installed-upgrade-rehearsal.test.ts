@@ -915,6 +915,7 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
       id: captureId,
       text,
       createdAt: "2026-07-15T12:00:00.000Z",
+      vaultId: "vault-public-id",
       state: "saved-locally",
       attempts: 0,
     };
