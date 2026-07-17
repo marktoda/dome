@@ -16,8 +16,8 @@ any other tool that works with files and Git.
 
 - **Today** brings together a source-backed morning brief, meetings, urgent
   work, unresolved decisions, and operational attention.
-- **Capture** saves a thought or voice transcript for review and filing. Text
-  capture can be queued offline; Dome reports whether it is local, sending,
+- **Capture** saves a text thought for review and filing. Capture can be queued
+  offline; Dome reports whether it is local, sending,
   filed, or not confirmed instead of pretending every request succeeded.
 - **Ask** answers questions from adopted vault content and links back to the
   Markdown sources behind the answer.
@@ -25,8 +25,9 @@ any other tool that works with files and Git.
   Every source remains visible, and every commitment receives an explicit
   leave-open, defer, or close decision.
 - **Garden** processors find stale structure, broken links, duplicate or
-  conflicting knowledge, and synthesis opportunities. Deterministic repairs
-  can be automatic; semantic changes remain reviewable proposals.
+  conflicting knowledge, and synthesis opportunities. Bounded ingestion and
+  daily-maintenance processors can apply deterministic repairs; the nightly
+  semantic garden emits reviewable proposals only.
 
 Dome Home is the complete product surface: a supervised engine on your Mac and
 an installable PWA for desktop and mobile browsers. The CLI, SDK, and MCP
@@ -41,7 +42,7 @@ Dome is currently a technical preview with this supported shape:
 | Owner | One owner |
 | Vault | One Markdown/Git vault per Dome Home process |
 | Host | Apple Silicon macOS, supervised by `launchd` |
-| Clients | Multiple individually paired browsers; loopback or a private Tailscale connection |
+| Clients | Multiple individually paired browsers; loopback or a separately configured private Tailscale connection |
 | Models | Anthropic is the shipped provider; deterministic vault, capture, task, and Today behavior degrades independently when the model is unavailable |
 | Distribution | Source-built, versioned Home artifact; no public package or download yet |
 | Signing | Preview artifacts are not Apple-notarized; Dome does not disable Gatekeeper or remove quarantine for you |
@@ -102,9 +103,11 @@ effect, applies deterministic patches to a fixed point, and advances a separate
 adopted Git reference only after the result is coherent. Recall reads that
 adopted state rather than racing unfinished edits.
 
-Markdown is durable knowledge; SQLite stores rebuildable projections and
-operational audit/recovery state. Model calls and protocol adapters live outside
-the sealed SDK core.
+Markdown and Git hold durable knowledge. SQLite holds both rebuildable
+projections and local operational state such as answers, audit history, retry
+state, and recovery state; backups preserve the latter because it cannot be
+fully rebuilt from Markdown. Model calls and protocol adapters live outside the
+sealed SDK core.
 
 Start with:
 
