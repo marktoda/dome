@@ -16,6 +16,8 @@ import { withExclusiveFileLock } from "../../src/engine/host/file-lock";
 import { engageOperationalWriterBarrier, releaseOperationalWriterBarrier } from "../../src/operational-state/writer-barrier";
 import { vaultServiceSlug } from "../../src/surface/service-probe";
 
+const MULTI_TRANSACTION_SCENARIO_TIMEOUT_MS = 15_000;
+
 describe("encrypted vault backup checkpoint", () => {
   test("keygen, create, verify, and internal blank-target rehearsal need no native git", async () => {
     const root = await mkdtemp(join(tmpdir(), "dome-backup-"));
@@ -503,6 +505,8 @@ describe("encrypted vault backup checkpoint", () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
+  // Three real backup transactions need harness headroom on hosted macOS;
+  // product deadlines remain independently injected and asserted.
   test("serializes same-output backups and never replaces an external winner", async () => {
     const root = await mkdtemp(join(tmpdir(), "dome-backup-publication-"));
     try {
@@ -539,7 +543,7 @@ describe("encrypted vault backup checkpoint", () => {
       expect(raced.error).toContain("target may already exist");
       expect(await readFile(racedOutput, "utf8")).toBe("external winner\n");
     } finally { await rm(root, { recursive: true, force: true }); }
-  });
+  }, MULTI_TRANSACTION_SCENARIO_TIMEOUT_MS);
 });
 
 async function basicVault(root: string): Promise<string> {
