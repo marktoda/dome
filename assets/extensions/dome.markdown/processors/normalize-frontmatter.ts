@@ -44,7 +44,7 @@
 // runtime by Bun's dynamic-import loader (the bundle is loaded via
 // `loadBundles` in `src/extensions/loader.ts`). The `gray-matter`
 // import resolves via Bun's node_modules lookup (gray-matter is already a
-// runtime dep of @dome/sdk per package.json).
+// runtime dep of @marktoda/dome per package.json).
 
 import {
   patchEffect,

@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-07-11
+updated: 2026-07-17
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
@@ -26,7 +26,7 @@ This spec is normative for Dome's MCP (Model Context Protocol) adapter — the `
 ## Architecture
 
 ```text
-@dome/sdk core (engine + projections + ledger + outbox)
+@marktoda/dome core (engine + projections + ledger + outbox)
   ↓  (the same shared dispatch boundary the CLI uses)
 src/surface/* collectors + src/engine/host/view-command.ts
   ↓
@@ -61,7 +61,7 @@ aggregate surface object.
 
 ### Dependency fence
 
-`@modelcontextprotocol/sdk` ships in `package.json`, but the engine never sees it: `src/mcp/` is a companion entrypoint (exposed as `@dome/sdk/mcp` and the `dome mcp` verb) that is **not** reachable from the static import graph of `src/index.ts`, and the CLI dispatcher loads `src/cli/commands/mcp.ts` via dynamic import so the CLI's static graph stays MCP-free too. Pinned by [[wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] (the fence is the core entrypoint's static import graph) and [[wiki/gotchas/transitive-llm-dependency]] (the bundle-deps test catches re-exports that would defeat the separation).
+`@modelcontextprotocol/sdk` ships in `package.json`, but the engine never sees it: `src/mcp/` is a companion entrypoint (exposed as `@marktoda/dome/mcp` and the `dome mcp` verb) that is **not** reachable from the static import graph of `src/index.ts`, and the CLI dispatcher loads `src/cli/commands/mcp.ts` via dynamic import so the CLI's static graph stays MCP-free too. Pinned by [[wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] (the fence is the core entrypoint's static import graph) and [[wiki/gotchas/transitive-llm-dependency]] (the bundle-deps test catches re-exports that would defeat the separation).
 
 ## MCP tools
 

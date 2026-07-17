@@ -2,7 +2,7 @@
   "lockfileVersion": 1,
   "workspaces": {
     "": {
-      "name": "dome",
+      "name": "@marktoda/dome",
       "dependencies": {
         "@ai-sdk/anthropic": "^3.0.84",
         "@modelcontextprotocol/sdk": "^1.29.0",

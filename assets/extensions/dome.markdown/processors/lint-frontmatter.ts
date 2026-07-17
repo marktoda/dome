@@ -40,7 +40,7 @@
 // `tsconfig.json`. Imports use relative paths into `src/`, resolved at
 // runtime by Bun's dynamic-import loader. The `gray-matter` import
 // resolves via Bun's node_modules lookup (gray-matter is already a
-// runtime dep of @dome/sdk per package.json).
+// runtime dep of @marktoda/dome per package.json).
 
 import matter from "gray-matter";
 

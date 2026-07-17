@@ -36,7 +36,7 @@ By substrate type:
 - **Proposals are the only engine write path.** No `vault.tools.X(...)`, no privileged-writer escape hatch, and no public `submitProposal` API. Human/agent writes are ordinary git commits; the daemon constructs Proposals from branch drift, and garden PatchEffects construct internal sub-Proposals. Pinned by [[docs/wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]] and [[docs/wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]].
 - **Effects are the only processor output.** A processor returns `Promise<Effect[]>` from its `run(ctx)` body. No direct mutation surface. Pinned by [[docs/wiki/invariants/EFFECTS_ARE_THE_ONLY_PROCESSOR_OUTPUT]].
 - **Every effect is capability-checked.** The broker (`src/engine/core/capability-broker.ts`) gates every effect before the engine routing layer applies it. Pinned by [[docs/wiki/invariants/EVERY_EFFECT_IS_CAPABILITY_CHECKED]].
-- **`@dome/sdk` core has no LLM or MCP dependency.** `tests/integration/bundle-deps.test.ts` is the structural fence. Re-exporting `model.invoke` or MCP machinery from `src/index.ts` fails CI. Pinned by [[docs/wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]].
+- **`@marktoda/dome` core has no LLM or MCP dependency.** `tests/integration/bundle-deps.test.ts` is the structural fence. Re-exporting `model.invoke` or MCP machinery from `src/index.ts` fails CI. Pinned by [[docs/wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]].
 - **Markdown is the source of truth.** Knowledge projections in `projection.db`
   can be rebuilt from adopted markdown plus deterministic processors. Durable
   operational state (`answers.db`, `runs.db`, `outbox.db`, quarantine state) is

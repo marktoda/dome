@@ -34,7 +34,7 @@ const MARKER_HANDLING_RE = new RegExp(
  * An import of the primitive, any path-relative depth:
  * `./generated-block`, `../core/generated-block`,
  * `../../../../src/core/generated-block`, or a packaged
- * `@dome/sdk/core/generated-block` style specifier.
+ * `@marktoda/dome/core/generated-block` style specifier.
  */
 const IMPORT_RE =
   /\bimport\s+(?:type\s+)?(?:[\s\S]*?\s+from\s+)?["']([^"']*\bgenerated-block)["']|\bimport\s*\(\s*["']([^"']*\bgenerated-block)["']\s*\)|\bexport\s+(?:[\s\S]*?\s+from\s+)?["']([^"']*\bgenerated-block)["']/;

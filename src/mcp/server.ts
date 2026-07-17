@@ -37,7 +37,7 @@
 //     at a time. Each call opens and closes its own runtime exactly like
 //     one CLI invocation; no long-lived SQLite handle is held.
 //   - This module statically imports @modelcontextprotocol/sdk and is a
-//     companion entrypoint (`@dome/sdk/mcp`, hosted by `dome mcp`). It must
+//     companion entrypoint (`@marktoda/dome/mcp`, hosted by `dome mcp`). It must
 //     never be imported from the static graph of src/index.ts — pinned by
 //     ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY and enforced by
 //     tests/integration/bundle-deps.test.ts.

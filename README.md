@@ -56,7 +56,8 @@ Dome.
 
 ## Try it from source
 
-You need Apple Silicon macOS, Bun 1.x, Git, and a current stable Google Chrome.
+You need Apple Silicon macOS, Bun 1.2.13 or newer within Bun 1.x, Git, and a
+current stable Google Chrome.
 The artifact builder uses Chrome for its installed-product acceptance gate and
 requires a clean checkout.
 
@@ -140,11 +141,10 @@ lifecycle state into another file. Run
 
 Useful narrower gates include `bun test tests/invariants` and
 `bin/dome <command>` for a local CLI invocation. The package currently
-exports `@dome/sdk`, `@dome/sdk/cli`, and `@dome/sdk/mcp`; its public rename to
-`@marktoda/dome` belongs to the registry-distribution milestone.
+exports `@marktoda/dome`, `@marktoda/dome/cli`, and `@marktoda/dome/mcp`.
+The package remains unpublished while the no-checkout product payload and
+release evidence are completed.
 
 ## License
 
-MIT has been selected for public distribution. The repository does not yet
-contain the license file, so no public package should be published until that
-file is committed as part of the distribution work.
+Dome is released under the [MIT License](LICENSE).

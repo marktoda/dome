@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-07-11
+updated: 2026-07-17
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
@@ -216,8 +216,8 @@ Processors register via the extension-bundle mechanism (per [[wiki/specs/sdk-sur
 
 ```ts
 // assets/extensions/dome.agent/processors/ingest.ts
-import { defineProcessorImplementation } from "@dome/sdk";
-import type { Effect } from "@dome/sdk";
+import { defineProcessorImplementation } from "@marktoda/dome";
+import type { Effect } from "@marktoda/dome";
 
 export default defineProcessorImplementation({
   async run(ctx): Promise<Effect[]> {

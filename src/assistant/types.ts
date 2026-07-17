@@ -3,7 +3,7 @@
 // Types for the agent backend (companion entrypoint).
 //
 // This backend is a COMPANION HTTP service reached only via dynamic import from
-// the CLI — it is NOT part of the @dome/sdk core static graph, so it is allowed
+// the CLI — it is NOT part of the @marktoda/dome core static graph, so it is allowed
 // to depend on the Vercel AI SDK. These are provider-neutral citation, change,
 // and conversation carriers used across the runtime boundary.
 

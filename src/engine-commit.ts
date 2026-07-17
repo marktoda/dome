@@ -39,7 +39,7 @@ export async function commitEngineChange(
   if (input.runContext === undefined || input.runContext === null) {
     throw new Error(
       "commitEngineChange requires a runContext per ENGINE_COMMITS_CARRY_DOME_TRAILERS. " +
-        "Construct one via `makeRunContext({ extensionId, base, sourceHead })` from `@dome/sdk`.",
+        "Construct one via `makeRunContext({ extensionId, base, sourceHead })` from `@marktoda/dome`.",
     );
   }
 

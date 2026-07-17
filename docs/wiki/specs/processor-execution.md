@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-28
-updated: 2026-07-11
+updated: 2026-07-17
 sources:
   - "[[wiki/specs/processors]]"
   - "[[wiki/specs/run-ledger]]"
@@ -166,7 +166,7 @@ Validation failure returns `status: "failed"` with `code: "processor.invalid-out
 
 ## Model invocation and structured output
 
-Processors should never import LLM SDKs directly. A non-adoption processor with an effective `model.invoke` declaration + grant receives `ctx.modelInvoke`; processors without the capability receive no model function. Core stays provider-neutral through the `ModelProvider` interface. Callers may inject a provider directly; vaults may also configure `model_provider: { kind: "command", command: [...] }`, which runs from the vault root, receives `dome.model-provider.request/v1` JSON on stdin, and returns provider response JSON on stdout (the same command also serves the `dome.model-provider.step/v1` tool-use step and the `dome.model-provider.probe/v1` liveness probe — see [[wiki/specs/capabilities]] §"model.invoke"). Vendor-specific adapters may live in a workflow package or vault-local command script, but they are outside the `@dome/sdk` root import graph.
+Processors should never import LLM SDKs directly. A non-adoption processor with an effective `model.invoke` declaration + grant receives `ctx.modelInvoke`; processors without the capability receive no model function. Core stays provider-neutral through the `ModelProvider` interface. Callers may inject a provider directly; vaults may also configure `model_provider: { kind: "command", command: [...] }`, which runs from the vault root, receives `dome.model-provider.request/v1` JSON on stdin, and returns provider response JSON on stdout (the same command also serves the `dome.model-provider.step/v1` tool-use step and the `dome.model-provider.probe/v1` liveness probe — see [[wiki/specs/capabilities]] §"model.invoke"). Vendor-specific adapters may live in a workflow package or vault-local command script, but they are outside the `@marktoda/dome` root import graph.
 
 Model-capable processors remain subject to the same Effect/capability pipeline as every other processor. A PatchEffect emitted by such a processor must be source-backed before it reaches the router: an empty `sourceRefs` array fails the run with `processor.invalid-output`, and non-empty refs are then broker-checked against effective `read` grants before any patch capability is considered. Deterministic processors may still create source-less generated files when their effect schema allows it; the stricter rule is tied to effective `model.invoke`.
 
@@ -212,7 +212,7 @@ The target runtime classifies run failures:
 | `operator` | cancellation, shutdown | Mark cancelled; no retry unless explicitly re-run. |
 
 Processor code can opt into transient classification by throwing
-`transientProcessorError(message)` from `@dome/sdk`. The executor recognizes
+`transientProcessorError(message)` from `@marktoda/dome`. The executor recognizes
 that nominal SDK-created error and records the run as `processor.threw` with
 `retryable: true`. A plain thrown object with a `retryable: true` property is
 not trusted by shape and remains a non-retryable `processor.threw`.

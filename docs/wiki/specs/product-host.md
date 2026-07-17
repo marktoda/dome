@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-07-11
-updated: 2026-07-13
+updated: 2026-07-17
 sources:
   - "[[cohesive/plans/2026-07-11-pwa-first-product]]"
   - "[[wiki/concepts/client-model]]"
@@ -1298,7 +1298,7 @@ no-replace directory publication, fsyncs the parent, proves the source absent
 and the tombstone inode unchanged, recursively removes it, and fsyncs again.
 Recognized tombstones make a crash after publication idempotently collectible.
 
-Checkpoint 1 is deliberately not exported by `@dome/sdk`, called by the CLI,
+Checkpoint 1 is deliberately not exported by `@marktoda/dome`, called by the CLI,
 or scheduled. A collector holds only the global lock and must never acquire or
 wait for an earlier lock. Production collection remains forbidden until every
 reachability-changing writer participates as described below.

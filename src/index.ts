@@ -1,4 +1,4 @@
-// Public API surface — @dome/sdk v1.0.
+// Public v1 engine API surface for @marktoda/dome.
 //
 // The canonical write path is git: clients commit markdown to `main`, and
 // the engine watches the branch (via `dome serve`) and runs adoption when

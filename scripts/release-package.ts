@@ -4,8 +4,50 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 
 const repoRoot = resolve(import.meta.dir, "..");
+
+export const RELEASE_PACKAGE_NAME = "@marktoda/dome";
+
+const EXPECTED_EXPORTS = Object.freeze({
+  ".": Object.freeze({
+    types: "./src/index.ts",
+    default: "./src/index.ts",
+  }),
+  "./cli": Object.freeze({
+    types: "./src/cli/index.ts",
+    default: "./src/cli/index.ts",
+  }),
+  "./mcp": Object.freeze({
+    types: "./src/mcp/server.ts",
+    default: "./src/mcp/server.ts",
+  }),
+});
+
+const EXPECTED_MANIFEST_FIELDS = Object.freeze({
+  name: RELEASE_PACKAGE_NAME,
+  version: "0.3.9",
+  description: "Dome — a local, self-tending operating system for your second brain.",
+  license: "MIT",
+  author: "Mark Toda",
+  repository: Object.freeze({
+    type: "git",
+    url: "git+https://github.com/marktoda/dome.git",
+  }),
+  homepage: "https://github.com/marktoda/dome#readme",
+  bugs: Object.freeze({ url: "https://github.com/marktoda/dome/issues" }),
+  publishConfig: Object.freeze({ access: "public" }),
+  engines: Object.freeze({ bun: ">=1.2.13 <2" }),
+  packageManager: "bun@1.2.13",
+  type: "module",
+  main: "src/index.ts",
+  types: "src/index.ts",
+  exports: EXPECTED_EXPORTS,
+  bin: Object.freeze({ dome: "bin/dome" }),
+});
+
+const PACKAGE_PATH_SEGMENTS = packagePathSegments(RELEASE_PACKAGE_NAME);
 
 export const RELEASE_PACKAGE_CAPS = Object.freeze({
   entries: 500,
@@ -25,6 +67,7 @@ const ALLOWED_PATHS = Object.freeze([
   "assets/model-providers/",
   "assets/source-handlers/",
   "bin/dome",
+  "LICENSE",
   "README.md",
   // npm always includes package.json independently of the files allowlist.
   "package.json",
@@ -106,6 +149,7 @@ export function validatePackResult(result: PackResult): void {
     throw new Error("release artifact bin/dome is missing or not executable");
   }
   for (const required of [
+    "LICENSE",
     "README.md",
     "package.json",
     "contracts/agent-stream.ts",
@@ -122,6 +166,27 @@ export function validatePackResult(result: PackResult): void {
       throw new Error(`release artifact is missing runtime path: ${required}`);
     }
   }
+}
+
+export function validateReleasePackageManifest(manifest: unknown): ReadonlyArray<string> {
+  if (!isRecord(manifest)) {
+    throw new Error("installed release package manifest is not an object");
+  }
+  for (const forbidden of ["private", "os", "cpu"] as const) {
+    if (forbidden in manifest) {
+      throw new Error(`installed release package manifest must not declare ${forbidden}`);
+    }
+  }
+  for (const [field, expected] of Object.entries(EXPECTED_MANIFEST_FIELDS)) {
+    if (!isDeepStrictEqual(manifest[field], expected)) {
+      throw new Error(`installed release package manifest has unexpected ${field}`);
+    }
+  }
+  return Object.freeze(
+    Object.keys(EXPECTED_EXPORTS).map((key) =>
+      key === "." ? RELEASE_PACKAGE_NAME : `${RELEASE_PACKAGE_NAME}${key.slice(1)}`
+    ),
+  );
 }
 
 export function currentSchemaReopenEvidence(
@@ -183,13 +248,11 @@ export async function rehearseReleasePackage(): Promise<ReleasePackageReport> {
     }, null, 2));
     await run([process.execPath, "add", "--offline", tarball], consumer);
 
-    const installedRoot = join(consumer, "node_modules", "@dome", "sdk");
+    const installedRoot = join(consumer, "node_modules", ...PACKAGE_PATH_SEGMENTS);
     const installedPackage = JSON.parse(
       await readFile(join(installedRoot, "package.json"), "utf8"),
-    ) as { readonly exports: Readonly<Record<string, unknown>> };
-    const exportSpecifiers = Object.keys(installedPackage.exports).map((key) =>
-      key === "." ? "@dome/sdk" : `@dome/sdk${key.slice(1)}`
-    );
+    ) as unknown;
+    const exportSpecifiers = validateReleasePackageManifest(installedPackage);
     const importProgram = exportSpecifiers
       .map((specifier) => `await import(${JSON.stringify(specifier)});`)
       .join("\n");
@@ -279,6 +342,16 @@ function parseStatus(result: CommandResult): { readonly head: string | null; rea
     head: typeof parsed.head === "string" ? parsed.head : null,
     adopted: typeof parsed.adopted === "string" ? parsed.adopted : null,
   };
+}
+
+function packagePathSegments(packageName: string): ReadonlyArray<string> {
+  const match = /^(@[^/]+)\/([^/]+)$/.exec(packageName);
+  if (match === null) throw new Error(`release package name is not scoped: ${packageName}`);
+  return Object.freeze([match[1]!, match[2]!]);
+}
+
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 type CommandResult = {

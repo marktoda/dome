@@ -1,6 +1,6 @@
 // Pins ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY (axiom, bundle-enforced).
 //
-// The @dome/sdk core entrypoint (src/index.ts) must not statically pull
+// The @marktoda/dome core entrypoint (src/index.ts) must not statically pull
 // @anthropic-ai/sdk, ai (Vercel AI SDK), or @modelcontextprotocol/sdk
 // into its static import graph. A regression — e.g., re-exporting
 // runWorkflow from src/index.ts — would static-import `ai`; this test

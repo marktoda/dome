@@ -1,7 +1,7 @@
 ---
 type: invariant
 created: 2026-05-27
-updated: 2026-07-11
+updated: 2026-07-17
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 description: Processor.run returns only Effect[] — no side effects; ProcessorContext has no writers and the processor-purity lint bans mutation imports
@@ -24,7 +24,7 @@ tier: axiom
 1. **`ProcessorContext` interface has no mutation surface.** TypeScript's structural typing makes a `Processor.run` body that tries to `ctx.write(...)` or `ctx.git.commit(...)` fail compilation — the methods don't exist on the type.
 2. **Processor constructors freeze the executable surface.** `defineProcessorImplementation(...)` freezes implementation exports; legacy `defineProcessor(...)` freezes full Processor exports. Reassigning `run` after definition fails.
 3. **The engine never gives a processor a writer reference.** `ProcessorContext` carries `snapshot` (read-only), `changedPaths` (read-only), `capabilities` (an opaque token), `now()` (host-clock read), `modelInvoke?` (an LLM-call function), `sourceRef` (a helper) — no `writer`, no `db`, no `git`.
-4. **The semantic linter `processor-purity`** ([[wiki/linters/processor-purity]]) statically inspects every file under `assets/extensions/*/processors/` and `<vault>/.dome/extensions/*/processors/` for imports of mutation modules (`node:fs`, `bun:sqlite`, `isomorphic-git`, etc.). Imports outside an allowlist (Zod, type-only imports from `@dome/sdk`) fail the lint.
+4. **The semantic linter `processor-purity`** ([[wiki/linters/processor-purity]]) statically inspects every file under `assets/extensions/*/processors/` and `<vault>/.dome/extensions/*/processors/` for imports of mutation modules (`node:fs`, `bun:sqlite`, `isomorphic-git`, etc.). Imports outside an allowlist (Zod, type-only imports from `@marktoda/dome`) fail the lint.
 
 **Counter-example:** A processor that imports `node:fs/promises` and calls `fs.writeFile(...)` inside `run()`. The semantic linter rejects the import. If it slipped through, the snapshot the processor reads from is a *committed* tree, not the working tree — `fs.writeFile` would only mutate the working tree (not the commit the engine builds the candidate from), so the write would be invisible to adoption and surface as a `vault.out-of-band-edit` event on the next watcher cycle. Either way, the effect of the bypass is "user notices and reports the broken processor"; the engine's invariants stay intact.
 

@@ -1,7 +1,7 @@
 ---
 type: linter
 created: 2026-05-27
-updated: 2026-06-12
+updated: 2026-07-17
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 description: Forbids processor files importing fs, sqlite, git, or network modules — run(ctx) must emit Effects only, never side-effect past the engine.
@@ -36,7 +36,7 @@ For every processor file, the check inspects every `import` and `import()` call,
 - Direct mutation calls such as `Bun.write`, `writeFile`, `appendFile`, `unlink`, `rename`, `mkdir`, `fetch`, SQLite mutation statements, and mutating git calls.
 
 **Allowed modules:**
-- `@dome/sdk` — the four core types and the `defineProcessor` helper.
+- `@marktoda/dome` — the four core types and the `defineProcessor` helper.
 - `node:path` / `node:path/posix` — path-string helpers are allowed; filesystem and git mutation APIs are not.
 - `zod` — input validation.
 - Bundle-local relative imports (other files in the same bundle).
@@ -77,7 +77,7 @@ const FORBIDDEN = new Set([
 ]);
 
 const ALLOWED = new Set([
-  "@dome/sdk", "zod", "node:path", "node:path/posix",
+  "@marktoda/dome", "zod", "node:path", "node:path/posix",
 ]);
 
 test("processor-purity", async () => {

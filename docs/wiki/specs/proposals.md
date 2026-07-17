@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-07-11
+updated: 2026-07-17
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
@@ -174,7 +174,7 @@ interface AdoptionResult {
 }
 ```
 
-Per docs/v1.md §13.2, "Claude Code does not need bespoke write tools." A client that can write markdown and commit via plain git can participate; the compiler host handles the rest. There is no `vault.tools.writeDocument(...)`, no `vault.dispatchEvents(...)` from outside the engine, no privileged-writer escape hatch. Internal core code (the engine itself, projection rebuilder, init scaffolder) reaches direct git/sqlite primitives through engine-internal modules that are not re-exported from `@dome/sdk`.
+Per docs/v1.md §13.2, "Claude Code does not need bespoke write tools." A client that can write markdown and commit via plain git can participate; the compiler host handles the rest. There is no `vault.tools.writeDocument(...)`, no `vault.dispatchEvents(...)` from outside the engine, no privileged-writer escape hatch. Internal core code (the engine itself, projection rebuilder, init scaffolder) reaches direct git/sqlite primitives through engine-internal modules that are not re-exported from `@marktoda/dome`.
 
 This is the structural fence behind [[wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]].
 

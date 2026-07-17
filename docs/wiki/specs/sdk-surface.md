@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-07-11
+updated: 2026-07-17
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
@@ -693,7 +693,7 @@ if it doesn't, redesign the feature before extending the core. [[glossary]]
 
 ## Dependency list
 
-`@dome/sdk` core depends on:
+`@marktoda/dome` core depends on:
 
 ```
 bun (runtime; ships sqlite, glob, file, watcher built-in)
@@ -703,18 +703,23 @@ yaml (config + manifest loading)
 zod 4 (boundary validation schemas)
 ```
 
-Planned provider adapters add:
+The shipped assistant HTTP/agent host (`src/assistant/`, reached through
+`src/http/` and Product Host) adds:
 ```
-ai (Vercel AI SDK; for model.invoke in garden-LLM processors)
+ai (Vercel AI SDK)
 @ai-sdk/anthropic
 ```
+
+The first-party vault command-provider asset at
+`assets/model-providers/anthropic.ts` uses plain `fetch`; it adds no SDK
+dependency.
 
 The shipped MCP adapter (`src/mcp/`, the `dome mcp` verb — see [[wiki/specs/mcp-surface]]) adds:
 ```
 @modelcontextprotocol/sdk
 ```
 
-The `@dome/sdk` core has no transitive dependency on `ai`, `@ai-sdk/anthropic`, or `@modelcontextprotocol/sdk`: the MCP package ships in `package.json` for the companion entrypoint, but it is never reachable from the static import graph of `src/index.ts`. Pinned by [[wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] and enforced by `tests/integration/bundle-deps.test.ts`.
+The `@marktoda/dome` root entrypoint has no transitive static-import dependency on `ai`, `@ai-sdk/anthropic`, or `@modelcontextprotocol/sdk`. Those packages are installed for the shipped assistant host and MCP companion entrypoint, but they are never reachable from the static import graph of `src/index.ts`. Pinned by [[wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] and enforced by `tests/integration/bundle-deps.test.ts`.
 
 ## Related
 
