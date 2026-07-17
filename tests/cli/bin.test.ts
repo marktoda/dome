@@ -241,7 +241,7 @@ async function expectServeSignalClearsHeartbeat(
       readonly serve_pid: number | null;
     };
     let lastStatusObservation = "status has not responded";
-    await waitFor(async () => {
+    const ready = await waitFor(async () => {
       // The serve process owns compiler startup concurrently. Status can
       // legitimately be nonzero or incomplete before the first adoption;
       // those observations mean "not ready yet", not a process-boundary
@@ -254,7 +254,7 @@ async function expectServeSignalClearsHeartbeat(
       ]);
       if (attempt.value === null) {
         lastStatusObservation = attempt.failure;
-        return false;
+        return null;
       }
       const status = attempt.value;
       const ready = (
@@ -271,17 +271,12 @@ async function expectServeSignalClearsHeartbeat(
           `adoptedMatches=${status.head !== null && status.adopted === status.head}`,
         ].join(" ");
       }
-      return ready;
+      return ready ? status : null;
     }, 5_000, () => lastStatusObservation);
 
-    // Once readiness has been observed, retain the strict process contract:
-    // exit 0, empty stderr, exact service identity, and fully adopted HEAD.
-    const ready = await runDomeJson<ServeStatus>([
-      "status",
-      "--vault",
-      vaultPath,
-      "--json",
-    ]);
+    // Assert the exact successful observation that established readiness.
+    // tryRunDomeJson only yields a value after exit 0, empty stderr, and valid
+    // object JSON; another status call could legitimately race a new HEAD.
     expect(ready.serve_status).toBe("running");
     expect(ready.serve_pid).toBe(serve.pid);
     expect(ready.head).not.toBeNull();
@@ -307,14 +302,15 @@ async function expectServeSignalClearsHeartbeat(
   }
 }
 
-async function waitFor(
-  predicate: () => Promise<boolean>,
+async function waitFor<T>(
+  probe: () => Promise<T | null>,
   timeoutMs: number,
   timeoutDetail?: () => string,
-): Promise<void> {
+): Promise<T> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
-    if (await predicate()) return;
+    const observation = await probe();
+    if (observation !== null) return observation;
     await new Promise<void>((resolve) => setTimeout(resolve, 25));
   }
   const detail = timeoutDetail?.().trim();

@@ -1585,15 +1585,16 @@ describe("Product Host terminal upgrade history", () => {
     }
   });
 
-  test("every retirement crash window retries to one immutable row", async () => {
-    for (const checkpoint of [
-      "summary-published",
-      "receipts-published",
-      "before-rename",
-      "after-rename",
-      "history-synced",
-      "upgrade-synced",
-    ] as const satisfies readonly HomeUpgradeRetirementCheckpoint[]) {
+  test.each([
+    "summary-published",
+    "receipts-published",
+    "before-rename",
+    "after-rename",
+    "history-synced",
+    "upgrade-synced",
+  ] satisfies HomeUpgradeRetirementCheckpoint[])(
+    "retirement crash at %s retries to one immutable row",
+    async (checkpoint) => {
       const f = await fixture();
       try {
         const transactionId = randomUUID();
@@ -1649,8 +1650,11 @@ describe("Product Host terminal upgrade history", () => {
           outcome: "committed",
         });
       } finally { await rm(f.root, { recursive: true, force: true }); }
-    }
-  }, 15_000);
+    },
+    // Each named crash window owns a complete fixture lifecycle. Keep the
+    // watchdog per case so hosted slowness identifies the affected seam.
+    { timeout: 10_000 },
+  );
 
   test("retirement holds global ownership through rename and both parent durability proofs", async () => {
     const f = await fixture();
