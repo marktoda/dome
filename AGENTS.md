@@ -50,7 +50,8 @@ By substrate type:
 
 ## How to run
 
-- `bun test` — full suite (invariants + integration + processors + capability enforcement + adoption loop + projection rebuild + CLI).
+- `bun test ./tests` — root SDK and product-runtime suite (invariants + integration + processors + capability enforcement + adoption loop + projection rebuild + CLI).
+- `bun run check:pwa` — PWA tests, typecheck, and production build. Run this and `bun test ./tests` for the full repository test surface.
 - `bun test tests/invariants` — invariant lockstep only.
 - `bun test tests/engine/apply-effect.test.ts tests/engine/capability-broker.test.ts` — broker enforcement coverage.
 - `bun test tests/integration/processor-purity.test.ts` — processor-side-effect-free check.

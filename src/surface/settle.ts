@@ -35,6 +35,7 @@ import { existsSync, readdirSync, readFileSync, type Dirent } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 
+import { compareStrings } from "../core/compare";
 import {
   dailyPath,
   dailyPathSettings,
@@ -279,7 +280,7 @@ export async function performSettleBatch(
   }
 
   const decisions = [...req.decisions].sort((a, b) =>
-    a.blockId.localeCompare(b.blockId)
+    compareStrings(a.blockId, b.blockId)
   );
   const reviewed = Object.freeze({
     keep: decisions.filter((d) => d.disposition === "keep").length,
@@ -558,7 +559,7 @@ async function planSettleBatch(
       expectedContent: file.original,
       content,
     }];
-  }).sort((a, b) => a.path.localeCompare(b.path));
+  }).sort((a, b) => compareStrings(a.path, b.path));
   if (files.length === 0) return Object.freeze({ kind: "no-changes" as const });
   return Object.freeze({
     kind: "apply" as const,

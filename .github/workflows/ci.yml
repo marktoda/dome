@@ -17,14 +17,19 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: macos-15
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.2.13
+
+      - name: Verify product host
+        run: test "$(uname -m)" = "arm64"
 
       # Test fixtures drive real git repos; runners ship git but no
       # identity, and some scenarios shell out to plain `git commit`.
@@ -43,8 +48,27 @@ jobs:
       - name: Typecheck (src + bundles + scripts)
         run: bun run typecheck
 
-      - name: Test
-        run: bun test
+      - name: Check patch whitespace
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: |
+          zero=0000000000000000000000000000000000000000
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            git diff --check "$PR_BASE_SHA...$PR_HEAD_SHA"
+          elif [ -n "$PUSH_BEFORE_SHA" ] && [ "$PUSH_BEFORE_SHA" != "$zero" ]; then
+            git diff --check "$PUSH_BEFORE_SHA..$CURRENT_SHA"
+          else
+            # A new branch has no event.before range. Check the commit that
+            # triggered the workflow without re-linting inherited history.
+            git show --check --format= --root "$CURRENT_SHA"
+          fi
 
-      - name: PWA check
+      - name: Test SDK and product runtime
+        run: bun test ./tests
+
+      - name: Check PWA
         run: bun run check:pwa

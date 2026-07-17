@@ -92,7 +92,7 @@ describe("runInspect", () => {
       }),
     );
     const dailyBundle = bundles.find((row) => row.bundle === "dome.daily");
-    expect(dailyBundle?.command_views).toBe(3);
+    expect(dailyBundle?.command_views).toBe(4);
 
     captured.out = [];
     expect(
@@ -183,6 +183,17 @@ describe("runInspect", () => {
         phase: "view",
         triggers: "command",
         commands: "query",
+        model: "none",
+      }),
+    );
+    const taskBacklog = processors.find(
+      (row) => row.processor === "dome.daily.task-backlog",
+    );
+    expect(taskBacklog).toEqual(
+      expect.objectContaining({
+        phase: "view",
+        triggers: "command",
+        commands: "task-backlog",
         model: "none",
       }),
     );

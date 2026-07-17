@@ -1874,6 +1874,20 @@ folded row's complete `sourceRefs`. `shown` and `omitted` mirror the bounded arr
 agents do not need to infer truncation from array lengths. `--date` is for
 reviewing another day and for deterministic tests; omitted means local today.
 
+`dome run task-backlog --date <YYYY-MM-DD> [--limit <n>] [--cursor <token>]
+[--json]` invokes the read-only `dome.daily.task-backlog` view. It applies the
+same complete projected open-task selector as Today, exact-groups commitments
+before paging, and emits the strict `dome.daily.task-backlog.list/v1`
+document. The document is bound to its adopted revision; its opaque cursor is
+valid only for that exact logical result set, so changed work returns a typed
+stale-cursor result instead of silently skipping rows. Review units retain
+exact SourceRefs and stable task anchors where available, identify overdue,
+dated, undated, and exact-duplicate candidates, and mark transient or
+ambiguous identities non-reviewable. This command only reads and classifies
+work. The separately locked `performSettleBatch` / `POST
+/task-backlog/review` seam owns review decisions and the resulting human
+commit.
+
 `dome today --prep [--date <YYYY-MM-DD>] [--limit <n>] [--json]` wraps the
 `dome.daily.prep` view processor. It uses the same source-backed daily action
 state as `dome today`, then renders a portable planning packet for the

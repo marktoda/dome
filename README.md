@@ -29,13 +29,16 @@ any other tool that works with files and Git.
   daily-maintenance processors can apply deterministic repairs; the nightly
   semantic garden emits reviewable proposals only.
 
-Dome Home is the complete product surface: a supervised engine on your Mac and
-an installable PWA for desktop and mobile browsers. The CLI, SDK, and MCP
-adapter expose the same underlying vault and engine for agents and automation.
+Dome Home is the product: a supervised engine on your Mac and an installable
+PWA for desktop and mobile browsers. The CLI, SDK, and MCP adapter expose the
+same underlying vault and engine for agents and automation.
 
 ## Current preview
 
 Dome is currently a technical preview with this supported shape:
+
+There is not yet a public download. The supported preview is built from a
+clean source checkout and installed as a versioned Home artifact.
 
 | | Current support |
 |---|---|
@@ -72,7 +75,7 @@ DOME="/path/from-the-directory-field/bin/dome"
 "$DOME" --help
 ```
 
-Continue with the [Dome Home getting-started guide](docs/getting-started.md).
+Continue with the [Dome Home getting-started guide](https://github.com/marktoda/dome/blob/main/docs/getting-started.md).
 It covers creating or adopting a vault, configuring the model provider,
 installing Home, pairing the PWA, the first Capture and Ask, updates, encrypted
 backup, restore, and recovery.
@@ -111,21 +114,21 @@ sealed SDK core.
 
 Start with:
 
-- [Architecture overview](architecture.md)
-- [Canonical design substrate](docs/index.md)
-- [Product-host contract](docs/wiki/specs/product-host.md)
-- [SDK surface and extension guide](docs/wiki/specs/sdk-surface.md)
+- [Architecture overview](https://github.com/marktoda/dome/blob/main/architecture.md)
+- [Canonical design substrate](https://github.com/marktoda/dome/blob/main/docs/index.md)
+- [Product-host contract](https://github.com/marktoda/dome/blob/main/docs/wiki/specs/product-host.md)
+- [SDK surface and extension guide](https://github.com/marktoda/dome/blob/main/docs/wiki/specs/sdk-surface.md)
 
 ## Develop and contribute
 
-Read [AGENTS.md](AGENTS.md) before changing the code, then use the
-[substrate index](docs/index.md) to find the relevant specification, invariant,
-matrix, and gotcha.
+Read [AGENTS.md](https://github.com/marktoda/dome/blob/main/AGENTS.md) before
+changing the code, then use the [substrate index](https://github.com/marktoda/dome/blob/main/docs/index.md)
+to find the relevant specification, invariant, matrix, and gotcha.
 
 ```sh
 bun install
 bun run typecheck
-bun test
+bun test ./tests
 ```
 
 Useful narrower gates include `bun test tests/invariants`, `bun run check:pwa`,

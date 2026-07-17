@@ -26,6 +26,10 @@ const EXEMPT_FIRST_PARTY_PROCESSORS = new Set([
   // reports on the claim loop's coherence over time but maintains no desired
   // state of its own (the dome.claim.coherence loop owns the claim facts).
   "dome.claims.stale-claims",
+  // Read-only paged review document. It classifies projected open-task facts
+  // for an owner decision but neither maintains nor settles desired state;
+  // performSettleBatch owns the separate human mutation boundary.
+  "dome.daily.task-backlog",
 ]);
 
 describe("first-party maintenance loops", () => {
