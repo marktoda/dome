@@ -39,6 +39,7 @@ import { isMap, parseDocument } from "yaml";
 
 import { adoptedRefName, getAdoptedRef } from "../../src/adopted-ref";
 import { runCli as runCliDispatch } from "../../src/cli/index";
+import { stringifyConfigDocument } from "../../src/config-document";
 import { commitOid, type CommitOid } from "../../src/core/source-ref";
 import {
   detectDrift,
@@ -673,7 +674,7 @@ async function openRuntime(
  * remains the real config-less compatibility mode, and an explicit fixture cap
  * remains byte-for-byte authoritative.
  */
-function withHarnessProcessorTimeout(
+export function withHarnessProcessorTimeout(
   initialFiles: Record<string, string> | undefined,
 ): Record<string, string> | undefined {
   const source = initialFiles?.[VAULT_CONFIG_PATH];
@@ -681,6 +682,10 @@ function withHarnessProcessorTimeout(
 
   const document = parseDocument(source);
   if (document.errors.length > 0) return initialFiles;
+  // `Document#hasIn` assumes a collection root. Preserve every other valid
+  // YAML root for the product loader to accept or reject without the harness
+  // throwing first or silently changing the fixture under test.
+  if (!isMap(document.contents)) return initialFiles;
   if (document.hasIn(["engine", "processor_timeout_ms"])) return initialFiles;
 
   const hasEngine = document.hasIn(["engine"]);
@@ -695,7 +700,10 @@ function withHarnessProcessorTimeout(
     HARNESS_PROCESSOR_TIMEOUT_MS,
   );
 
-  return { ...initialFiles, [VAULT_CONFIG_PATH]: document.toString() };
+  return {
+    ...initialFiles,
+    [VAULT_CONFIG_PATH]: stringifyConfigDocument(document),
+  };
 }
 
 // ----- Read surfaces -------------------------------------------------------

@@ -5,9 +5,32 @@
 // correctly. These run on every CI and catch regressions in the
 // framework itself.
 
-import { expect } from "bun:test";
+import { describe, expect, test } from "bun:test";
 
 import { scenario } from "./index";
+import { withHarnessProcessorTimeout } from "./harness";
+
+describe("withHarnessProcessorTimeout", () => {
+  test.each([
+    ["scalar root", "configured\n"],
+    ["null root", "null\n"],
+    ["sequence root", "- extensions\n- engine\n"],
+    ["malformed YAML", "extensions: [\n"],
+    ["scalar engine", "engine: configured\nextensions: {}\n"],
+    ["null engine", "engine: null\nextensions: {}\n"],
+    ["sequence engine", "engine:\n  - configured\nextensions: {}\n"],
+  ])("preserves a %s byte-for-byte", (_caseName, source) => {
+    const initialFiles = {
+      ".dome/config.yaml": source,
+      "owner-authored.md": "unchanged\n",
+    };
+
+    const result = withHarnessProcessorTimeout(initialFiles);
+
+    expect(result).toBe(initialFiles);
+    expect(result?.[".dome/config.yaml"]).toBe(source);
+  });
+});
 
 scenario(
   {
