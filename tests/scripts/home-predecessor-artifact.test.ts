@@ -12,7 +12,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import {
   assertHomePredecessorObservation,
@@ -31,6 +31,7 @@ import {
   inspectHomeArtifactTar,
 } from "../../src/product-host/home-artifact-archive";
 import { readBoundedStableRegularFile } from "../../src/platform/bounded-regular-file";
+import { preparePrivateWorkspace } from "../../src/platform/private-workspace";
 
 const RECEIPT_PATH = join(
   import.meta.dir,
@@ -275,6 +276,40 @@ describe("Home predecessor artifact provenance", () => {
         temporaryParent: alias,
       })).rejects.toThrow("workspace parent is not a direct directory");
       expect(await readdir(parent)).toEqual([]);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("shared file and workspace seams snapshot caller input before awaits", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-shared-seam-snapshot-"));
+    try {
+      const file = join(root, "four-bytes");
+      await writeFile(file, "four");
+      const readInput = {
+        path: file,
+        maxBytes: 3,
+        invalidMessage: "original invalid",
+        changedMessage: "original changed",
+        expectedMessage: "original expected",
+      };
+      await expect(readBoundedStableRegularFile(readInput, {
+        afterLexicalStat: async () => {
+          readInput.maxBytes = 4;
+          readInput.invalidMessage = "mutated invalid";
+          Object.assign(readInput, { expectedBytes: 4 });
+        },
+      })).rejects.toThrow("original invalid");
+
+      const workspaceInput = { parent: root, prefix: "original-", label: "original label" };
+      const workspace = await preparePrivateWorkspace(workspaceInput, {
+        afterParentCapture: async () => {
+          workspaceInput.parent = join(root, "mutated-parent");
+          workspaceInput.prefix = "mutated-";
+          workspaceInput.label = "mutated label";
+        },
+      });
+      expect(basename(workspace.root)).toStartWith("original-");
+      await workspace.dispose();
+      expect(await readdir(root)).toEqual(["four-bytes"]);
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 

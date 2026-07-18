@@ -8,35 +8,44 @@ export async function preparePrivateWorkspace(input: Readonly<{
   parent: string;
   prefix: string;
   label: string;
-}>): Promise<PrivateWorkspace> {
-  if (!/^\.?[a-z0-9-]+-$/.test(input.prefix)) throw new Error(`${input.label} workspace prefix is invalid`);
-  const lexicalParent = resolve(input.parent);
+}>, dependencies: Readonly<{
+  /** Deterministic mutation hook; production never supplies it. */
+  afterParentCapture?(): Promise<void>;
+}> = {}): Promise<PrivateWorkspace> {
+  // Validation and use share one synchronous snapshot of caller-owned input.
+  const parent = input.parent;
+  const prefix = input.prefix;
+  const label = input.label;
+  const afterParentCapture = dependencies.afterParentCapture;
+  if (!/^\.?[a-z0-9-]+-$/.test(prefix)) throw new Error(`${label} workspace prefix is invalid`);
+  const lexicalParent = resolve(parent);
   const lexicalInfo = await lstat(lexicalParent);
   if (!lexicalInfo.isDirectory() || lexicalInfo.isSymbolicLink()) {
-    throw new Error(`${input.label} workspace parent is not a direct directory`);
+    throw new Error(`${label} workspace parent is not a direct directory`);
   }
   const canonicalParent = await realpath(lexicalParent);
   const canonicalInfo = await lstat(canonicalParent);
   if (!canonicalInfo.isDirectory() || canonicalInfo.isSymbolicLink() ||
     canonicalInfo.dev !== lexicalInfo.dev || canonicalInfo.ino !== lexicalInfo.ino) {
-    throw new Error(`${input.label} workspace parent identity is inconsistent`);
+    throw new Error(`${label} workspace parent identity is inconsistent`);
   }
-  const root = await mkdtemp(join(canonicalParent, input.prefix));
+  await afterParentCapture?.();
+  const root = await mkdtemp(join(canonicalParent, prefix));
   const rootInfo = await lstat(root);
   const currentParent = await lstat(lexicalParent);
   if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink() ||
     !currentParent.isDirectory() || currentParent.isSymbolicLink() ||
     currentParent.dev !== lexicalInfo.dev || currentParent.ino !== lexicalInfo.ino ||
     await realpath(lexicalParent) !== canonicalParent) {
-    await removeOwnedWorkspace(root, rootInfo, input.label);
-    throw new Error(`${input.label} workspace parent changed during creation`);
+    await removeOwnedWorkspace(root, rootInfo, label);
+    throw new Error(`${label} workspace parent changed during creation`);
   }
   let disposed = false;
   return Object.freeze({
     root,
     dispose: async () => {
       if (disposed) return;
-      await removeOwnedWorkspace(root, rootInfo, input.label);
+      await removeOwnedWorkspace(root, rootInfo, label);
       disposed = true;
     },
   });
