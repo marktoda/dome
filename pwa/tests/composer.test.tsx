@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, mock } from "bun:test";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Composer } from "../src/components/Composer";
+import { expectModalFocusRestored } from "./support/modal-focus";
 
 afterEach(cleanup);
 
@@ -155,7 +156,7 @@ describe("Composer", () => {
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
       expect(screen.queryByText("Captured")).toBeNull();
       expect(screen.queryByText(/Filed to your inbox/i)).toBeNull();
-      expect(document.activeElement).toBe(screen.getByLabelText("ask or capture"));
+      await expectModalFocusRestored(screen.getByLabelText("ask or capture"));
     } finally {
       globalThis.MediaRecorder = originalRecorder;
       if (originalMediaDevices === undefined) Reflect.deleteProperty(navigator, "mediaDevices");
@@ -214,7 +215,7 @@ describe("Composer", () => {
       expect(document.activeElement).toBe(fileButton);
       fireEvent.keyDown(document, { key: "Escape" });
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-      expect(document.activeElement).toBe(screen.getByLabelText("ask or capture"));
+      await expectModalFocusRestored(screen.getByLabelText("ask or capture"));
       expect(review.isConnected).toBe(false);
     } finally {
       globalThis.MediaRecorder = originalRecorder;

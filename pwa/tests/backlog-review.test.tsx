@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import type { DomeClient } from "../src/api/client";
 import type { TaskBacklog, TaskBacklogReviewResult } from "../src/api/types";
 import { BacklogReview } from "../src/components/BacklogReview";
+import { expectModalFocusRestored } from "./support/modal-focus";
 
 afterEach(cleanup);
 
@@ -185,7 +186,7 @@ describe("BacklogReview", () => {
     expect(seen).toEqual([{ path: "wiki/a.md", commit: REVISION }]);
     fireEvent.keyDown(document, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(document.activeElement).toBe(open);
+    await expectModalFocusRestored(open);
   });
 
   test("requires an explicit valid defer date, supports confirmation cancel, and posts one exact batch", async () => {
@@ -211,11 +212,7 @@ describe("BacklogReview", () => {
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Apply 1 selected" }));
     fireEvent.click(cancel);
     expect(screen.queryByRole("alertdialog")).toBeNull();
-    // useModalFocus restores the trigger in its documented cleanup microtask.
-    // Flush that exact boundary instead of polling, which can starve the queued
-    // restoration under Bun's happy-dom runner.
-    await Promise.resolve();
-    expect(document.activeElement).toBe(reviewSelected);
+    await expectModalFocusRestored(reviewSelected);
     expect(review).toHaveBeenCalledTimes(0);
 
     fireEvent.click(screen.getByRole("button", { name: "Review selected" }));

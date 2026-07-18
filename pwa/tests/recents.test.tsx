@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { DomeClient } from "../src/api/client";
 import { Recents } from "../src/components/Recents";
 import type { Recents as RecentsT } from "../src/api/types";
+import { expectModalFocusRestored } from "./support/modal-focus";
 
 afterEach(cleanup);
 
@@ -43,7 +44,7 @@ describe("Recents", () => {
       await waitFor(() => expect(screen.getByText("Adopted activity evidence", { exact: false })).toBeDefined());
       fireEvent.keyDown(document, { key: "Escape" });
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-      expect(document.activeElement).toBe(row);
+      await expectModalFocusRestored(row);
     } finally {
       globalThis.fetch = originalFetch;
     }

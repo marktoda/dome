@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { StrictMode } from "react";
 import { DomeClient } from "../src/api/client";
 import { ChatTranscript } from "../src/components/ChatTranscript";
+import { expectModalFocusRestored } from "./support/modal-focus";
 
 afterEach(cleanup);
 
@@ -74,7 +75,7 @@ describe("ChatTranscript", () => {
 
       fireEvent.keyDown(document, { key: "Escape" });
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-      expect(document.activeElement).toBe(chip);
+      await expectModalFocusRestored(chip);
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -107,7 +108,7 @@ describe("ChatTranscript", () => {
       await waitFor(() => expect(screen.getByRole("dialog")).toBeDefined());
       fireEvent.click(screen.getByRole("button", { name: "Close source" }));
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-      expect(document.activeElement).toBe(screen.getByRole("button", { name: /wiki\/x\.md/ }));
+      await expectModalFocusRestored(screen.getByRole("button", { name: /wiki\/x\.md/ }));
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(failures).toEqual([]);
     } finally {
