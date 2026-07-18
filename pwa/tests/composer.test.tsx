@@ -18,7 +18,7 @@ describe("Composer", () => {
   test("Capture opens the separate text and voice sheet", () => {
     render(<Composer onAsk={() => {}} onCapture={async () => {}} onTranscribe={async () => ""} />);
     fireEvent.click(screen.getByRole("button", { name: "Capture" }));
-    expect(screen.getByRole("dialog", { name: "CAPTURE A THOUGHT" })).toBeDefined();
+    expect(screen.getByRole("dialog", { name: /capture a thought/i })).toBeDefined();
     expect(screen.getByRole("button", { name: "Record voice" })).toBeDefined();
   });
 

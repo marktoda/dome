@@ -54,6 +54,7 @@ export function Recents({ recents, client, interactive }: {
           citation={{ path: opened.entry.path, commit: opened.entry.commit }}
           client={client}
           returnFocus={opened.trigger}
+          editedLabel={`edited ${ago(opened.entry.lastChangedAt)}`}
           onClose={() => setOpened(null)}
         />
       ) : null}

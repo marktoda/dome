@@ -55,12 +55,16 @@ export function SourceViewer({
   client,
   onClose,
   returnFocus,
+  editedLabel,
   MarkdownRenderer = VaultMarkdown,
 }: {
   readonly citation: Citation;
   readonly client: DomeClient;
   readonly onClose: () => void;
   readonly returnFocus: HTMLElement | null;
+  /** Optional "edited 2d ago" provenance — only when the opener knows it
+   * (Activity carries a timestamp; a chat citation does not). */
+  readonly editedLabel?: string;
   /** A narrow renderer seam used by failure-containment tests. */
   readonly MarkdownRenderer?: MarkdownRenderer;
 }): React.ReactElement {
@@ -120,7 +124,7 @@ export function SourceViewer({
         <header className="source-head">
           <div>
             <h2 id="source-title">{citation.path}</h2>
-            <p id="source-revision">Revision {shortCommit}</p>
+            <p id="source-revision">rev {shortCommit}{editedLabel !== undefined ? ` · ${editedLabel}` : ""}</p>
           </div>
           <button ref={closeRef} type="button" className="source-close" onClick={onClose} aria-label="Close source">×</button>
         </header>

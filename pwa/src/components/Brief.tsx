@@ -20,6 +20,28 @@ function fmtDue(iso: string): string {
   return `${MONTHS[Number(m[2]) - 1] ?? ""} ${Number(m[3])}`;
 }
 
+/** Time-of-day greeting — the one warm line at the top of Today. */
+function greeting(): string {
+  try {
+    const h = new Date().getHours();
+    return h < 12 ? "Good morning." : h < 18 ? "Good afternoon." : "Good evening.";
+  } catch {
+    return "Today.";
+  }
+}
+
+/** Last path segment for a dim provenance line (never the raw path off-screen). */
+function baseName(path: string): string {
+  const seg = path.includes("/") ? path.slice(path.lastIndexOf("/") + 1) : path;
+  return seg.length > 0 ? seg : path;
+}
+
+/** Split brief prose into paragraphs on blank lines — the brief is the hero, so
+ * it reads as prose, not one dense block. */
+function briefParagraphs(text: string): string[] {
+  return text.split(/\n\s*\n/).map((p) => p.trim()).filter((p) => p.length > 0);
+}
+
 /** Priority marker glyph, shared with the CLI/HTTP surfaces via the view-model. */
 function PriorityMark({ priority }: { priority: TodayTaskRow["priority"] }): React.ReactElement | null {
   const chars = priorityMarkerChars(priority, true);
@@ -81,7 +103,10 @@ function QuestionCard({ q, onResolve, interactive }: { q: TodayQuestionRow; onRe
   const titleId = `question-${q.id}`;
   return (
     <section className="qcard" aria-labelledby={titleId}>
-      <div id={titleId} className="body">{renderRich(q.question)}</div>
+      <div className="qcard-head">
+        <span className="tag-glyph decide-glyph" aria-hidden="true">?</span>
+        <div id={titleId} className="body">{renderRich(q.question)}</div>
+      </div>
       <div className="opts">
         {q.options.map((opt) => <button key={opt} type="button" disabled={!interactive} onClick={() => onResolve(q.id, opt)}>{opt}</button>)}
       </div>
@@ -91,11 +116,17 @@ function QuestionCard({ q, onResolve, interactive }: { q: TodayQuestionRow; onRe
 
 function ReviewCard({ review }: { review: TodayReviewRow }): React.ReactElement {
   return (
-    <section className="qcard review-card" aria-label="Review needed">
-      <div className="body">{renderRich(review.reason)}</div>
-      {review.paths.length > 0 ? <div className="review-evidence">Evidence: {review.paths.join(", ")}</div> : null}
-      <div className="review-action">On your Mac, run <code>{review.reviewCommand}</code></div>
-    </section>
+    <details className="qcard review-card" aria-label="Review needed">
+      <summary className="review-summary">
+        <span className="tag-glyph review-glyph" aria-hidden="true">⚠</span>
+        <span className="body">{renderRich(review.reason)}</span>
+        <span className="q-caret" aria-hidden="true">›</span>
+      </summary>
+      <div className="review-detail">
+        {review.paths.length > 0 ? <div className="review-evidence">Evidence: {review.paths.join(", ")}</div> : null}
+        <div className="review-action">On your Mac, run <code>{review.reviewCommand}</code></div>
+      </div>
+    </details>
   );
 }
 
@@ -241,15 +272,36 @@ export function Brief(
   const agendaEvents = calendar !== null ? calendar.events.slice(0, AGENDA_CAP) : [];
   const agendaMore = calendar !== null ? calendar.events.length - agendaEvents.length : 0;
 
+  // Verdict line — needs-you first. Decide (questions), review (owner
+  // attention), focus (still-open in view). Same numbers as `summary`, led
+  // with the two that actually need a decision.
+  const decideCount = qCount;
+  const reviewTotal = ownerBacklog;
+  const focusCount = openCount;
+  const briefSource = brief?.sourceRef?.path;
+
   return (
     <section className="brief">
       {settlementNotice !== null ? <p className="task-settle-announcement" role="status" aria-live="polite">{settlementNotice}</p> : null}
       <div className="brief-head">
-        <span className="label">today · {summary}</span>
+        <span className="greeting">{greeting()}</span>
         {hasMessages ? <button type="button" className="hide" onClick={onToggle}>hide ▴</button> : null}
       </div>
 
-      {brief !== null ? <p className="brief-text">{renderRich(brief.text)}</p> : null}
+      {decideCount > 0 || reviewTotal > 0 || focusCount > 0 ? (
+        <div className="verdict" aria-label="What needs you">
+          {decideCount > 0 ? <span className="v v-decide"><span className="vg" aria-hidden="true">?</span> {decideCount} decide</span> : null}
+          {reviewTotal > 0 ? <span className="v v-review"><span className="vg" aria-hidden="true">⚠</span> {reviewTotal} review</span> : null}
+          {focusCount > 0 ? <span className="v v-focus"><span className="vg" aria-hidden="true">•</span> {focusCount} focus</span> : null}
+        </div>
+      ) : null}
+
+      {brief !== null ? (
+        <div className="brief-text">
+          {briefParagraphs(brief.text).map((para, i) => <p className="brief-para" key={`bp${i}`}>{renderRich(para)}</p>)}
+          {briefSource !== undefined ? <div className="brief-source">↳ {baseName(briefSource)} · brief</div> : null}
+        </div>
+      ) : null}
 
       {agendaEvents.length > 0 ? (
         <div className="section agenda">
@@ -267,9 +319,27 @@ export function Brief(
         </div>
       ) : null}
 
+      {questions.length > 0 ? (
+        <div className="section">
+          <div className="label">To decide</div>
+          <div className="rows">{questions.map((q) => <QuestionCard key={q.id} q={q} onResolve={onResolve} interactive={interactive} />)}</div>
+        </div>
+      ) : null}
+      {reviews.length > 0 ? (
+        <div className="section">
+          <div className="label">Needs review</div>
+          <div className="rows">{reviews.map((review) => <ReviewCard key={review.id} review={review} />)}</div>
+        </div>
+      ) : null}
+      {attentionBacklog > 0 ? (
+        <div className="brief-more review-backlog-action">
+          {attentionBacklog} more {attentionBacklog === 1 ? "item needs" : "items need"} attention. On your Mac, run <code>dome check --decisions</code>.
+        </div>
+      ) : null}
+
       {shownInline > 0 || laterAll.length > 0 || agedBacklog.length > 0 || omittedOpenCount > 0 ? (
         <div className="section">
-          <div className="label">Still open</div>
+          <div className="label">In focus</div>
           <Bucket label="overdue" cls="bucket-overdue" items={overdue} settlements={settlements} onSettle={handleSettle} interactive={interactive} />
           <Bucket label="today" cls="bucket-today" items={dueToday} settlements={settlements} onSettle={handleSettle} interactive={interactive} />
           <Bucket label="this week" cls="bucket-week" items={thisWeek} settlements={settlements} onSettle={handleSettle} interactive={interactive} />
@@ -310,24 +380,6 @@ export function Brief(
               Review backlog
             </button>
           ) : null}
-        </div>
-      ) : null}
-
-      {questions.length > 0 ? (
-        <div className="section">
-          <div className="label">To decide</div>
-          <div className="rows">{questions.map((q) => <QuestionCard key={q.id} q={q} onResolve={onResolve} interactive={interactive} />)}</div>
-        </div>
-      ) : null}
-      {reviews.length > 0 ? (
-        <div className="section">
-          <div className="label">Needs review</div>
-          <div className="rows">{reviews.map((review) => <ReviewCard key={review.id} review={review} />)}</div>
-        </div>
-      ) : null}
-      {attentionBacklog > 0 ? (
-        <div className="brief-more review-backlog-action">
-          {attentionBacklog} more {attentionBacklog === 1 ? "item needs" : "items need"} attention. On your Mac, run <code>dome check --decisions</code>.
         </div>
       ) : null}
     </section>

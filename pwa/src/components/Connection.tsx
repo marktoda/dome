@@ -4,9 +4,12 @@ import type { ProductSession } from "../connection/product-session";
 
 type Props = {
   session: ProductSession;
+  /** Honest "synced 2m ago" from the last successful Today load; omitted until
+   * the first load lands. */
+  syncedLabel?: string;
 };
 
-export function Connection({ session }: Props): React.ReactElement {
+export function Connection({ session, syncedLabel }: Props): React.ReactElement {
   const [open, setOpen] = useState(false);
   const document = session.document;
   return (
@@ -17,7 +20,7 @@ export function Connection({ session }: Props): React.ReactElement {
         aria-expanded={open}
         aria-controls="dome-connection-details"
         onClick={() => setOpen((value) => !value)}
-      >Connection · {session.connection.label}</button>
+      ><span className={`conn-pulse ${session.connection.tone}`} aria-hidden="true" />Connection · {session.connection.label}{syncedLabel !== undefined ? ` · ${syncedLabel}` : ""}</button>
       {open ? <div id="dome-connection-details" className="connection-body" role="region" aria-label="Connection details" tabIndex={0}>
         {document === null ? <p>No connection details are available yet.</p> : (
           <>

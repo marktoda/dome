@@ -167,22 +167,32 @@ export function Composer({
 
   if (cap.phase === "review" || cap.phase === "saving") {
     const saving = cap.phase === "saving";
+    // Voice is a secondary path: text is always available; when transcription
+    // isn't set up (or we're offline) the button dims and one quiet line says why.
+    const voiceUnavailable = !canRecord() || availability !== "available" || !voiceEnabled;
+    const voiceReason = availability !== "available"
+      ? "Voice needs a live connection · text works"
+      : !voiceEnabled
+        ? "Voice needs transcription setup on your Mac · text works"
+        : "Voice recording isn't available on this device · text works";
     return (
       <div className="sheet-backdrop">
         <section ref={captureContainerRef} className="sheet" tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="capture-review-title">
           <div className="grip" />
-          <div className="tag"><span className="dot" /><span id="capture-review-title" className="label">CAPTURE A THOUGHT</span></div>
+          <div id="capture-review-title" className="sheet-title">Capture a thought</div>
+          <div className="sheet-sub">Files to inbox — Dome sorts it on the next pass.</div>
           <textarea ref={reviewTextareaRef} aria-label="capture draft" value={cap.draft} disabled={saving} onChange={(e) => dispatch({ kind: "edit", text: e.target.value })} />
           <div className="actions">
             <button type="button" className="cancel" disabled={saving} onClick={() => dispatch({ kind: "cancel" })}>Cancel</button>
             <button
               type="button"
               className="record-capture"
-              disabled={saving || !canRecord() || availability !== "available" || !voiceEnabled}
+              disabled={saving || voiceUnavailable}
               onClick={() => { void startRecording(); }}
             >Record voice</button>
             <button type="button" className="save-capture" disabled={saving || cap.draft.trim().length === 0} onClick={() => { void saveLocally(); }}>{saving ? "Saving locally…" : "Save capture"}</button>
           </div>
+          {voiceUnavailable ? <div className="sheet-voice-note">{voiceReason}</div> : null}
         </section>
       </div>
     );

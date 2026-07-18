@@ -26,6 +26,17 @@ function todayLabel(): string {
   }
 }
 
+/** "synced 2m ago" from the last successful Today load. Honest — it is the last
+ * time live data actually landed, not a fabricated heartbeat. */
+function syncedAgo(at: number): string {
+  const m = Math.floor((Date.now() - at) / 60000);
+  if (m < 1) return "synced just now";
+  if (m < 60) return `synced ${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `synced ${h}h ago`;
+  return `synced ${Math.floor(h / 24)}d ago`;
+}
+
 export function reconcileStoppedTurn(stream: AgentStreamOutcome, stop: AgentStopOutcome): AgentStreamOutcome {
   if (stream.kind !== "cancelled" || stream.source === "server") return stream;
   if (stop.kind === "session-missing" || stop.kind === "session-expired" || stop.kind === "failed") return stop;
@@ -65,6 +76,7 @@ function Screen({ client, availability, connection }: {
   const [storageStatus, setStorageStatus] = useState<"persistent" | "best-effort" | "unknown">("unknown");
   const [turnPhase, setTurnPhase] = useState<"idle" | "streaming" | "stopping" | "retryable" | "session-ended">("idle");
   const [todayRefreshState, setTodayRefreshState] = useState<TodayRefreshState>("idle");
+  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
   const [recentsLoad, setRecentsLoad] = useState<ViewLoadState>("idle");
   const todayRefreshSequence = useRef(0);
   const recentsRefreshSequence = useRef(0);
@@ -100,6 +112,7 @@ function Screen({ client, availability, connection }: {
         if (sequence !== todayRefreshSequence.current) return;
         setToday(nextToday);
         setTodayRefreshState("ready");
+        setLastSyncedAt(Date.now());
       },
       () => {
         if (sequence !== todayRefreshSequence.current) return;
@@ -339,7 +352,6 @@ function Screen({ client, availability, connection }: {
         <span className="brand">Dome</span>
         <span className="meta">{todayLabel()}<span className={`availability-dot ${session.connection.tone}`} aria-hidden="true" /></span>
       </header>
-      <Connection session={session} />
       {session.recovery !== null ? (
         <RecoveryCard session={session} onRetry={connection.recheck} authRepair={connection.authRepair} />
       ) : null}
@@ -463,6 +475,7 @@ function Screen({ client, availability, connection }: {
         voiceEnabled={access.voice}
         presentation={session.composer}
       />
+      <Connection session={session} syncedLabel={lastSyncedAt !== null ? syncedAgo(lastSyncedAt) : undefined} />
     </main>
   );
 }
