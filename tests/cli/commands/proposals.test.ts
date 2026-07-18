@@ -6,7 +6,7 @@
 // store API (`enqueuePendingProposal`) since the engine sink is out of scope
 // here — see tests/surface/proposals.test.ts for the same pattern.
 
-import { afterEach, beforeEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -21,11 +21,6 @@ import { commitOid, sourceRef } from "../../../src/core/source-ref";
 import { commitSingleFileOnHead, resolveRef } from "../../../src/git";
 import { openProposalsDb } from "../../../src/proposals/db";
 import { enqueuePendingProposal } from "../../../src/proposals/pending-proposals";
-
-// Every case crosses the real setup, filesystem, SQLite, and native-Git seams.
-// Keep Bun's unit-test default from timing out around active setup on hosted macOS;
-// the root runner still owns the file-level 300s watchdog and process cleanup.
-setDefaultTimeout(10_000);
 
 // ----- Console capture -------------------------------------------------------
 

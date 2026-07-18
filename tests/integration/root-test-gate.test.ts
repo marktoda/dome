@@ -35,3 +35,11 @@ test("local, CI, and contributor root gates use the per-file runner", async () =
   expect(runner).toContain("child.unref()");
   expect(runner).toContain("process.exit(exitCode)");
 });
+
+test("direct and root test entrypoints share the exact 10s default", async () => {
+  const parsed = Bun.TOML.parse(
+    await readFile(resolve(REPO_ROOT, "bunfig.toml"), "utf8"),
+  ) as { readonly test?: { readonly timeout?: unknown } };
+
+  expect(parsed.test?.timeout).toBe(10_000);
+});

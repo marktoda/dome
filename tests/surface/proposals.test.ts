@@ -21,14 +21,7 @@
 //     but before proposal CAS converges without another commit.
 //   - performReject CAS-decides the row to `rejected` and lands no commit.
 
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  setDefaultTimeout,
-  test,
-} from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdtempSync } from "node:fs";
 import { mkdir, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -50,13 +43,6 @@ import {
   performReject,
   proposalsJson,
 } from "../../src/surface/proposals";
-
-// Each case owns a fresh setup transaction plus real filesystem, SQLite, and
-// native-Git work. The apply path also owns a bounded 5s controlled-mutation
-// lock wait, so this 10s scenario budget keeps the product deadline inside the
-// test deadline. The root runner retains its independent 300s per-file
-// watchdog and whole-process cleanup for an actual stall.
-setDefaultTimeout(10_000);
 
 // ----- Fixtures -------------------------------------------------------------
 
