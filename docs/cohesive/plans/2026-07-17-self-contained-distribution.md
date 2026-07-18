@@ -1,7 +1,7 @@
 ---
 type: plan
 created: 2026-07-17
-updated: 2026-07-17
+updated: 2026-07-18
 status: reviewed
 description: "Remaining missions to make Dome a self-contained, source-checkout-free PWA product through one Bun package and one guided setup journey."
 sources:
@@ -134,6 +134,14 @@ Each mission is a useful checkpoint and should land only after its own tests,
 review, and documentation are complete. A later mission may refine a public
 surface, but it must not be required to make an earlier checkpoint truthful.
 
+### Progress ledger
+
+| Mission | Status | Release evidence |
+| --- | --- | --- |
+| M0 — Restore trustworthy CI | **Complete** | Validated implementation SHA `d9efcf53`; GitHub Actions run `29624132748`, attempts 1 and 2 both succeeded. |
+| M1 — Public package and legal identity | Next | Begins from the green M0 release-truth checkpoint. |
+| M2–M12 | Planned | Intent and gates remain as specified below. |
+
 ### M0 — Restore trustworthy CI
 
 **Outcome:** `main` is a reliable signal before distribution changes begin.
@@ -190,6 +198,21 @@ or broadening the platform matrix.
 Checkpoint: a release-truth checkpoint after a fresh independent review. Keep
 the genuine drift repair distinct from the workflow/toolchain correction when
 two commits make that evidence clearer; neither commit disables coverage.
+
+Completion evidence (evidence SHA `d9efcf53`):
+
+- GitHub Actions run `29624132748` passed on attempts 1 and 2 on
+  `macos-15`/arm64 with Bun `1.2.13`.
+- The separately attributable typecheck, exhaustive root test, and PWA gates
+  passed. The root runner discovered and executed all 435 root test files in
+  isolated per-file Bun processes.
+- The final hardening pass kept the scenario catalog metadata-only while
+  collecting all 140 scenarios, accepted legal base64url request IDs
+  (including credential-derived IDs), consolidated redundant status-command
+  fixture lifecycles, placed the real concurrent Home-upgrade test watchdog
+  beyond its product-owned 30-second coordinator wait at 35 seconds, and
+  merged exact plus fuzzy Today-loop folding coverage into one scenario
+  lifecycle.
 
 ### M1 — Establish the public package and legal identity
 
