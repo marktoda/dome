@@ -15,6 +15,7 @@ import {
   exerciseInstalledHttpTimeoutForTests,
   exerciseInstalledUpgradeOrchestrationForTests,
   exercisePredecessorInstallTimeoutForTests,
+  exerciseStoppedPrecommitOperationForTests,
   hasExactHomePwaCaptureIdentityForTests,
   pairedDeviceIdForTests,
   parseHomePwaRevisionGrepPathsForTests,
@@ -113,6 +114,50 @@ const INPUT: InstalledHomeUpgradeRehearsalInput = Object.freeze({
   predecessorArchive: "/synthetic/predecessor.tar.gz",
   candidateArchive: "/synthetic/candidate.tar.gz",
   frozenFixtureRoot: "/synthetic/fixture",
+});
+
+describe("stopped pre-commit installed operation diagnostics", () => {
+  test("reports every closed operation id without reflecting its failure", async () => {
+    const secret = "dome_pair.secret-material /Users/owner/private-vault --token raw-secret";
+    for (const operation of [
+      "terminal-status-before",
+      "crash-child",
+      "retained-status",
+      "recovery-upgrade",
+      "terminal-receipt",
+      "terminal-status-after",
+    ]) {
+      let failure: unknown;
+      try {
+        await exerciseStoppedPrecommitOperationForTests(operation, async () => {
+          throw new Error(secret);
+        });
+      } catch (error) { failure = error; }
+      expect(failure).toBeInstanceOf(Error);
+      const message = failure instanceof Error ? failure.message : "";
+      expect(message).toBe(`installed stopped-precommit-crash operation ${operation} failed`);
+      expect(message).not.toContain("secret-material");
+      expect(message).not.toContain("/Users/");
+      expect(message).not.toContain("--token");
+    }
+  });
+
+  test("rejects caller-controlled labels before invoking the operation", async () => {
+    let invoked = false;
+    for (const operation of ["upgrade /Users/owner", "", null, { toString: () => "recovery-upgrade" }]) {
+      await expect(exerciseStoppedPrecommitOperationForTests(operation, async () => {
+        invoked = true;
+      })).rejects.toThrow("installed stopped-precommit-crash operation label is invalid");
+    }
+    expect(invoked).toBe(false);
+  });
+
+  test("returns successful operation completion unchanged", async () => {
+    await expect(exerciseStoppedPrecommitOperationForTests(
+      "recovery-upgrade",
+      async () => {},
+    )).resolves.toBeUndefined();
+  });
 });
 
 async function pathExists(path: string): Promise<boolean> {

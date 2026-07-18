@@ -79,6 +79,17 @@ export type InstalledHomeUpgradeScenario =
 
 type RetainedCheckpointPhase = "switching" | "committed";
 
+const STOPPED_PRECOMMIT_OPERATIONS = Object.freeze([
+  "terminal-status-before",
+  "crash-child",
+  "retained-status",
+  "recovery-upgrade",
+  "terminal-receipt",
+  "terminal-status-after",
+] as const);
+
+type StoppedPrecommitOperation = typeof STOPPED_PRECOMMIT_OPERATIONS[number];
+
 const SCENARIOS: ReadonlyArray<InstalledHomeUpgradeScenario> = Object.freeze([
   "ready-success",
   "stopped-precommit-crash",
@@ -164,6 +175,33 @@ export function retainedCheckpointOwnershipMatchesForTests(
     upgrade["operationId"] === transactionId &&
     upgrade["outcome"] === expectedUpgrade.outcome &&
     upgrade["nextAction"] === expectedUpgrade.nextAction;
+}
+
+/**
+ * Exercise the stopped-crash operation label without running an installed
+ * Home. The fixed message intentionally carries no reflected error, argv,
+ * path, or credential material.
+ */
+export async function exerciseStoppedPrecommitOperationForTests(
+  operation: unknown,
+  body: () => Promise<void>,
+): Promise<void> {
+  await runStoppedPrecommitOperation(operation, body);
+}
+
+async function runStoppedPrecommitOperation<T>(
+  operation: unknown,
+  body: () => Promise<T>,
+): Promise<T> {
+  if (typeof operation !== "string" ||
+    !STOPPED_PRECOMMIT_OPERATIONS.includes(operation as StoppedPrecommitOperation)) {
+    throw new Error("installed stopped-precommit-crash operation label is invalid");
+  }
+  try {
+    return await body();
+  } catch {
+    throw new Error(`installed stopped-precommit-crash operation ${operation} failed`);
+  }
 }
 
 function summaryRecord(value: unknown): Record<string, unknown> {
@@ -1090,22 +1128,31 @@ async function readySuccess(
 
 async function stoppedPrecommitCrash(context: ScenarioContext, prepared: PreparedArtifacts): Promise<void> {
   await bootoutAndDrain(context);
-  await assertTerminalStatus(context, prepared.candidateRoot, prepared.predecessor, "stopped");
-  await crashAtCheckpoint(context, prepared.candidateRoot, "candidate-installation-published");
-  await assertRetainedCheckpoint(context, "switching");
+  await runStoppedPrecommitOperation("terminal-status-before", async () =>
+    await assertTerminalStatus(context, prepared.candidateRoot, prepared.predecessor, "stopped"));
+  await runStoppedPrecommitOperation("crash-child", async () =>
+    await crashAtCheckpoint(context, prepared.candidateRoot, "candidate-installation-published"));
+  await runStoppedPrecommitOperation("retained-status", async () =>
+    await assertRetainedCheckpoint(context, "switching"));
 
-  const recovered = await candidateUpgrade(context, prepared.candidateRoot, true);
-  if (field(recovered, "status") !== "rolled-back" ||
-    field(recovered, "service") !== "stopped" || field(recovered, "recovered") !== true) {
-    throw new Error("packaged candidate did not exactly recover the stopped pre-commit crash");
-  }
-  const receipt = await candidateUpgrade(context, prepared.candidateRoot, true);
-  if (field(receipt, "status") !== "rolled-back" || field(receipt, "service") !== "stopped" ||
-    stringField(objectField(receipt, "transaction"), "operationId") !==
-      stringField(objectField(recovered, "transaction"), "operationId")) {
-    throw new Error("packaged candidate did not return the terminal rollback receipt");
-  }
-  await assertTerminalStatus(context, prepared.candidateRoot, prepared.predecessor, "stopped");
+  const recovered = await runStoppedPrecommitOperation("recovery-upgrade", async () => {
+    const result = await candidateUpgrade(context, prepared.candidateRoot, true);
+    if (field(result, "status") !== "rolled-back" ||
+      field(result, "service") !== "stopped" || field(result, "recovered") !== true) {
+      throw new Error("packaged candidate did not exactly recover the stopped pre-commit crash");
+    }
+    return result;
+  });
+  await runStoppedPrecommitOperation("terminal-receipt", async () => {
+    const receipt = await candidateUpgrade(context, prepared.candidateRoot, true);
+    if (field(receipt, "status") !== "rolled-back" || field(receipt, "service") !== "stopped" ||
+      stringField(objectField(receipt, "transaction"), "operationId") !==
+        stringField(objectField(recovered, "transaction"), "operationId")) {
+      throw new Error("packaged candidate did not return the terminal rollback receipt");
+    }
+  });
+  await runStoppedPrecommitOperation("terminal-status-after", async () =>
+    await assertTerminalStatus(context, prepared.candidateRoot, prepared.predecessor, "stopped"));
   await assertFrozenState(context, "n1");
   await assertLiveCredentialRows(context);
 }
