@@ -116,6 +116,11 @@ The inspector validates every selected-path component and walks in byte-stable
 sorted order without following symlinks. This applies equally to an existing
 vault and to a missing leaf beneath an existing parent; an ancestor symlink is
 always ambiguity evidence, never an invitation to inspect its target.
+Any component that case-folds to `.dome` or `.git` without being that exact
+lowercase spelling, or to `state` directly beneath `.dome`, is blocked before
+it is opened, read, or traversed. This fail-closed rule prevents
+case-insensitive filesystem aliases such as `.DOME` or `.dome/STATE` from
+bypassing the private floor.
 It hashes bounded tracked and untracked regular-file bytes and modes, exact
 symlink targets, Git index/HEAD and derived dirty evidence, ignore results,
 direct `info/exclude` bytes, the linked-worktree gitfile, Dome configuration, and
@@ -161,9 +166,13 @@ configuration, prompts, optional locks, hooks, filesystem monitors, pagers,
 external excludes, and external attributes disabled. Staged and worktree
 dirtiness are derived from index/HEAD plumbing plus Dome's own `O_NOFOLLOW`
 byte and mode proofs; setup never invokes `status`, diff drivers, textconv, or
-clean/smudge filters. `GIT_NO_LAZY_FETCH=1` and a deny-all transport policy
-make a missing partial-clone/promisor object an ambiguity blocker rather than a
-fetch; no upload-pack, credential helper, or network transport is attempted.
+clean/smudge filters. For a tracked sensitive-name file, the inspector instead
+compares content-free index stat evidence from `ls-files --debug` with its
+repeated `lstat` identity proofs. A match may prove the path clean without
+loading its contents into Dome; missing or changed evidence is dirty or
+ambiguous, never assumed clean. `GIT_NO_LAZY_FETCH=1` and a deny-all transport
+policy make a missing partial-clone/promisor object an ambiguity blocker rather
+than a fetch; no upload-pack, credential helper, or network transport is attempted.
 The fixed command inventory cannot invoke a credential or
 network operation. The vault inspector does not read
 credentials, call a model, access the network, open the Dome runtime, or
@@ -258,6 +267,25 @@ internal or external without following them), special files, and hard-linked
 files are `blocked`. The rows contain no source bytes. The apply checkpoint
 must consume this exact inventory under explicit consent; it may not rediscover
 a broader tracked set.
+
+For a non-Git owner vault, setup loads a bounded direct `.gitignore` in every
+directory it traverses before inspecting that directory's remaining children.
+It evaluates the hierarchical rule stack with the mature `ignore` library's
+Git-compatible, case-sensitive semantics: patterns are relative to the
+directory containing their file, rule order and negation are preserved, and a
+deeper `.gitignore` takes precedence according to Git's normal matching rules.
+An ignored directory is pruned before any descendant is `lstat`ed, read, or
+hashed; the pruned subtree consumes neither the content nor entry budget.
+Other ignored entries are classified without reading their content bytes. All
+bounded policy bytes and resulting classifications remain revision-bound.
+Setup does not maintain a second partial ignore-language implementation.
+
+A later apply implementation must first recompute and validate the complete
+assessment and then stage exactly `baselineTracked`. Every
+`preserve-untracked` row must still exist with the revalidated disposition and
+must remain uncommitted after the baseline. Apply must never use a broad add,
+stage an ignored or sensitive candidate, or reinterpret a preserved row merely
+because Git initialization or scaffold creation changed the worktree.
 
 The plan is a preview and a revision binding, not an execution log. Apply may
 consume a successfully revalidated plan in a later slice, but it must not

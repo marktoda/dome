@@ -18,6 +18,7 @@ import {
   SETUP_REPOSITORY_CANDIDATE_KINDS,
   SETUP_REPOSITORY_DISPOSITIONS,
   SETUP_REPOSITORY_REASONS,
+  validateSetupRepositoryCandidate,
 } from "./repository-policy";
 
 export type { ContentScopeConfig };
@@ -310,6 +311,20 @@ export const vaultAssessmentSchema = assessmentSchemaBase.superRefine((assessmen
   if (new Set(candidatePaths).size !== candidatePaths.length ||
     candidatePaths.some((path, index) => index > 0 && candidatePaths[index - 1]! >= path)) {
     context.addIssue({ code: "custom", path: ["repository", "candidates"], message: "must be sorted and unique by path" });
+  }
+  const boundaryOptions = assessment.git.state === "absent" ? [false] :
+    assessment.git.state === "ambiguous" ? [false, true] : [true];
+  const repositoryBoundaryValid = boundaryOptions.some((gitDirect) =>
+    assessment.repository.candidates.every((candidate) => {
+      try { validateSetupRepositoryCandidate(candidate, gitDirect); return true; }
+      catch { return false; }
+    }));
+  if (!repositoryBoundaryValid) {
+    context.addIssue({
+      code: "custom",
+      path: ["repository", "candidates"],
+      message: "repository candidates disagree with one canonical repository boundary",
+    });
   }
   const expectedBaseline = assessment.repository.candidates
     .filter((candidate) => candidate.disposition === "baseline")

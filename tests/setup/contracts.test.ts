@@ -111,6 +111,20 @@ describe("VaultAssessment contract", () => {
     expect(isDeeplyFrozen(value)).toBe(true);
   });
 
+  test("rejects repository rows that forge a safe disposition", () => {
+    const value = assessment();
+    expect(() => validateVaultAssessment({
+      ...value,
+      repository: {
+        candidates: [{
+          path: ".env", kind: "file", bytes: 8, tracking: "tracked",
+          disposition: "already-tracked", reason: "safe-owner-file",
+        }],
+        baselineTracked: [],
+      },
+    })).toThrow("canonical repository boundary");
+  });
+
   test("rejects proxies, accessors, and oversized arrays before traversal", () => {
     let trapCount = 0;
     const hostile = new Proxy({}, {

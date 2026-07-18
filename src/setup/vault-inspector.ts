@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, open, readdir, readlink, realpath } from "node:fs/promises";
 import { dirname, join, parse, resolve } from "node:path";
+import ignore from "ignore";
 
 import { compareStrings } from "../core/compare";
 import { parseCapabilityPolicy } from "../engine/core/capability-policy";
@@ -14,9 +15,16 @@ import {
   type SetupTargetState,
 } from "./classification";
 import {
+  deriveSetupRepositoryCandidate,
+  domePrivateRepositoryPath,
+  privateCaseAliasPath,
+  sensitiveRepositoryPath,
   SETUP_REPOSITORY_CANDIDATE_KINDS,
   SETUP_REPOSITORY_DISPOSITIONS,
+  SETUP_REPOSITORY_MAX_BASELINE_FILE_BYTES,
   SETUP_REPOSITORY_REASONS,
+  symlinkRepositoryReason,
+  validateSetupRepositoryCandidate,
   type SetupRepositoryCandidate,
 } from "./repository-policy";
 export {
@@ -30,7 +38,7 @@ export const SETUP_VAULT_INSPECTION_SCHEMA = "dome.setup.vault-source-inspection
 
 export const SETUP_VAULT_INSPECTION_CAPS = Object.freeze({
   entries: 100_000,
-  fileBytes: 16 * 1024 * 1024,
+  fileBytes: SETUP_REPOSITORY_MAX_BASELINE_FILE_BYTES,
   totalBytes: 256 * 1024 * 1024,
   commandBytes: 16 * 1024 * 1024,
   commandTimeoutMs: 10_000,
@@ -123,6 +131,7 @@ type GitEvidence = Readonly<{
   untracked: ReadonlySet<string>;
   ignored: ReadonlySet<string>;
   ignoredPrefixes: ReadonlyArray<string>;
+  indexStats: ReadonlyMap<string, GitIndexStat>;
   indexEntries: ReadonlyMap<string, IndexEntry>;
   stagedDirty: boolean;
   gitEntrySha256: string | null;
@@ -132,6 +141,11 @@ type GitEvidence = Readonly<{
 }>;
 
 type IndexEntry = Readonly<{ path: string; mode: string; oid: string }>;
+type GitIndexStat = Readonly<{
+  ctimeSeconds: number; ctimeNanoseconds: number;
+  mtimeSeconds: number; mtimeNanoseconds: number;
+  dev: number; ino: number; size: number;
+}>;
 
 type BlockerCode = VaultAssessment["blockers"][number]["code"];
 
@@ -206,7 +220,7 @@ export async function inspectSetupVaultSource(
   const trackedMarkdown = markdownPaths(git.tracked);
   const untrackedMarkdown = git.direct
     ? markdownPaths(git.untracked)
-    : tree.filter((entry) => entry.kind !== "directory" && entry.path.endsWith(".md"))
+    : tree.filter((entry) => entry.kind !== "directory" && entry.tracking !== "ignored" && entry.path.endsWith(".md"))
       .map((entry) => entry.path).sort(compareStrings);
   const repositoryCandidates = repositoryInventory(tree, git.direct);
   const baselineTracked = repositoryCandidates
@@ -341,7 +355,7 @@ export function validateSetupVaultSourceInspection(value: unknown): SetupVaultSo
   const repository = exactObject(source["repository"], "setup source repository evidence", [
     "candidates", "baselineTracked",
   ]);
-  const candidates = validatedRepositoryCandidates(repository["candidates"]);
+  const candidates = validatedRepositoryCandidates(repository["candidates"], git["direct"] as boolean);
   const baselineTracked = sortedUniqueSafePaths(
     repository["baselineTracked"], "setup source baseline tracked paths", SETUP_CONTRACT_CAPS.repositoryCandidates,
   );
@@ -444,7 +458,7 @@ function sortedUniqueSafePaths(value: unknown, label: string, maximum: number): 
   return paths;
 }
 
-function validatedRepositoryCandidates(value: unknown): ReadonlyArray<SetupRepositoryCandidate> {
+function validatedRepositoryCandidates(value: unknown, gitDirect: boolean): ReadonlyArray<SetupRepositoryCandidate> {
   if (!Array.isArray(value) || value.length > SETUP_CONTRACT_CAPS.repositoryCandidates) {
     throw new Error("setup source repository candidates exceed their budget");
   }
@@ -466,10 +480,7 @@ function validatedRepositoryCandidates(value: unknown): ReadonlyArray<SetupRepos
       throw new Error("setup source repository candidate is invalid");
     }
     const normalized = candidate as SetupRepositoryCandidate;
-    if (normalized.disposition === "baseline" &&
-      (normalized.kind !== "file" || normalized.reason !== "safe-owner-file")) {
-      throw new Error("setup source baseline candidate is not a safe owner file");
-    }
+    validateSetupRepositoryCandidate(normalized, gitDirect);
     candidates.push(normalized);
     previous = path;
   }
@@ -549,7 +560,8 @@ async function inspectGit(
   const empty = (ancestorRoot: string | null = null): GitEvidence => Object.freeze({
     state: "absent", head: null, branch: null, direct: false, ancestorRoot,
     operationMarkers: Object.freeze([]), tracked: new Set<string>(), untracked: new Set<string>(), ignored: new Set<string>(),
-    ignoredPrefixes: Object.freeze([]), indexEntries: new Map<string, IndexEntry>(), stagedDirty: false,
+    ignoredPrefixes: Object.freeze([]), indexStats: new Map<string, GitIndexStat>(),
+    indexEntries: new Map<string, IndexEntry>(), stagedDirty: false,
     gitEntrySha256: null, indexSha256: null, dirtySha256: null,
     infoExcludeSha256: null,
   });
@@ -613,11 +625,16 @@ async function inspectGit(
       ["ls-files", "--others", "--ignored", "--exclude-standard", "-z"], targetPath, caps);
     const ignoredDirectoryOutput = await requiredGit(runGit,
       ["ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"], targetPath, caps);
+    const indexStatsOutput = await requiredGit(runGit, ["ls-files", "--debug", "-z"], targetPath, caps);
     const tracked = nulPaths(trackedOutput.stdout, caps.entries, "tracked Git inventory");
     const untracked = nulPaths(untrackedOutput.stdout, caps.entries, "untracked Git inventory");
     const ignored = nulPaths(ignoredOutput.stdout, caps.entries, "ignored Git inventory");
     const ignoredPrefixes = nulDirectoryPrefixes(ignoredDirectoryOutput.stdout, caps.entries, "ignored Git directories");
+    const indexStats = parseGitIndexStats(indexStatsOutput.stdout, caps.entries);
     const index = parseIndex(stage.stdout, caps.entries);
+    if (indexStats.size !== index.entries.size || [...index.entries.keys()].some((path) => !indexStats.has(path))) {
+      throw new Error("Git index stat inventory disagrees with staged inventory");
+    }
     if (index.unmerged) {
       operationMarkers.push("unmerged-index");
     }
@@ -647,7 +664,7 @@ async function inspectGit(
     return Object.freeze({
       state, head, branch, direct: true, ancestorRoot: null,
       operationMarkers: Object.freeze(operationMarkers), tracked, untracked, ignored,
-      ignoredPrefixes: Object.freeze(ignoredPrefixes), indexEntries: index.entries, stagedDirty,
+      ignoredPrefixes: Object.freeze(ignoredPrefixes), indexStats, indexEntries: index.entries, stagedDirty,
       gitEntrySha256, indexSha256: sha256(stage.stdout), dirtySha256: null,
       infoExcludeSha256,
     });
@@ -677,7 +694,14 @@ function finalizeGitDirtyState(
     const worktreeEntry = treeByPath.get(indexEntry.path);
     const worktreeMode = worktreeEntry?.kind === "symlink" ? "120000" :
       worktreeEntry?.kind === "file" ? ((worktreeEntry.mode & 0o111) === 0 ? "100644" : "100755") : null;
-    if (worktreeEntry?.gitBlobId !== indexEntry.oid || worktreeMode !== indexEntry.mode) {
+    // Ordinary files carry an exact Dome-side blob hash. Sensitive-name files
+    // carry the index oid only when their content-free index stat tuple still
+    // matches; a null sensitive proof is therefore dirty without reading it.
+    const contentMismatch = worktreeEntry?.gitBlobId !== null
+      ? worktreeEntry?.gitBlobId !== indexEntry.oid
+      : worktreeEntry?.tracking === "tracked" && worktreeEntry.safetyReason === "sensitive-name";
+    if (contentMismatch ||
+      worktreeMode !== indexEntry.mode) {
       unstagedDirty = true;
       break;
     }
@@ -700,6 +724,7 @@ function gitProof(git: GitEvidence): unknown {
     tracked: [...git.tracked].sort(compareStrings),
     untracked: [...git.untracked].sort(compareStrings),
     ignored: [...git.ignored].sort(compareStrings),
+    indexStats: [...git.indexStats.entries()].sort(([left], [right]) => compareStrings(left, right)),
     indexEntries: [...git.indexEntries.values()].sort((left, right) => compareStrings(left.path, right.path)),
   };
 }
@@ -730,6 +755,7 @@ async function inspectTree(
     directory: string,
     prefix: string,
     expected?: Awaited<ReturnType<typeof lstat>>,
+    inheritedIgnore: ReadonlyArray<NonGitIgnorePolicy> = [],
   ): Promise<void> => {
     const pathBefore = await lstat(directory);
     const directoryHandle = await open(directory, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
@@ -746,11 +772,16 @@ async function inspectTree(
           filesystemIdentitySha256: filesystemIdentityHash(directoryBefore), linkTarget: null, tracking: "other",
           safetyReason: "directory-not-tracked" }));
       }
+      const localIgnore = git.direct ? null : await loadNonGitIgnorePolicy(
+        directory, prefix, caps, caps.totalBytes - hashedBytes, addBlocker,
+      );
+      if (localIgnore !== null) hashedBytes += localIgnore.bytes.length;
+      const ignoreStack = localIgnore === null ? inheritedIgnore : Object.freeze([...inheritedIgnore, localIgnore]);
       const names = (await readdir(directory)).sort(compareStrings);
       for (const name of names) {
         const path = prefix === "" ? name : `${prefix}/${name}`;
         if (path === ".git") continue;
-        if (path.includes("\\") || path.split("/").some((part) => part === "" || part === "." || part === "..")) {
+        if (!safeRelativePath(path)) {
           addBlocker("unsafe-path", "The vault contains a path Dome cannot represent safely.",
             "Rename the unsafe path, then reassess.");
           continue;
@@ -762,8 +793,18 @@ async function inspectTree(
         }
         const absolute = join(root, ...path.split("/"));
         const info = await lstat(absolute);
-        const tracking = trackingFor(path, git);
+        const tracking = trackingFor(path, info.isDirectory(), git, ignoreStack);
         const mode = info.mode & 0o777;
+        if (privateCaseAliasPath(path)) {
+          const kind = info.isSymbolicLink() ? "symlink" : info.isDirectory() ? "directory" :
+            info.isFile() ? "file" : "special";
+          entries.push(Object.freeze({ path, kind, mode, bytes: kind === "directory" ? 0 : info.size, sha256: null,
+            gitBlobId: null, filesystemIdentitySha256: filesystemIdentityHash(info), linkTarget: null, tracking,
+            safetyReason: "private-case-alias" }));
+          addBlocker("unsafe-path", `The vault contains a case-variant private path at ${path}.`,
+            "Rename or remove the case-variant .dome/.git path, then reassess.");
+          continue;
+        }
         if (name === ".git" && prefix !== "") {
           addBlocker("unsafe-path", `The vault contains a nested Git control path at ${path}.`,
             "Remove the nested repository marker or choose one repository boundary, then reassess.");
@@ -780,10 +821,9 @@ async function inspectTree(
               gitBlobId: null, filesystemIdentitySha256: filesystemIdentityHash(info), linkTarget: null, tracking,
               safetyReason: "dome-private" }));
           } else if (info.isSymbolicLink()) {
-            const linkTarget = await readStableLinkTarget(absolute, info);
-            entries.push(Object.freeze({ path, kind: "symlink", mode, bytes: Buffer.byteLength(linkTarget),
-              sha256: sha256(Buffer.from(linkTarget)), gitBlobId: gitBlobId(Buffer.from(linkTarget)),
-              filesystemIdentitySha256: filesystemIdentityHash(info), linkTarget, tracking,
+            entries.push(Object.freeze({ path, kind: "symlink", mode, bytes: info.size,
+              sha256: null, gitBlobId: null,
+              filesystemIdentitySha256: filesystemIdentityHash(info), linkTarget: null, tracking,
               safetyReason: "dome-private" }));
             addBlocker("symlink-ambiguity", "The reserved .dome/state path is a symbolic link.",
               "Replace it with a direct private directory, then reassess.");
@@ -798,12 +838,36 @@ async function inspectTree(
           }
           continue;
         }
+        const ownIgnore = name === ".gitignore" && localIgnore?.prefix === prefix ? localIgnore : null;
+        if (ownIgnore !== null) {
+          if (!info.isFile() || info.isSymbolicLink() ||
+            filesystemIdentityHash(info) !== ownIgnore.filesystemIdentitySha256) {
+            throw new Error(".gitignore changed during setup inspection");
+          }
+          entries.push(Object.freeze({ path, kind: "file", mode, bytes: info.size,
+            sha256: ownIgnore.sha256, gitBlobId: gitBlobId(ownIgnore.bytes),
+            filesystemIdentitySha256: filesystemIdentityHash(info), linkTarget: null, tracking,
+            safetyReason: tracking === "ignored" ? "ignored-by-owner" : "safe-owner-file" }));
+          continue;
+        }
+        if (tracking === "ignored") {
+          const kind = info.isSymbolicLink() ? "symlink" : info.isDirectory() ? "directory" :
+            info.isFile() ? "file" : "special";
+          entries.push(Object.freeze({ path, kind, mode, bytes: kind === "directory" ? 0 : info.size,
+            sha256: null, gitBlobId: null, filesystemIdentitySha256: filesystemIdentityHash(info),
+            linkTarget: null, tracking, safetyReason: "ignored-by-owner" }));
+          if (kind === "symlink") addBlocker("symlink-ambiguity", `The vault contains a symbolic link at ${path}.`,
+            "Remove or explicitly replace the link, then reassess.");
+          if (kind === "special") addBlocker("unsafe-path", `The vault contains a special file at ${path}.`,
+            "Remove the special file from the vault boundary, then reassess.");
+          continue;
+        }
         if (info.isSymbolicLink()) {
           const linkTarget = await readStableLinkTarget(absolute, info);
           entries.push(Object.freeze({ path, kind: "symlink", mode, bytes: Buffer.byteLength(linkTarget),
             sha256: sha256(Buffer.from(linkTarget)), gitBlobId: gitBlobId(Buffer.from(linkTarget)),
             filesystemIdentitySha256: filesystemIdentityHash(info), linkTarget, tracking,
-            safetyReason: symlinkSafetyReason(path, linkTarget) }));
+            safetyReason: symlinkRepositoryReason(path, linkTarget) }));
           addBlocker("symlink-ambiguity", `The vault contains a symbolic link at ${path}.`,
             "Remove or explicitly replace the link, then reassess.");
           continue;
@@ -811,15 +875,13 @@ async function inspectTree(
         if (info.isDirectory()) {
           entries.push(Object.freeze({ path, kind: "directory", mode, bytes: 0, sha256: null,
             gitBlobId: null, filesystemIdentitySha256: filesystemIdentityHash(info), linkTarget: null, tracking,
-            safetyReason: name === ".git" ? "nested-repository" :
-              tracking === "ignored" ? "ignored-by-owner" : "directory-not-tracked" }));
+            safetyReason: name === ".git" ? "nested-repository" : "directory-not-tracked" }));
           if (name === ".git") {
             addBlocker("unsafe-path", `The vault contains a nested repository at ${path}.`,
               "Choose one repository boundary, then reassess.");
             continue;
           }
-          if (git.ignoredPrefixes.some((candidate) => path === candidate.slice(0, -1) || path.startsWith(candidate))) continue;
-          await visit(absolute, path, info);
+          await visit(absolute, path, info, ignoreStack);
           continue;
         }
         if (!info.isFile()) {
@@ -838,15 +900,14 @@ async function inspectTree(
             "Replace the hard link with a direct file, then reassess.");
           continue;
         }
-        if (tracking === "ignored") {
+        if (sensitiveRepositoryPath(path)) {
+          const indexStat = git.indexStats.get(path);
+          const contentFreeBlobId = tracking === "tracked" && indexStat !== undefined &&
+            await gitIndexStatMatches(absolute, info, indexStat)
+            ? git.indexEntries.get(path)?.oid ?? null
+            : null;
           entries.push(Object.freeze({ path, kind: "file", mode, bytes: info.size, sha256: null,
-            gitBlobId: null, filesystemIdentitySha256: filesystemIdentityHash(info), linkTarget: null, tracking,
-            safetyReason: "ignored-by-owner" }));
-          continue;
-        }
-        if (isSensitiveRepositoryPath(path)) {
-          entries.push(Object.freeze({ path, kind: "file", mode, bytes: info.size, sha256: null,
-            gitBlobId: null, filesystemIdentitySha256: filesystemIdentityHash(info), linkTarget: null, tracking,
+            gitBlobId: contentFreeBlobId, filesystemIdentitySha256: filesystemIdentityHash(info), linkTarget: null, tracking,
             safetyReason: "sensitive-name" }));
           continue;
         }
@@ -862,7 +923,7 @@ async function inspectTree(
         hashedBytes += info.size;
         entries.push(Object.freeze({ path, kind: "file", mode, bytes: info.size, sha256: sha256(bytes),
           gitBlobId: gitBlobId(bytes), filesystemIdentitySha256: filesystemIdentityHash(info),
-          linkTarget: null, tracking, safetyReason: isDomePrivatePath(path) ? "dome-private" : "safe-owner-file" }));
+          linkTarget: null, tracking, safetyReason: domePrivateRepositoryPath(path) ? "dome-private" : "safe-owner-file" }));
       }
       const directoryAfter = await lstat(directory);
       const descriptorAfter = await directoryHandle.stat();
@@ -874,7 +935,7 @@ async function inspectTree(
       await directoryHandle.close();
     }
   };
-  await visit(root, "");
+  await visit(root, "", undefined, []);
   entries.sort((left, right) => compareStrings(left.path, right.path));
   return Object.freeze(entries);
 }
@@ -934,56 +995,84 @@ function markdownPaths(paths: ReadonlySet<string>): string[] {
 }
 
 function repositoryInventory(tree: ReadonlyArray<FileEvidence>, gitDirect: boolean): SetupRepositoryCandidate[] {
-  return tree.filter((entry) => entry.path !== "").map((entry) => Object.freeze({
+  return tree.filter((entry) => entry.path !== "").map((entry) => deriveSetupRepositoryCandidate({
     path: entry.path,
     kind: entry.kind,
     bytes: entry.bytes,
     tracking: entry.tracking,
-    disposition: repositoryDisposition(entry, gitDirect),
-    reason: entry.safetyReason,
+    gitDirect,
+    observedReason: entry.safetyReason,
   })).sort((left, right) => compareStrings(left.path, right.path));
 }
 
-function repositoryDisposition(entry: FileEvidence, gitDirect: boolean): SetupRepositoryCandidate["disposition"] {
-  if (entry.kind === "symlink" || entry.kind === "special" ||
-    (entry.path === ".dome/state" && entry.kind !== "directory") ||
-    ["nested-repository", "hard-linked-file"].includes(entry.safetyReason)) return "blocked";
-  if (entry.tracking === "tracked") return "already-tracked";
-  if (!gitDirect && entry.kind === "file" && entry.safetyReason === "safe-owner-file" &&
-    (entry.tracking === "other" || entry.tracking === "untracked")) return "baseline";
-  return "preserve-untracked";
-}
+type NonGitIgnorePolicy = Readonly<{
+  prefix: string;
+  rules: ReturnType<typeof ignore>;
+  bytes: Buffer;
+  sha256: string;
+  filesystemIdentitySha256: string;
+}>;
 
-function isSensitiveRepositoryPath(path: string): boolean {
-  const names = path.split("/").map((part) => part.toLowerCase());
-  return names.some((name) => name === ".env" || name.startsWith(".env.") ||
-    /(?:^|[._-])(credential|credentials|secret|secrets|token|tokens|password|passwd|private[._-]?key)(?:[._-]|$)/i.test(name)) ||
-    /^(?:id_(?:rsa|dsa|ecdsa|ed25519)|.*\.(?:pem|p12|pfx|key|keystore))$/i.test(names.at(-1)!);
-}
-
-function isDomePrivatePath(path: string): boolean {
-  return path === ".dome/state" || path.startsWith(".dome/state/");
-}
-
-function symlinkSafetyReason(path: string, target: string): "symlink-internal" | "symlink-external" {
-  if (target.startsWith("/")) return "symlink-external";
-  const parts = [...path.split("/").slice(0, -1), ...target.split("/")];
-  let depth = 0;
-  for (const part of parts) {
-    if (part === "" || part === ".") continue;
-    if (part === "..") {
-      if (depth === 0) return "symlink-external";
-      depth -= 1;
-    } else depth += 1;
+async function loadNonGitIgnorePolicy(
+  directory: string,
+  prefix: string,
+  caps: SetupVaultInspectionCaps,
+  remainingBytes: number,
+  addBlocker: (code: BlockerCode, message: string, nextAction: string) => void,
+): Promise<NonGitIgnorePolicy | null> {
+  const path = join(directory, ".gitignore");
+  try {
+    const info = await lstat(path);
+    if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1 || info.size > caps.fileBytes ||
+      info.size > remainingBytes) {
+      addBlocker("unsafe-path", "The owner .gitignore is not a bounded direct file.",
+        "Repair or remove .gitignore, then reassess.");
+      return null;
+    }
+    const bytes = await readDirectFile(path, info);
+    const body = bytes.toString("utf8");
+    if (body.includes("\uFFFD") || body.includes("\0")) throw new Error(".gitignore is not valid bounded UTF-8 text");
+    const rules = ignore({ ignorecase: false }).add(body);
+    return Object.freeze({ prefix, rules, bytes, sha256: sha256(bytes),
+      filesystemIdentitySha256: filesystemIdentityHash(info) });
+  } catch (error) {
+    if (hasCode(error, "ENOENT")) return null;
+    addBlocker("ambiguous-state", `The owner .gitignore cannot be evaluated safely: ${message(error)}`,
+      "Repair .gitignore, then reassess.");
+    return null;
   }
-  return "symlink-internal";
 }
 
-function trackingFor(path: string, git: GitEvidence): FileEvidence["tracking"] {
+function trackingFor(
+  path: string,
+  directory: boolean,
+  git: GitEvidence,
+  nonGitIgnore: ReadonlyArray<NonGitIgnorePolicy>,
+): FileEvidence["tracking"] {
   if (git.tracked.has(path)) return "tracked";
   if (git.untracked.has(path)) return "untracked";
   if (git.ignored.has(path) || git.ignoredPrefixes.some((prefix) => path.startsWith(prefix))) return "ignored";
+  if (!git.direct && ignoredByOwner(path, directory, nonGitIgnore)) return "ignored";
   return "other";
+}
+
+/** Match the same root-to-leaf rule precedence used by GitIgnoreManager. */
+function ignoredByOwner(
+  path: string,
+  directory: boolean,
+  policies: ReadonlyArray<NonGitIgnorePolicy>,
+): boolean {
+  let ignored = false;
+  for (const policy of policies) {
+    const relative = policy.prefix === "" ? path : path.slice(policy.prefix.length + 1);
+    if (relative === "" || relative.startsWith("../")) continue;
+    const candidate = directory ? `${relative}/` : relative;
+    const parent = dirname(relative);
+    if (parent !== "." && policy.rules.ignores(`${parent}/`)) return true;
+    const result = policy.rules.test(candidate);
+    ignored = ignored ? !result.unignored : result.ignored;
+  }
+  return ignored;
 }
 
 async function inspectGitOperations(gitDir: string, commonDir: string): Promise<string[]> {
@@ -1020,6 +1109,69 @@ function parseIndex(bytes: Buffer, cap: number): Readonly<{
     if (match[3] === "0") entries.set(path, Object.freeze({ path, mode: match[1]!, oid: match[2]! }));
   }
   return Object.freeze({ entries, unmerged });
+}
+
+function parseGitIndexStats(bytes: Buffer, cap: number): ReadonlyMap<string, GitIndexStat> {
+  if (bytes.length === 0) return new Map<string, GitIndexStat>();
+  const decoded = bytes.toString("utf8");
+  if (decoded.includes("\uFFFD")) throw new Error("Git index stat inventory contains undecodable paths");
+  const firstNul = decoded.indexOf("\0");
+  if (firstNul < 1) throw new Error("Git index stat inventory is malformed");
+  let path = decoded.slice(0, firstNul);
+  let position = firstNul + 1;
+  const stats = new Map<string, GitIndexStat>();
+  for (;;) {
+    const nextNul = decoded.indexOf("\0", position);
+    let metadata: string;
+    let nextPath: string | null;
+    if (nextNul === -1) {
+      metadata = decoded.slice(position);
+      nextPath = null;
+    } else {
+      const segment = decoded.slice(position, nextNul);
+      const separator = segment.lastIndexOf("\n");
+      if (separator < 0) throw new Error("Git index stat inventory is malformed");
+      metadata = segment.slice(0, separator + 1);
+      nextPath = segment.slice(separator + 1);
+    }
+    if (!safeRelativePath(path) || stats.has(path)) throw new Error("Git index stat inventory contains an unsafe or duplicate path");
+    const match = /^  ctime: (\d+):(\d+)\n  mtime: (\d+):(\d+)\n  dev: (\d+)\tino: (\d+)\n  uid: \d+\tgid: \d+\n  size: (\d+)\tflags: [0-9a-f]+\n$/.exec(metadata);
+    if (match === null) throw new Error("Git index stat inventory metadata is malformed");
+    const values = match.slice(1).map(Number);
+    if (values.some((value) => !Number.isSafeInteger(value) || value < 0)) {
+      throw new Error("Git index stat inventory exceeds numeric bounds");
+    }
+    stats.set(path, Object.freeze({
+      ctimeSeconds: values[0]!, ctimeNanoseconds: values[1]!,
+      mtimeSeconds: values[2]!, mtimeNanoseconds: values[3]!,
+      dev: values[4]!, ino: values[5]!, size: values[6]!,
+    }));
+    if (stats.size > cap) throw new Error("Git index stat inventory exceeds its entry budget");
+    if (nextPath === null) break;
+    path = nextPath;
+    position = nextNul + 1;
+  }
+  return stats;
+}
+
+async function gitIndexStatMatches(
+  path: string,
+  before: Awaited<ReturnType<typeof lstat>>,
+  index: GitIndexStat,
+): Promise<boolean> {
+  const current = await lstat(path, { bigint: true });
+  const stableIdentity = unsigned32(current.dev) === unsigned32(before.dev) &&
+    unsigned32(current.ino) === unsigned32(before.ino) && current.size === BigInt(before.size) &&
+    Number(current.mode) === Number(before.mode);
+  return stableIdentity &&
+    current.mtimeNs === BigInt(index.mtimeSeconds) * 1_000_000_000n + BigInt(index.mtimeNanoseconds) &&
+    current.ctimeNs === BigInt(index.ctimeSeconds) * 1_000_000_000n + BigInt(index.ctimeNanoseconds) &&
+    unsigned32(current.dev) === index.dev && unsigned32(current.ino) === index.ino &&
+    current.size === BigInt(index.size);
+}
+
+function unsigned32(value: number | bigint): number {
+  return Number((typeof value === "bigint" ? value : BigInt(Math.trunc(value))) & 0xffff_ffffn);
 }
 
 function parseHeadTree(bytes: Buffer, cap: number): ReadonlyMap<string, IndexEntry> {
@@ -1364,7 +1516,7 @@ async function findAncestorGitRoot(
 }
 
 function safeRelativePath(path: string): boolean {
-  return path !== "" && !path.startsWith("/") && !path.includes("\\") &&
+  return path !== "" && !path.startsWith("/") && !path.includes("\\") && !/[\u0000-\u001f\u007f]/.test(path) &&
     !path.split("/").some((part) => part === "" || part === "." || part === "..");
 }
 

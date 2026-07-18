@@ -419,7 +419,7 @@ content_scope:
       },
       {
         path: "secrets", kind: "directory", bytes: 0, tracking: "other",
-        disposition: "preserve-untracked", reason: "directory-not-tracked",
+        disposition: "preserve-untracked", reason: "sensitive-name",
       },
       {
         path: "secrets/opaque.bin", kind: "file", bytes: 17, tracking: "other",
@@ -443,6 +443,95 @@ content_scope:
       { path: "notes", disposition: "preserve-untracked", reason: "directory-not-tracked" },
       { path: "notes/one.md", disposition: "baseline", reason: "safe-owner-file" },
     ]);
+  });
+
+  test("keeps tracked sensitive files content-free without inventing dirtiness", async () => {
+    const root = await gitFixture();
+    await writeFile(join(root, ".env"), "SECRET=owner-only\n");
+    await git(root, "add", ".env");
+    await git(root, "commit", "-m", "Track owner environment");
+
+    const clean = await inspectSetupVaultSource(root);
+    expect(clean.git.state).toBe("clean");
+    expect(clean.repository.candidates.find((candidate) => candidate.path === ".env")).toEqual({
+      path: ".env", kind: "file", bytes: 18, tracking: "tracked",
+      disposition: "already-tracked", reason: "sensitive-name",
+    });
+    expect(JSON.stringify(clean.repository)).not.toContain("owner-only");
+
+    await writeFile(join(root, ".env"), "SECRET=changed!!!\n");
+    const dirty = await inspectSetupVaultSource(root);
+    expect(dirty.git.state).toBe("dirty");
+    expect(dirty.blockers.map((blocker) => blocker.code)).toContain("dirty-worktree");
+  });
+
+  test("applies exact owner gitignore semantics before proposing a non-Git baseline", async () => {
+    const root = await temporary();
+    await writeFile(join(root, ".gitignore"), [
+      "cache/", "*.tmp", "!important.tmp", "node_modules/*", "!node_modules/keep.md", "",
+    ].join("\n"));
+    await mkdir(join(root, "cache"));
+    await writeFile(join(root, "cache", "drop.md"), "x".repeat(1_024));
+    await mkdir(join(root, "node_modules"));
+    await writeFile(join(root, "node_modules", "drop.js"), "x".repeat(1_024));
+    await writeFile(join(root, "node_modules", "keep.md"), "# Kept\n");
+    await writeFile(join(root, "draft.tmp"), "ignored\n");
+    await writeFile(join(root, "important.tmp"), "kept\n");
+    await writeFile(join(root, "Owner.md"), "# Owner\n");
+
+    const inspected = await inspectSetupVaultSource(root, { caps: { fileBytes: 128 } });
+    expect(inspected.blockers).toEqual([]);
+    expect(inspected.repository.baselineTracked).toEqual([
+      ".gitignore", "Owner.md", "important.tmp", "node_modules/keep.md",
+    ]);
+    const ignored = inspected.repository.candidates.filter((candidate) => candidate.tracking === "ignored");
+    expect(ignored.map((candidate) => candidate.path)).toEqual([
+      "cache", "draft.tmp", "node_modules/drop.js",
+    ]);
+    expect(ignored.every((candidate) => candidate.reason === "ignored-by-owner" &&
+      candidate.disposition === "preserve-untracked")).toBe(true);
+  });
+
+  test("applies nested owner gitignore rules with deeper negation precedence", async () => {
+    const root = await temporary();
+    await writeFile(join(root, ".gitignore"), ["nested/*.md", "*.tmp", ""].join("\n"));
+    await mkdir(join(root, "nested"));
+    await writeFile(join(root, "nested", ".gitignore"), ["!local-keep.md", "*.log", "!important.log", ""].join("\n"));
+    await writeFile(join(root, "nested", "drop.md"), "ignored\n");
+    await writeFile(join(root, "nested", "local-keep.md"), "kept\n");
+    await writeFile(join(root, "nested", "drop.log"), "ignored\n");
+    await writeFile(join(root, "nested", "important.log"), "kept\n");
+    await writeFile(join(root, "nested", "drop.tmp"), "ignored\n");
+
+    const inspected = await inspectSetupVaultSource(root);
+    expect(inspected.blockers).toEqual([]);
+    expect(inspected.repository.baselineTracked).toEqual([
+      ".gitignore", "nested/.gitignore", "nested/important.log", "nested/local-keep.md",
+    ]);
+    expect(inspected.repository.candidates.filter(({ tracking }) => tracking === "ignored").map(({ path }) => path)).toEqual([
+      "nested/drop.log", "nested/drop.md", "nested/drop.tmp",
+    ]);
+    expect(inspected.markdown.untracked).toEqual(["nested/local-keep.md"]);
+  });
+
+  test("blocks case-variant private roots before reading or traversing them", async () => {
+    for (const alias of [".DOME", ".Git", ".dome/STATE"]) {
+      const root = await temporary();
+      await mkdir(join(root, alias, "state"), { recursive: true });
+      await writeFile(join(root, alias, "state", "opaque.bin"), "must-not-be-read\n");
+      const inspected = await inspectSetupVaultSource(root, { caps: { fileBytes: 1 } });
+      expect(inspected.blockers.map((blocker) => blocker.code)).toContain("unsafe-path");
+      expect(inspected.repository.candidates).toEqual(alias === ".dome/STATE" ? [{
+        path: ".dome", kind: "directory", bytes: 0, tracking: "other",
+        disposition: "preserve-untracked", reason: "directory-not-tracked",
+      }, {
+        path: alias, kind: "directory", bytes: 0, tracking: "other",
+        disposition: "blocked", reason: "private-case-alias",
+      }] : [{
+        path: alias, kind: "directory", bytes: 0, tracking: "other",
+        disposition: "blocked", reason: "private-case-alias",
+      }]);
+    }
   });
 
   test("does not invoke a configured Git filesystem monitor", async () => {
