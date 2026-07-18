@@ -1,22 +1,36 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import {
+  mkdir,
+  mkdtemp,
+  open,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
   assertHomePredecessorObservation,
   assertKnownHistoricalFailure,
+  materializePinnedHomePredecessorArchive,
   normalizePinnedHomePredecessorTarForTests,
   parseHomePredecessorReceipt,
   parseHomePredecessorCliArgs,
   readHomePredecessorReceipt,
   reconstructHomePredecessorArtifact,
   type HomePredecessorObservation,
+  type HomePredecessorReceipt,
 } from "../../scripts/home-predecessor-artifact";
 import {
   createNormalizedHomeArtifactTarHeader,
   inspectHomeArtifactTar,
 } from "../../src/product-host/home-artifact-archive";
+import { readBoundedStableRegularFile } from "../../src/platform/bounded-regular-file";
 
 const RECEIPT_PATH = join(
   import.meta.dir,
@@ -142,6 +156,128 @@ describe("Home predecessor artifact provenance", () => {
       .toThrow("unexpected legacy tar mode: unrelated/link");
   });
 
+  test("rejects symlink, oversize, and pathname-replaced predecessor inputs without workspace residue", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-predecessor-input-defense-"));
+    const workspaceParent = join(root, "workspaces");
+    const receipt = await readHomePredecessorReceipt(RECEIPT_PATH);
+    await mkdir(workspaceParent);
+    try {
+      const target = join(root, "target.tar.gz");
+      const alias = join(root, "alias.tar.gz");
+      await writeFile(target, "not an archive");
+      await symlink(target, alias);
+      await expect(materializePinnedHomePredecessorArchive({
+        archive: alias,
+        receipt,
+        temporaryParent: workspaceParent,
+      })).rejects.toThrow("not the immutable receipt file");
+      expect(await readdir(workspaceParent)).toEqual([]);
+
+      const oversized = join(root, "oversized.tar.gz");
+      const oversizedHandle = await open(oversized, "wx", 0o600);
+      try { await oversizedHandle.truncate(receipt.archive.bytes + 1); }
+      finally { await oversizedHandle.close(); }
+      await expect(materializePinnedHomePredecessorArchive({
+        archive: oversized,
+        receipt,
+        temporaryParent: workspaceParent,
+      })).rejects.toThrow("not the immutable receipt file");
+      expect(await readdir(workspaceParent)).toEqual([]);
+
+      const raced = join(root, "raced.tar.gz");
+      const replacement = join(root, "replacement.tar.gz");
+      for (const path of [raced, replacement]) {
+        const handle = await open(path, "wx", 0o600);
+        try { await handle.truncate(receipt.archive.bytes); }
+        finally { await handle.close(); }
+      }
+      await expect(materializePinnedHomePredecessorArchive({
+        archive: raced,
+        receipt,
+        temporaryParent: workspaceParent,
+      }, {
+        readArchive: async (input) => await readBoundedStableRegularFile(input, {
+          afterLexicalStat: async () => {
+            await rename(raced, join(root, "retained-original.tar.gz"));
+            await rename(replacement, raced);
+          },
+        }),
+      })).rejects.toThrow("not the immutable receipt file");
+      expect(await readdir(workspaceParent)).toEqual([]);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("snapshots nested receipt pins before awaits and confines failed cleanup to its owned inode", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-predecessor-snapshot-defense-"));
+    const workspaceParent = join(root, "workspaces");
+    await mkdir(workspaceParent);
+    try {
+      const archive = join(root, "candidate.tar.gz");
+      await writeFile(archive, "bad");
+      const mutable = JSON.parse(await readFile(RECEIPT_PATH, "utf8")) as HomePredecessorReceipt;
+      await expect(materializePinnedHomePredecessorArchive({
+        archive,
+        receipt: mutable,
+        temporaryParent: workspaceParent,
+      }, {
+        readArchive: async () => {
+          await Promise.resolve();
+          const nested = mutable as unknown as {
+            archive: { bytes: number; sha256: string; root: string };
+            manifest: { bytes: number; sha256: string; artifactId: string; productVersion: string };
+          };
+          nested.archive.bytes = 3;
+          nested.archive.sha256 = digest(Buffer.from("bad"));
+          nested.archive.root = "attacker-root";
+          nested.manifest.bytes = 1;
+          nested.manifest.sha256 = "0".repeat(64);
+          nested.manifest.artifactId = "0".repeat(64);
+          nested.manifest.productVersion = "attacker";
+          return Buffer.from("bad");
+        },
+      })).rejects.toThrow("differs from its immutable receipt");
+      expect(await readdir(workspaceParent)).toEqual([]);
+
+      const exactReceipt = await readHomePredecessorReceipt(RECEIPT_PATH);
+      let replacementRoot = "";
+      await expect(materializePinnedHomePredecessorArchive({
+        archive,
+        receipt: exactReceipt,
+        temporaryParent: workspaceParent,
+      }, {
+        readArchive: async () => {
+          const entries = await readdir(workspaceParent);
+          expect(entries).toHaveLength(1);
+          replacementRoot = join(workspaceParent, entries[0]!);
+          await rename(replacementRoot, join(root, "retained-owned-workspace"));
+          await mkdir(replacementRoot);
+          await writeFile(join(replacementRoot, "replacement-canary"), "retain me");
+          return Buffer.from("bad");
+        },
+      })).rejects.toThrow("predecessor admission and cleanup both failed");
+      expect(await readFile(join(replacementRoot, "replacement-canary"), "utf8")).toBe("retain me");
+      expect(await readdir(join(root, "retained-owned-workspace"))).toEqual([]);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("rejects a symlink workspace parent before archive admission", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-predecessor-parent-defense-"));
+    try {
+      const parent = join(root, "parent");
+      const alias = join(root, "parent-alias");
+      const archive = join(root, "candidate.tar.gz");
+      await mkdir(parent);
+      await symlink(parent, alias);
+      await writeFile(archive, "bad");
+      await expect(materializePinnedHomePredecessorArchive({
+        archive,
+        receipt: await readHomePredecessorReceipt(RECEIPT_PATH),
+        temporaryParent: alias,
+      })).rejects.toThrow("workspace parent is not a direct directory");
+      expect(await readdir(parent)).toEqual([]);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   test("orchestrates exactly two independent builds, compare, then publish", async () => {
     const root = await mkdtemp(join(tmpdir(), "dome-predecessor-test-"));
     try {
@@ -224,4 +360,8 @@ function legacySymlinkHeader(path: string): Buffer {
 
 function readTarMode(tar: Buffer, headerOffset: number): number {
   return Number.parseInt(tar.subarray(headerOffset + 100, headerOffset + 108).toString("ascii").replace(/\0.*$/, ""), 8);
+}
+
+function digest(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("hex");
 }

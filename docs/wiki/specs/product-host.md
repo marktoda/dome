@@ -854,7 +854,11 @@ package-manager `.bin` symlinks recorded as `0777`. Its compatibility adapter
 accepts only the frozen receipt hash and that closed eight-path header inventory,
 rewrites those modes to `0755` in a private derivative, and routes the derivative
 through the ordinary strict archive boundary; arbitrary legacy modes remain
-rejected. It then runs the current artifact verifier, binds raw-manifest identity,
+rejected. Receipt pins are snapshotted before the first await; the raw archive is
+read once through a bounded `O_NOFOLLOW` descriptor with before/after identity
+proof, and the derivative lives under an inode-owned canonical-parent workspace
+whose cleanup refuses replacements. It then runs the current artifact verifier,
+binds raw-manifest identity,
 requires byte-identical raw archives, and only then publishes the result.
 Receipt parsing and orchestration remain
 hermetic cross-platform tests; reconstruction itself is a release-gate

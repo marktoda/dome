@@ -1,8 +1,6 @@
 import { createHash } from "node:crypto";
 import {
   lstat,
-  mkdtemp,
-  open,
   readFile,
   readdir,
   realpath,
@@ -18,6 +16,8 @@ import {
   verifyHomeArtifactEvidence,
   type HomeArtifactManifest,
 } from "./home-artifact";
+import { readBoundedStableRegularFile } from "../platform/bounded-regular-file";
+import { preparePrivateWorkspace } from "../platform/private-workspace";
 
 export const MAX_COMPRESSED_HOME_ARTIFACT_BYTES = 256 * 1024 * 1024;
 export const MAX_HOME_ARTIFACT_TAR_BYTES = 512 * 1024 * 1024;
@@ -151,10 +151,12 @@ export async function materializeHomeArtifactArchive(input: Readonly<{
   assertExpectedNumber(input.expected?.manifestBytes, rawManifest.byteLength, "raw manifest size");
   assertExpectedDigest(input.expected?.manifestSha256, manifestSha256, "raw manifest digest");
 
-  const parent = input.temporaryParent === undefined
-    ? await realpath(tmpdir())
-    : await realpath(resolve(input.temporaryParent));
-  const workspace = await mkdtemp(join(parent, ".dome-home-artifact-"));
+  const workspaceOwner = await preparePrivateWorkspace({
+    parent: input.temporaryParent ?? tmpdir(),
+    prefix: ".dome-home-artifact-",
+    label: "Home artifact",
+  });
+  const workspace = workspaceOwner.root;
   try {
     const workspaceInfo = await lstat(workspace);
     if (!workspaceInfo.isDirectory() || workspaceInfo.isSymbolicLink()) {
@@ -216,13 +218,13 @@ export async function materializeHomeArtifactArchive(input: Readonly<{
       manifestSha256,
       dispose: async () => {
         if (disposed) return;
-        await removePrivateWorkspace(workspace);
+        await workspaceOwner.dispose();
         disposed = true;
       },
     });
   } catch (error) {
     try {
-      await removePrivateWorkspace(workspace);
+      await workspaceOwner.dispose();
     } catch (cleanupError) {
       throw new AggregateError(
         [error, cleanupError],
@@ -238,38 +240,14 @@ async function readBoundedRegularFile(
   maxBytes: number,
   expectedBytes: number | undefined,
 ): Promise<Buffer> {
-  const path = resolve(pathInput);
-  const lexical = await lstat(path);
-  if (!lexical.isFile() || lexical.isSymbolicLink()) {
-    throw new Error("Home artifact archive is not a bounded regular file");
-  }
-  const handle = await open(path, "r");
-  try {
-    const before = await handle.stat();
-    if (!before.isFile() || before.dev !== lexical.dev || before.ino !== lexical.ino ||
-      !Number.isSafeInteger(before.size) || before.size < 1 || before.size > maxBytes) {
-      throw new Error("Home artifact archive is not a bounded regular file");
-    }
-    assertExpectedNumber(expectedBytes, before.size, "archive size");
-    const bytes = Buffer.allocUnsafe(before.size);
-    let offset = 0;
-    while (offset < bytes.length) {
-      const read = await handle.read(bytes, offset, bytes.length - offset, offset);
-      if (read.bytesRead <= 0) throw new Error("Home artifact archive changed during its bounded read");
-      offset += read.bytesRead;
-    }
-    if ((await handle.read(Buffer.alloc(1), 0, 1, bytes.length)).bytesRead !== 0) {
-      throw new Error("Home artifact archive changed during its bounded read");
-    }
-    const after = await handle.stat();
-    if (after.dev !== before.dev || after.ino !== before.ino || after.size !== before.size ||
-      after.mtimeMs !== before.mtimeMs || after.ctimeMs !== before.ctimeMs) {
-      throw new Error("Home artifact archive changed during its bounded read");
-    }
-    return bytes;
-  } finally {
-    await handle.close();
-  }
+  return await readBoundedStableRegularFile({
+    path: pathInput,
+    maxBytes,
+    ...(expectedBytes === undefined ? {} : { expectedBytes }),
+    invalidMessage: "Home artifact archive is not a bounded regular file",
+    changedMessage: "Home artifact archive changed during its bounded read",
+    expectedMessage: "Home artifact archive size differs from its immutable expectation",
+  });
 }
 
 async function extractValidatedTar(tar: string, destination: string): Promise<void> {
@@ -289,17 +267,6 @@ async function resolveContainedArtifactRoot(destination: string, artifactRoot: s
     throw new Error("Home artifact root escaped its private workspace");
   }
   return extracted;
-}
-
-async function removePrivateWorkspace(workspace: string): Promise<void> {
-  await rm(workspace, { recursive: true, force: true });
-  try {
-    await lstat(workspace);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
-    throw error;
-  }
-  throw new Error("Home artifact private workspace cleanup was incomplete");
 }
 
 function assertExpectedNumber(expected: number | undefined, actual: number, label: string): void {

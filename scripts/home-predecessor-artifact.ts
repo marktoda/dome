@@ -2,7 +2,7 @@
 
 import { constants } from "node:fs";
 import { createHash } from "node:crypto";
-import { copyFile, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { gunzipSync, gzipSync } from "node:zlib";
@@ -11,6 +11,11 @@ import {
   materializeHomeArtifactArchive,
   type MaterializedHomeArtifact,
 } from "../src/product-host/home-artifact-archive";
+import {
+  readBoundedStableRegularFile,
+  type BoundedRegularFileRead,
+} from "../src/platform/bounded-regular-file";
+import { preparePrivateWorkspace } from "../src/platform/private-workspace";
 
 const RECEIPT_SCHEMA = "dome.home-predecessor-artifact/v1" as const;
 const DEFAULT_RECEIPT = resolve(
@@ -204,40 +209,49 @@ export async function materializePinnedHomePredecessorArchive(input: Readonly<{
   archive: string;
   receipt: HomePredecessorReceipt;
   temporaryParent?: string;
-}>): Promise<MaterializedHomeArtifact> {
-  const receipt = parseHomePredecessorReceipt(input.receipt);
+}>, dependencies: Readonly<{
+  readArchive?(input: BoundedRegularFileRead): Promise<Buffer>;
+}> = {}): Promise<MaterializedHomeArtifact> {
+  // Snapshot every nested primitive synchronously. The caller's receipt may
+  // be mutable even though the parsed root is frozen; no await may retain a
+  // reference into it.
+  const receipt = snapshotPinnedReceipt(input.receipt);
   const archive = resolve(input.archive);
-  const info = await lstat(archive);
-  if (!info.isFile() || info.isSymbolicLink() || info.size !== receipt.archive.bytes) {
-    throw new Error("pinned predecessor archive is not the immutable receipt file");
-  }
-  const raw = await readFile(archive);
-  if (raw.byteLength !== receipt.archive.bytes || sha256(raw) !== receipt.archive.sha256) {
-    throw new Error("pinned predecessor archive differs from its immutable receipt");
-  }
-  let tar: Buffer;
-  try {
-    tar = gunzipSync(raw, { maxOutputLength: MAX_HOME_ARTIFACT_TAR_BYTES });
-  } catch {
-    throw new Error("pinned predecessor archive is not the immutable gzip payload");
-  }
-  const canonicalTar = normalizePinnedHomePredecessorTar(tar, receipt.archive.root);
-  const parent = resolve(input.temporaryParent ?? tmpdir());
-  const workspace = await mkdtemp(join(parent, "dome-home-predecessor-admission-"));
+  const workspaceOwner = await preparePrivateWorkspace({
+    parent: input.temporaryParent ?? tmpdir(),
+    prefix: "dome-home-predecessor-admission-",
+    label: "pinned predecessor admission",
+  });
+  const workspace = workspaceOwner.root;
   let materialized: MaterializedHomeArtifact | undefined;
   let primary: unknown;
   try {
+    const raw = await (dependencies.readArchive ?? readBoundedStableRegularFile)({
+      path: archive,
+      maxBytes: receipt.archiveBytes,
+      expectedBytes: receipt.archiveBytes,
+      invalidMessage: "pinned predecessor archive is not the immutable receipt file",
+      changedMessage: "pinned predecessor archive changed during its bounded read",
+      expectedMessage: "pinned predecessor archive differs from its immutable receipt",
+    });
+    if (raw.byteLength !== receipt.archiveBytes || sha256(raw) !== receipt.archiveSha256) {
+      throw new Error("pinned predecessor archive differs from its immutable receipt");
+    }
+    let tar: Buffer;
+    try { tar = gunzipSync(raw, { maxOutputLength: MAX_HOME_ARTIFACT_TAR_BYTES }); }
+    catch { throw new Error("pinned predecessor archive is not the immutable gzip payload"); }
+    const canonicalTar = normalizePinnedHomePredecessorTar(tar, receipt.archiveRoot);
     const canonicalArchive = join(workspace, "canonical.tar.gz");
     await writeFile(canonicalArchive, gzipSync(canonicalTar, { level: 9 }), { flag: "wx", mode: 0o600 });
     materialized = await materializeHomeArtifactArchive({
       archive: canonicalArchive,
       temporaryParent: workspace,
       expected: {
-        artifactRoot: receipt.archive.root,
-        manifestBytes: receipt.manifest.bytes,
-        manifestSha256: receipt.manifest.sha256,
-        artifactId: receipt.manifest.artifactId,
-        productVersion: receipt.manifest.productVersion,
+        artifactRoot: receipt.archiveRoot,
+        manifestBytes: receipt.manifestBytes,
+        manifestSha256: receipt.manifestSha256,
+        artifactId: receipt.artifactId,
+        productVersion: receipt.productVersion,
       },
     });
     const strict = materialized;
@@ -245,13 +259,13 @@ export async function materializePinnedHomePredecessorArchive(input: Readonly<{
       ...strict,
       // Evidence names the byte-pinned input, not the private compatibility
       // derivative that exists only long enough to pass strict admission.
-      archiveBytes: receipt.archive.bytes,
-      archiveSha256: receipt.archive.sha256,
+      archiveBytes: receipt.archiveBytes,
+      archiveSha256: receipt.archiveSha256,
       dispose: async () => {
         // Retain the compatibility workspace if strict disposal cannot prove
         // ownership; deleting its parent would erase the evidence it retained.
         await strict.dispose();
-        await rm(workspace, { recursive: true, force: true });
+        await workspaceOwner.dispose();
       },
     });
   } catch (error) {
@@ -259,7 +273,7 @@ export async function materializePinnedHomePredecessorArchive(input: Readonly<{
     throw error;
   } finally {
     if (materialized === undefined) {
-      try { await rm(workspace, { recursive: true, force: true }); }
+      try { await workspaceOwner.dispose(); }
       catch (cleanup) {
         if (primary !== undefined) {
           throw new AggregateError([primary, cleanup], "predecessor admission and cleanup both failed");
@@ -268,6 +282,27 @@ export async function materializePinnedHomePredecessorArchive(input: Readonly<{
       }
     }
   }
+}
+
+function snapshotPinnedReceipt(receiptInput: HomePredecessorReceipt): Readonly<{
+  archiveBytes: number;
+  archiveSha256: string;
+  archiveRoot: string;
+  manifestBytes: number;
+  manifestSha256: string;
+  artifactId: string;
+  productVersion: string;
+}> {
+  const receipt = parseHomePredecessorReceipt(receiptInput);
+  return Object.freeze({
+    archiveBytes: receipt.archive.bytes,
+    archiveSha256: receipt.archive.sha256,
+    archiveRoot: receipt.archive.root,
+    manifestBytes: receipt.manifest.bytes,
+    manifestSha256: receipt.manifest.sha256,
+    artifactId: receipt.manifest.artifactId,
+    productVersion: receipt.manifest.productVersion,
+  });
 }
 
 /** Test seam for the exact historical header migration used above. */
