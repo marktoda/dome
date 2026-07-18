@@ -96,7 +96,32 @@ const RULES: ReadonlyArray<Rule> = [
   },
 ];
 
-const IMPORT_PATTERN = /(?:from\s+|import\()"(\.{1,2}\/[^"]+)"/g;
+const IMPORT_PATTERN =
+  /(?:from\s+|import\s*(?:\(\s*)?)(["'])(\.{1,2}\/[^"']+)\1/g;
+
+function relativeImportSpecifiers(source: string): ReadonlyArray<string> {
+  return Array.from(source.matchAll(IMPORT_PATTERN), (match) => match[2] ?? "");
+}
+
+describe("relative import scanner", () => {
+  test("recognizes both quote styles without treating ordinary strings as imports", () => {
+    const source = [
+      'import type { One } from "../engine/host/one";',
+      "import type { Two } from '../engine/host/two';",
+      'import "../engine/host/three";',
+      "const four = import('../engine/host/four');",
+      'const ordinaryString = "../engine/host/not-an-import";',
+      'import type { ZodType } from "zod";',
+    ].join("\n");
+
+    expect(relativeImportSpecifiers(source)).toEqual([
+      "../engine/host/one",
+      "../engine/host/two",
+      "../engine/host/three",
+      "../engine/host/four",
+    ]);
+  });
+});
 
 describe("surface adapters don't import adapters", () => {
   for (const rule of RULES) {
@@ -105,10 +130,10 @@ describe("surface adapters don't import adapters", () => {
       for await (const file of new Glob(rule.fromGlob).scan(REPO_ROOT)) {
         if (rule.exemptFiles.has(file)) continue;
         const text = await readFile(join(REPO_ROOT, file), "utf8");
-        for (const match of text.matchAll(IMPORT_PATTERN)) {
-          const resolved = normalize(join(dirname(file), match[1] ?? ""));
+        for (const specifier of relativeImportSpecifiers(text)) {
+          const resolved = normalize(join(dirname(file), specifier));
           if (resolved.startsWith(rule.forbiddenPrefix)) {
-            violations.push(`${file} imports ${match[1]}`);
+            violations.push(`${file} imports ${specifier}`);
           }
         }
       }
