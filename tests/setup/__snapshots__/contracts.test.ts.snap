@@ -139,7 +139,8 @@ exports[`VaultAssessment contract every closed vault classification has an exact
       {
         "kind": "install-home",
         "id": "home-artifact",
-        "artifactId": "3333333333333333333333333333333333333333333333333333333333333333"
+        "artifactId": "3333333333333333333333333333333333333333333333333333333333333333",
+        "disposition": "install-or-resume"
       },
       {
         "kind": "select-home-vault",
@@ -290,7 +291,8 @@ exports[`VaultAssessment contract every closed vault classification has an exact
       {
         "kind": "install-home",
         "id": "home-artifact",
-        "artifactId": "3333333333333333333333333333333333333333333333333333333333333333"
+        "artifactId": "3333333333333333333333333333333333333333333333333333333333333333",
+        "disposition": "install-or-resume"
       },
       {
         "kind": "select-home-vault",
@@ -451,7 +453,8 @@ exports[`VaultAssessment contract every closed vault classification has an exact
       {
         "kind": "install-home",
         "id": "home-artifact",
-        "artifactId": "3333333333333333333333333333333333333333333333333333333333333333"
+        "artifactId": "3333333333333333333333333333333333333333333333333333333333333333",
+        "disposition": "install-or-resume"
       },
       {
         "kind": "select-home-vault",
@@ -598,7 +601,8 @@ exports[`VaultAssessment contract every closed vault classification has an exact
       {
         "kind": "install-home",
         "id": "home-artifact",
-        "artifactId": "3333333333333333333333333333333333333333333333333333333333333333"
+        "artifactId": "3333333333333333333333333333333333333333333333333333333333333333",
+        "disposition": "install-or-resume"
       },
       {
         "kind": "select-home-vault",

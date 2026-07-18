@@ -1,9 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmod, mkdir, mkdtemp, realpath, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import { chmod, link, mkdir, mkdtemp, realpath, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { inspectSetupVaultSource } from "../../src/setup/vault-inspector";
+import {
+  SETUP_VAULT_INSPECTION_CAPS,
+  inspectSetupVaultSource,
+  type SetupGitRunner,
+} from "../../src/setup/vault-inspector";
 
 const temporaryRoots: string[] = [];
 
@@ -85,6 +89,22 @@ describe("read-only setup vault inspector", () => {
     expect(changed.blockers.map((blocker) => blocker.code)).toEqual(["dirty-worktree"]);
   });
 
+  test("derives staged and executable-mode dirtiness without porcelain status", async () => {
+    const root = await gitFixture();
+    const clean = await inspectSetupVaultSource(root);
+    await writeFile(join(root, "README.md"), "# Staged\n");
+    await git(root, "add", "README.md");
+    const staged = await inspectSetupVaultSource(root);
+    expect(staged.git.state).toBe("dirty");
+    expect(staged.worktreeFingerprint).not.toBe(clean.worktreeFingerprint);
+
+    await git(root, "reset", "--hard", "HEAD");
+    await chmod(join(root, "README.md"), 0o755);
+    const executable = await inspectSetupVaultSource(root);
+    expect(executable.git.state).toBe("dirty");
+    expect(executable.worktreeFingerprint).not.toBe(clean.worktreeFingerprint);
+  });
+
   test("changes for untracked bytes while keeping Markdown inventory exact", async () => {
     const root = await gitFixture();
     await writeFile(join(root, "Scratch.md"), "one\n");
@@ -103,11 +123,40 @@ describe("read-only setup vault inspector", () => {
     await writeFile(join(root, ".git", "info", "exclude"), "Secret.md\n");
     const ignored = await inspectSetupVaultSource(root);
     expect(ignored.markdown.untracked).toEqual([]);
+    expect(ignored.kind).toBe("existing-git-vault");
+    expect(ignored.blockers).toEqual([]);
 
     await writeFile(join(root, ".git", "info", "exclude"), "Other.md\n");
     const visible = await inspectSetupVaultSource(root);
     expect(visible.worktreeFingerprint).not.toBe(ignored.worktreeFingerprint);
     expect(visible.markdown.untracked).toEqual(["Secret.md"]);
+  });
+
+  test("accepts exactly slash-terminated ignored-directory inventory", async () => {
+    const root = await gitFixture();
+    await writeFile(join(root, ".gitignore"), "cache/\n");
+    await git(root, "add", ".gitignore");
+    await git(root, "commit", "-m", "Ignore cache");
+    await mkdir(join(root, "cache"));
+    await writeFile(join(root, "cache", "Secret.md"), "ignored\n");
+
+    const inspected = await inspectSetupVaultSource(root);
+    expect(inspected.kind).toBe("existing-git-vault");
+    expect(inspected.markdown.untracked).toEqual([]);
+    expect(inspected.blockers).toEqual([]);
+  });
+
+  test("rejects ignored-directory inventory with more than one terminal slash", async () => {
+    const root = await gitFixture();
+    const runner: SetupGitRunner = async (args, cwd, caps) => {
+      const result = await nativeGitRunner(args, cwd, caps);
+      return args.includes("--directory")
+        ? { ...result, stdout: Buffer.from("cache//\0") }
+        : result;
+    };
+    const inspected = await inspectSetupVaultSource(root, { runGit: runner });
+    expect(inspected.git.state).toBe("ambiguous");
+    expect(inspected.blockers.map((blocker) => blocker.code)).toEqual(["ambiguous-state"]);
   });
 
   test("never follows symlinks and fingerprints their exact targets", async () => {
@@ -163,6 +212,44 @@ describe("read-only setup vault inspector", () => {
     expect(inspected.blockers.map((blocker) => blocker.code)).toEqual(["ambiguous-state"]);
   });
 
+  test("blocks nested .git files and directories", async () => {
+    for (const kind of ["file", "directory"] as const) {
+      const root = await temporary();
+      await mkdir(join(root, "Nested"));
+      if (kind === "file") await writeFile(join(root, "Nested", ".git"), "gitdir: elsewhere\n");
+      else await mkdir(join(root, "Nested", ".git"));
+      const inspected = await inspectSetupVaultSource(root);
+      expect(inspected.kind).toBe("unsafe-or-ambiguous-state");
+      expect(inspected.blockers.map((blocker) => blocker.code)).toContain("unsafe-path");
+    }
+  });
+
+  test("lstats and blocks reserved .dome/state symlinks and special files", async () => {
+    const symlinkRoot = await temporary();
+    const outside = await temporary();
+    await mkdir(join(symlinkRoot, ".dome"));
+    await symlink(outside, join(symlinkRoot, ".dome", "state"));
+    const linkedState = await inspectSetupVaultSource(symlinkRoot);
+    expect(linkedState.blockers.map((blocker) => blocker.code)).toEqual(["symlink-ambiguity", "unsafe-path"]);
+
+    const specialRoot = await temporary();
+    await mkdir(join(specialRoot, ".dome"));
+    const fifo = join(specialRoot, ".dome", "state");
+    const process = Bun.spawn(["mkfifo", fifo], { stdout: "ignore", stderr: "pipe" });
+    expect(await process.exited).toBe(0);
+    const specialState = await inspectSetupVaultSource(specialRoot);
+    expect(specialState.blockers.map((blocker) => blocker.code)).toEqual(["unsafe-path"]);
+  });
+
+  test("blocks hard links and binds exact file identity evidence", async () => {
+    const root = await temporary();
+    await writeFile(join(root, "Owner.md"), "owner\n");
+    await link(join(root, "Owner.md"), join(root, "Alias.md"));
+    const inspected = await inspectSetupVaultSource(root);
+    expect(inspected.kind).toBe("unsafe-or-ambiguous-state");
+    expect(inspected.blockers.map((blocker) => blocker.code)).toEqual(["unsafe-path"]);
+  });
+
   test("fails closed for active Git operations", async () => {
     const root = await gitFixture();
     await mkdir(join(root, ".git", "rebase-merge"));
@@ -214,6 +301,72 @@ describe("read-only setup vault inspector", () => {
     expect(await Bun.file(marker).exists()).toBe(false);
   });
 
+  test("does not invoke clean filters or Git porcelain commands", async () => {
+    const root = await gitFixture();
+    const marker = join(root, ".git", "clean-filter-ran");
+    const filter = join(root, ".git", "hostile-clean.sh");
+    await writeFile(filter, `#!/bin/sh\ntouch '${marker}'\ncat\n`);
+    await chmod(filter, 0o755);
+    await writeFile(join(root, ".gitattributes"), "*.md filter=hostile\n");
+    await git(root, "add", ".gitattributes");
+    await git(root, "commit", "-m", "Configure attributes");
+    await git(root, "config", "filter.hostile.clean", filter);
+    await git(root, "config", "filter.hostile.required", "true");
+    const commands: string[] = [];
+    const runner: SetupGitRunner = async (args, cwd, caps) => {
+      commands.push(args[0] ?? "");
+      return await nativeGitRunner(args, cwd, caps);
+    };
+
+    const inspected = await inspectSetupVaultSource(root, { runGit: runner });
+    expect(inspected.kind).toBe("existing-git-vault");
+    expect(await Bun.file(marker).exists()).toBe(false);
+    expect([...new Set(commands)].sort()).toEqual(["ls-files", "ls-tree", "rev-parse", "symbolic-ref"]);
+  });
+
+  test("fails closed when a nested directory becomes a symlink between coherent scans", async () => {
+    const root = await gitFixture();
+    const notes = join(root, "Notes");
+    await mkdir(notes);
+    await writeFile(join(notes, "Owned.md"), "owned\n");
+    await git(root, "add", "Notes/Owned.md");
+    await git(root, "commit", "-m", "Add notes");
+    const outside = await temporary();
+    await writeFile(join(outside, "Escaped.md"), "must not be inventoried\n");
+    let topLevelProofs = 0;
+    const runner: SetupGitRunner = async (args, cwd, caps) => {
+      if (args[0] === "rev-parse" && args[1] === "--show-toplevel" && ++topLevelProofs === 2) {
+        await rm(notes, { recursive: true });
+        await symlink(outside, notes);
+      }
+      return await nativeGitRunner(args, cwd, caps);
+    };
+
+    const inspected = await inspectSetupVaultSource(root, { runGit: runner });
+    expect(inspected.kind).toBe("unsafe-or-ambiguous-state");
+    expect(inspected.blockers.map((blocker) => blocker.code)).toEqual([
+      "ambiguous-state", "dirty-worktree", "symlink-ambiguity",
+    ]);
+    expect(inspected.markdown.tracked).toEqual(["Notes/Owned.md", "README.md"]);
+    expect(inspected.markdown.untracked).not.toContain("Notes/Escaped.md");
+  });
+
+  test("classifies a late Git proof failure as ambiguous", async () => {
+    const root = await gitFixture();
+    await writeFile(join(root, "Scratch.md"), "initially dirty\n");
+    let topLevelProofs = 0;
+    const runner: SetupGitRunner = async (args, cwd, caps) => {
+      if (args[0] === "rev-parse" && args[1] === "--show-toplevel" && ++topLevelProofs === 2) {
+        return { exitCode: 1, stdout: Buffer.alloc(0), stderr: "injected late failure" };
+      }
+      return await nativeGitRunner(args, cwd, caps);
+    };
+    const inspected = await inspectSetupVaultSource(root, { runGit: runner });
+    expect(inspected.git.state).toBe("ambiguous");
+    expect(inspected.kind).toBe("unsafe-or-ambiguous-state");
+    expect(inspected.blockers.map((blocker) => blocker.code)).toEqual(["ambiguous-state"]);
+  });
+
   test("binds injected package or Home selector evidence without inspecting it", async () => {
     const root = await temporary();
     const first = await inspectSetupVaultSource(root, {
@@ -227,6 +380,20 @@ describe("read-only setup vault inspector", () => {
     });
     expect(repeated.worktreeFingerprint).toBe(first.worktreeFingerprint);
     expect(changed.worktreeFingerprint).not.toBe(first.worktreeFingerprint);
+  });
+
+  test("allows cap overrides only to lower limits and bounds injected evidence", async () => {
+    const root = await temporary();
+    await expect(inspectSetupVaultSource(root, {
+      caps: { entries: SETUP_VAULT_INSPECTION_CAPS.entries + 1 },
+    })).rejects.toThrow("may only lower");
+    await expect(inspectSetupVaultSource(root, {
+      caps: { externalEvidence: 1 },
+      externalFingerprintEvidence: [
+        { id: "one", sha256: "1".repeat(64) },
+        { id: "two", sha256: "2".repeat(64) },
+      ],
+    })).rejects.toThrow("entry budget");
   });
 });
 
@@ -260,3 +427,17 @@ async function git(cwd: string, ...args: string[]): Promise<string> {
   if (exitCode !== 0) throw new Error(`git ${args.join(" ")} failed: ${stderr}`);
   return stdout.trim();
 }
+
+const nativeGitRunner: SetupGitRunner = async (args, cwd, caps) => {
+  const process = Bun.spawn(["git", ...args], {
+    cwd,
+    env: { ...globalThis.process.env, GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(process.stdout).arrayBuffer(), new Response(process.stderr).text(), process.exited,
+  ]);
+  if (stdout.byteLength > caps.commandBytes) throw new Error("test Git output exceeded cap");
+  return { exitCode, stdout: Buffer.from(stdout), stderr };
+};

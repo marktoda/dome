@@ -123,7 +123,10 @@ const actionSchemas = [
     message: nonEmpty,
     paths: sortedUnique(relativePath).min(1).max(SETUP_CONTRACT_CAPS.markdownPaths),
   }).strict(),
-  z.object({ kind: z.literal("install-home"), id: z.literal("home-artifact"), artifactId: sha256 }).strict(),
+  z.object({
+    kind: z.literal("install-home"), id: z.literal("home-artifact"), artifactId: sha256,
+    disposition: z.enum(["install-or-resume", "upgrade"]),
+  }).strict(),
   z.object({
     kind: z.literal("select-home-vault"), id: z.literal("home-vault-selector"), vaultPath: absolutePath,
   }).strict(),
@@ -318,6 +321,13 @@ export const vaultAssessmentSchema = assessmentSchemaBase.superRefine((assessmen
     (installedIdentity.some((value) => value === null) || assessment.installedHome.selectedVaultPath === null)) {
     context.addIssue({ code: "custom", path: ["installedHome"], message: "owned Home evidence must identify its artifact, build, and vault" });
   }
+  if (assessment.installedHome.state === "owned" && assessment.installedHome.selectedVaultPath !== assessment.target.path) {
+    context.addIssue({
+      code: "custom",
+      path: ["installedHome", "selectedVaultPath"],
+      message: "owned Home evidence must select the assessed vault; another vault is foreign ownership",
+    });
+  }
   if (assessment.installedHome.state === "absent" &&
     (installedIdentity.some((value) => value !== null) || assessment.installedHome.selectedVaultPath !== null)) {
     context.addIssue({ code: "custom", path: ["installedHome"], message: "absent Home evidence cannot identify an artifact, build, or vault" });
@@ -349,8 +359,35 @@ export const vaultAssessmentSchema = assessmentSchemaBase.superRefine((assessmen
   const serviceLabels = assessment.actions.flatMap((action) =>
     action.kind === "install-home-service" || action.kind === "start-home" ? [action.serviceLabel] : []
   );
+  const homeActionCount = assessment.actions.filter((action) =>
+    action.kind === "install-home" || action.kind === "select-home-vault" ||
+    action.kind === "install-home-service" || action.kind === "start-home"
+  ).length;
+  if (homeActionCount !== 0 && homeActionCount !== 4) {
+    context.addIssue({ code: "custom", path: ["actions"], message: "Home activation actions must appear as one complete intent" });
+  }
   if (new Set(serviceLabels).size > 1) {
     context.addIssue({ code: "custom", path: ["actions"], message: "Home install and start actions must use one service label" });
+  }
+  const installHome = assessment.actions.find((action): action is Extract<AdaptationAction, { kind: "install-home" }> =>
+    action.kind === "install-home"
+  );
+  if (installHome !== undefined) {
+    const candidate = assessment.product.packagedHome;
+    const installedMatchesCandidate = assessment.installedHome.state === "owned" &&
+      assessment.installedHome.artifactId === candidate.artifactId &&
+      assessment.installedHome.productVersion === candidate.productVersion &&
+      assessment.installedHome.buildCommit === candidate.buildCommit &&
+      assessment.installedHome.manifestSha256 === candidate.manifestSha256;
+    const expectedDisposition = installedMatchesCandidate || assessment.installedHome.state === "absent" ?
+      "install-or-resume" : assessment.installedHome.state === "owned" ? "upgrade" : null;
+    if (installHome.disposition !== expectedDisposition) {
+      context.addIssue({
+        code: "custom",
+        path: ["actions", assessment.actions.indexOf(installHome), "disposition"],
+        message: "must match the assessed installed Home identity",
+      });
+    }
   }
 });
 
@@ -377,7 +414,10 @@ const setupPlanSchemaBase = z.object({
     paths: sortedUnique(relativePath).min(1).max(SETUP_CONTRACT_CAPS.markdownPaths),
   }).strict()).max(2),
   serviceActions: z.array(z.discriminatedUnion("kind", [
-    z.object({ kind: z.literal("install-home"), artifactId: sha256 }).strict(),
+    z.object({
+      kind: z.literal("install-home"), artifactId: sha256,
+      disposition: z.enum(["install-or-resume", "upgrade"]),
+    }).strict(),
     z.object({ kind: z.literal("select-home-vault"), vaultPath: absolutePath }).strict(),
     z.object({
       kind: z.literal("install-home-service"), serviceLabel, ifMissing: z.literal(true),
@@ -459,7 +499,9 @@ export const setupPlanSchema = setupPlanSchemaBase.superRefine((plan, context) =
   }
   const expectedServices: Array<(typeof plan.serviceActions)[number]> = [];
   for (const action of plan.assessment.actions) {
-    if (action.kind === "install-home") expectedServices.push({ kind: action.kind, artifactId: action.artifactId });
+    if (action.kind === "install-home") expectedServices.push({
+      kind: action.kind, artifactId: action.artifactId, disposition: action.disposition,
+    });
     if (action.kind === "select-home-vault") expectedServices.push({ kind: action.kind, vaultPath: action.vaultPath });
     if (action.kind === "install-home-service") expectedServices.push({
       kind: action.kind, serviceLabel: action.serviceLabel, ifMissing: action.ifMissing,

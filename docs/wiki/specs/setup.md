@@ -64,7 +64,8 @@ but unsupported tool retains its version and has an
 - `write-scaffold-file`
 - `set-content-scope`
 - `create-baseline-commit`
-- `install-home`
+- `install-home` (`install-or-resume` or `upgrade`, derived from exact installed
+  artifact identity)
 - `select-home-vault`
 - `install-home-service`
 - `start-home`
@@ -99,19 +100,42 @@ sorted order without following symlinks. This applies equally to an existing
 vault and to a missing leaf beneath an existing parent; an ancestor symlink is
 always ambiguity evidence, never an invitation to inspect its target.
 It hashes bounded tracked and untracked regular-file bytes and modes, exact
-symlink targets, Git index and status inventories, ignore results, direct
-`info/exclude` bytes, the linked-worktree gitfile, Dome configuration, and
+symlink targets, Git index/HEAD and derived dirty evidence, ignore results,
+direct `info/exclude` bytes, the linked-worktree gitfile, Dome configuration, and
 injected package or Home selector evidence. It excludes Git internals and
 `.dome/state`; ignored content bytes are deliberately not read, while their
 paths and ignore behavior remain bound. Entry, file, total-content, command,
 and command-time budgets fail closed rather than silently truncating evidence.
+Caller-provided cap overrides may only lower production limits, and injected
+package/Home evidence has its own bounded inventory.
 Equal relevant observations produce the same lowercase SHA-256 value, and a
 relevant change produces a different one.
 
+Bun 1.2 does not expose `openat`/`fdopendir`, and macOS does not permit
+enumerating an opened directory through `/dev/fd`. A controlled `find -P`
+inventory was considered, but it still requires pathname reinspection, cannot
+prune the already-derived ignored-directory inventory without an unbounded
+argument vector, and introduces platform-specific process behavior without
+closing the remaining race. The inspector therefore uses the smaller native
+fallback: directories are held open with `O_DIRECTORY | O_NOFOLLOW`, regular
+files use `O_NOFOLLOW`, and every file, link, and directory has exact pre/post
+device/inode/mode/size/mtime/ctime/link-count proofs; two bounded sorted scans
+must be identical; and identical final Git HEAD, index, tracked, untracked,
+ignored, and ignore-rule evidence brackets them. A nested directory becoming a
+symlink is blocked and never traversed in the second scan. This is fail-closed
+for normal cooperative concurrency. It does not claim a kernel-enforced
+snapshot against a malicious process racing individual syscalls; apply must
+still repeat revision validation immediately before mutation.
+
 Package, prerequisite, and installed-Home discovery remain separate injected
-adapters. Git subprocesses run with prompts, optional locks, hooks, filesystem
-monitors, and pagers disabled; the fixed command inventory cannot invoke a
-credential or network operation. The vault inspector does not read
+adapters. Git subprocesses use only `rev-parse`, `symbolic-ref`, `ls-files`,
+and `ls-tree` under a minimal allowlisted environment with system/global
+configuration, prompts, optional locks, hooks, filesystem monitors, pagers,
+external excludes, and external attributes disabled. Staged and worktree
+dirtiness are derived from index/HEAD plumbing plus Dome's own `O_NOFOLLOW`
+byte and mode proofs; setup never invokes `status`, diff drivers, textconv, or
+clean/smudge filters. The fixed command inventory cannot invoke a credential or
+network operation. The vault inspector does not read
 credentials, call a model, access the network, open the Dome runtime, or
 modify Git, files, services, or durable state. Apply compares both revision
 bindings and refuses a stale plan. It then
@@ -157,7 +181,16 @@ name exactly those paths—never an unrelated owner file.
 
 Home plan evidence projects the assessed artifact ID, selected vault path,
 service label, and missing-service guard rather than replacing them with prose.
-Install and start must use the same service label.
+Install and start must use the same service label. An `owned` installed Home
+must select the assessed vault; another selector is foreign ownership and must
+be classified and blocked before planning. The install disposition is
+`install-or-resume` for no installed artifact or the exact candidate identity,
+and `upgrade` for a different owned artifact selecting the same vault.
+
+The four Home preview rows—install/upgrade artifact, select vault, install
+service, and start—are one atomic activation intent. M6 consumes them through
+one deep Home activation call with rollback and recovery; no caller may apply
+an individual row as an independent operation.
 
 The plan is a preview and a revision binding, not an execution log. Apply may
 consume a successfully revalidated plan in a later slice, but it must not

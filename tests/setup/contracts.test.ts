@@ -53,7 +53,10 @@ function fixture(kind: VaultAssessment["target"]["kind"]): VaultAssessment {
       paths: ["Journal.md"],
     });
     actions.push(
-      { kind: "install-home", id: "home-artifact", artifactId: ARTIFACT },
+      {
+        kind: "install-home", id: "home-artifact", artifactId: ARTIFACT,
+        disposition: "install-or-resume",
+      },
       { kind: "select-home-vault", id: "home-vault-selector", vaultPath: "/Users/example/Vault" },
       {
         kind: "install-home-service", id: "home-service", serviceLabel: "com.dome.home.example-vault", ifMissing: true,
@@ -162,7 +165,10 @@ describe("VaultAssessment contract", () => {
     const unsafe = fixture("unsafe-or-ambiguous-state");
     expect(() => validateVaultAssessment({
       ...unsafe,
-      actions: [{ kind: "install-home", id: "home-artifact", artifactId: ARTIFACT }],
+      actions: [{
+        kind: "install-home", id: "home-artifact", artifactId: ARTIFACT,
+        disposition: "install-or-resume",
+      }],
     })).toThrow("must be empty while assessment is blocked");
   });
 
@@ -286,7 +292,7 @@ describe("SetupPlan contract", () => {
         paths: [".dome/config.yaml", ".gitignore", "AGENTS.md"],
       }],
       serviceActions: [
-        { kind: "install-home", artifactId: ARTIFACT },
+        { kind: "install-home", artifactId: ARTIFACT, disposition: "install-or-resume" },
         { kind: "select-home-vault", vaultPath: "/Users/example/Vault" },
         { kind: "install-home-service", serviceLabel: "com.dome.home.example-vault", ifMissing: true },
         { kind: "start-home", serviceLabel: "com.dome.home.example-vault" },
@@ -321,6 +327,11 @@ describe("SetupPlan contract", () => {
       ...plan,
       serviceActions: plan.serviceActions.map((action) => action.kind === "start-home" ?
         { ...action, serviceLabel: "com.dome.home.other-vault" } : action),
+    })).toThrow("must exactly project Home assessment actions");
+    expect(() => validateSetupPlan({
+      ...plan,
+      serviceActions: plan.serviceActions.map((action) => action.kind === "install-home" ?
+        { ...action, disposition: "upgrade" as const } : action),
     })).toThrow("must exactly project Home assessment actions");
   });
 
@@ -366,7 +377,7 @@ describe("SetupPlan contract", () => {
       commits: [],
       serviceActions: [
         { kind: "select-home-vault", vaultPath: "/Users/example/Vault" },
-        { kind: "install-home", artifactId: ARTIFACT },
+        { kind: "install-home", artifactId: ARTIFACT, disposition: "install-or-resume" },
       ],
       optionalSteps: [],
       recoveryCommands: [],
@@ -381,6 +392,52 @@ describe("SetupPlan contract", () => {
       actions: assessment.actions.map((action) => action.kind === "start-home" ?
         { ...action, serviceLabel: "com.dome.home.other-vault" } : action),
     })).toThrow("must use one service label");
+    expect(() => validateVaultAssessment({
+      ...assessment,
+      actions: assessment.actions.filter((action) => action.kind !== "start-home"),
+    })).toThrow("must appear as one complete intent");
+  });
+
+  test("Home disposition is derived from exact installed identity and vault ownership", () => {
+    const absent = fixture("existing-git-vault");
+    expect(() => validateVaultAssessment({
+      ...absent,
+      actions: absent.actions.map((action) => action.kind === "install-home" ?
+        { ...action, disposition: "upgrade" as const } : action),
+    })).toThrow("must match the assessed installed Home identity");
+
+    const candidate = absent.product.packagedHome;
+    const exact = validateVaultAssessment({
+      ...absent,
+      installedHome: {
+        state: "owned",
+        artifactId: candidate.artifactId,
+        productVersion: candidate.productVersion,
+        buildCommit: candidate.buildCommit,
+        manifestSha256: candidate.manifestSha256,
+        selectedVaultPath: absent.target.path,
+      },
+    });
+    expect(exact.actions.find((action) => action.kind === "install-home")?.disposition).toBe("install-or-resume");
+
+    const upgrade = validateVaultAssessment({
+      ...absent,
+      installedHome: {
+        state: "owned",
+        artifactId: "5".repeat(64),
+        productVersion: "0.3.0",
+        buildCommit: "6".repeat(40),
+        manifestSha256: "7".repeat(64),
+        selectedVaultPath: absent.target.path,
+      },
+      actions: absent.actions.map((action) => action.kind === "install-home" ?
+        { ...action, disposition: "upgrade" as const } : action),
+    });
+    expect(upgrade.actions.find((action) => action.kind === "install-home")?.disposition).toBe("upgrade");
+    expect(() => validateVaultAssessment({
+      ...upgrade,
+      installedHome: { ...upgrade.installedHome, selectedVaultPath: "/Users/example/Other" },
+    })).toThrow("another vault is foreign ownership");
   });
 
   test("plan writes cannot drift from assessed content-scope bytes", () => {
@@ -404,7 +461,9 @@ describe("SetupPlan contract", () => {
     }
     const serviceActions: Array<SetupPlan["serviceActions"][number]> = [];
     for (const action of assessment.actions) {
-      if (action.kind === "install-home") serviceActions.push({ kind: action.kind, artifactId: action.artifactId });
+      if (action.kind === "install-home") serviceActions.push({
+        kind: action.kind, artifactId: action.artifactId, disposition: action.disposition,
+      });
       if (action.kind === "select-home-vault") serviceActions.push({ kind: action.kind, vaultPath: action.vaultPath });
       if (action.kind === "install-home-service") serviceActions.push({
         kind: action.kind, serviceLabel: action.serviceLabel, ifMissing: action.ifMissing,
