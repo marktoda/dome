@@ -51,7 +51,7 @@ describe("ChatTranscript", () => {
       const chip = screen.getByRole("button", { name: /wiki\/x\.md/ });
       fireEvent.click(chip);
       expect(screen.getByRole("dialog")).toBeDefined();
-      expect(screen.getByText(/Revision aaaaaaaa/)).toBeDefined();
+      expect(screen.getByText(/rev aaaaaaaa/)).toBeDefined();
       const close = screen.getByRole("button", { name: "Close source" });
       await new Promise<void>((resolve) => queueMicrotask(resolve));
       expect(screen.getByRole("dialog")).toBeDefined();

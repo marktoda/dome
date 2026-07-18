@@ -123,11 +123,16 @@ input, textarea { font: inherit; color: inherit; background: none; border: none;
 .recovery-card form { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 7px; }
 .recovery-card input { flex: 1 1 10rem; min-width: 0; min-height: 44px; border: 1px solid var(--control-border); border-radius: 8px; padding: 7px 9px; background: var(--input); color: var(--text); font-size: 16px; }
 .recovery-card form button { min-height: 44px; color: var(--amber); font-weight: 600; white-space: nowrap; }
-.connection { flex: 0 1 auto; min-height: 44px; overflow: hidden; margin: 0 calc(var(--pad) + var(--safe-right)) 10px calc(var(--pad) + var(--safe-left)); padding: 8px 12px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface-2); color: var(--text-soft); font-size: 12px; }
+/* Connection lives at the foot of the screen now — a quiet pulse + label at
+   rest, expanding into the (still bounded, keyboard-scrollable) diagnostics. */
+.connection { flex: 0 1 auto; min-height: 44px; overflow: hidden; padding: 6px calc(var(--pad) + var(--safe-right)) calc(10px + var(--safe-bottom)) calc(var(--pad) + var(--safe-left)); border-top: 1px solid var(--border); background: var(--bg-screen); color: var(--text-soft); font-size: 12px; }
 .connection.open { display: flex; flex-direction: column; }
-.connection-summary { flex: none; width: 100%; text-align: left; color: var(--text-dim); font: 500 11px var(--mono); }
-.connection-summary::before { content: "▸"; margin-right: 8px; color: var(--text-faint); }
-.connection-summary[aria-expanded="true"]::before { content: "▾"; }
+.connection-summary { flex: none; width: 100%; display: flex; align-items: center; gap: 8px; text-align: left; color: var(--text-dim); font: 500 11px var(--mono); }
+.connection-summary::after { content: "▸"; margin-left: auto; color: var(--text-faint); }
+.connection-summary[aria-expanded="true"]::after { content: "▾"; }
+.conn-pulse { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--text-faint); }
+.conn-pulse.healthy { background: var(--sage); animation: breathe 2.6s ease-in-out infinite; }
+.conn-pulse.attention { background: var(--amber); animation: breathe 1.4s ease-in-out infinite; }
 .connection-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .connection-body:focus-visible { outline-offset: -3px; }
 .connection-body > p { margin: 8px 0 0; }
@@ -170,7 +175,7 @@ input, textarea { font: inherit; color: inherit; background: none; border: none;
 .connection-hint { display: block; padding: 5px 14px 0; color: var(--amber); font: 500 10px var(--mono); }
 /* Long unbreakable strings (bare URLs, slugs, paths in vault content) must wrap,
    not widen the page off the side of the phone. */
-.answer, .row .text, .qcard .body, .hero .body, .brief-text,
+.answer, .row .text, .qcard .body, .hero .body, .brief-text, .brief-para, .brief-source,
 .recents .title, .recents .meta, .msg, .msg p, .all-clear p, .chip { overflow-wrap: anywhere; }
 
 /* ── Brief ── */
@@ -187,9 +192,19 @@ input, textarea { font: inherit; color: inherit; background: none; border: none;
 .surface-error button { min-height: 44px; color: var(--amber); font-weight: 600; }
 .brief { padding-bottom: 4px; }
 .brief .subline { font: 500 11px var(--mono); letter-spacing: .04em; color: var(--label); margin: 2px 0 14px 2px; }
-.brief-head { display: flex; align-items: center; justify-content: space-between; margin: 4px 2px 14px; }
+.brief-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 6px 2px 14px; }
 .brief-head .label { font: 500 11px var(--mono); letter-spacing: .06em; color: var(--label); }
-.brief-head .hide { font: 500 11px var(--mono); color: var(--text-dim); }
+.brief-head .greeting { font-size: 23px; letter-spacing: -.02em; color: var(--text-strong); }
+.brief-head .hide { flex: none; font: 500 11px var(--mono); color: var(--text-dim); }
+
+/* verdict line — needs-you first; same signal palette (peri = decide,
+   amber = review, dim = focus), glyphs give a non-color redundancy. */
+.verdict { display: flex; flex-wrap: wrap; gap: 7px 15px; margin: 0 2px 20px; font: 500 12px var(--mono); }
+.verdict .v { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.verdict .vg { font-weight: 600; }
+.verdict .v-decide { color: var(--peri); }
+.verdict .v-review { color: var(--amber); }
+.verdict .v-focus { color: var(--text-dim); }
 /* collapsed brief bar */
 .brief-bar { width: 100%; text-align: left; display: flex; align-items: center; justify-content: space-between; background: #161614; border: 1px solid var(--control-border); border-radius: 13px; padding: 13px 15px; margin: 4px 0 8px; animation: rise .3s ease; }
 .brief-bar .left { display: flex; align-items: center; gap: 9px; font-size: 14px; color: var(--text); font-weight: 500; }
@@ -198,7 +213,13 @@ input, textarea { font: inherit; color: inherit; background: none; border: none;
 /* answer ack toast */
 .ack-wrap { position: absolute; left: 0; right: 0; bottom: 96px; display: flex; justify-content: center; z-index: 30; pointer-events: none; }
 .ack { background: rgba(200,240,216,0.14); border: 1px solid var(--sage-bdr); color: var(--sage); font: 500 12px var(--mono); padding: 8px 14px; border-radius: 20px; backdrop-filter: blur(8px); animation: rise .3s ease; }
-.brief-text { font-size: 14px; line-height: 1.55; color: var(--text-dim); margin-bottom: 18px; text-wrap: pretty; }
+/* the brief is the hero — prose, not a dim one-liner; entities land in white
+   via renderRich's <strong>. Split into paragraphs with a provenance line. */
+.brief-text { margin-bottom: 16px; }
+.brief-para { font-size: 15.5px; line-height: 1.6; color: var(--text-soft); margin-bottom: 10px; text-wrap: pretty; }
+.brief-para:last-of-type { margin-bottom: 6px; }
+.brief-para strong { font-weight: 600; color: var(--text-strong); }
+.brief-source { font: 500 10.5px var(--mono); color: var(--text-faint); }
 .brief-more { display: block; font: 500 12px var(--mono); color: var(--text-dim); padding: 4px 2px 6px; }
 /* [[wikilinks]] + markdown links rendered as clean inline text (never raw syntax) */
 .wl { color: var(--text-soft); }
@@ -269,13 +290,29 @@ input.box:checked { background: var(--amber); border-color: var(--amber); }
 .agenda-meta { color: var(--text-faint); }
 .agenda-more { font: 500 12px var(--mono); color: var(--text-dim); margin-top: 5px; }
 
+/* glance-vocabulary glyphs — ? = decide (peri), ⚠ = review (amber). Paired
+   with readable text so the glyph is never the only signal. */
+.tag-glyph { flex: none; font: 600 14px var(--mono); line-height: 1.35; }
+.decide-glyph { color: var(--peri); }
+.review-glyph { color: var(--amber); }
+.q-caret { flex: none; font: 500 14px var(--mono); color: var(--text-faint); transition: transform .15s ease; }
+
 /* question cards (non-hero) */
 .qcard { background: var(--surface); border: 1px solid rgba(185,192,240,.18); border-radius: 14px; padding: 15px; margin-bottom: 14px; }
 .qcard .tag { display: flex; align-items: center; gap: 7px; margin-bottom: 11px; }
 .qcard .tag .q { font-size: 13px; color: var(--peri); line-height: 1; }
 .qcard .tag .label { font: 600 10px var(--mono); color: var(--peri); letter-spacing: .1em; }
 .qcard .body { font-size: 15px; line-height: 1.4; color: var(--text); margin-bottom: 13px; text-wrap: pretty; }
-.review-card .body { margin-bottom: 8px; }
+.qcard-head { display: flex; gap: 10px; align-items: flex-start; }
+.qcard-head .body { margin-bottom: 13px; }
+/* Needs-review is a collapsible disclosure: reason in the summary, evidence +
+   the one Mac action revealed on expand. */
+.review-card { padding: 13px 15px; }
+.review-summary { display: flex; gap: 10px; align-items: flex-start; list-style: none; cursor: pointer; }
+.review-summary::-webkit-details-marker { display: none; }
+.review-card .review-summary .body { flex: 1; margin: 0; font-size: 14.5px; }
+details.review-card[open] .q-caret { transform: rotate(90deg); }
+.review-detail { margin: 12px 0 0 26px; }
 .review-evidence, .review-action, .review-backlog-action { overflow-wrap: anywhere; }
 .review-evidence { color: var(--text-dim); font: 500 10px/1.45 var(--mono); margin-bottom: 8px; }
 .review-action { color: var(--text); font-size: 12px; line-height: 1.45; }
@@ -422,9 +459,9 @@ input.box:checked { background: var(--amber); border-color: var(--amber); }
 .source-head p { margin-top: 4px; font: 500 10px var(--mono); color: var(--text-dim); }
 .source-close { width: 44px; height: 44px; flex: none; border-radius: 50%; color: var(--text-soft); font-size: 23px; line-height: 1; }
 .source-close:hover, .source-close:focus-visible { background: var(--sage-bg); color: var(--sage); }
-.source-view-toggle { display: flex; gap: 4px; padding: 7px 12px; border-bottom: 1px solid var(--border); }
-.source-view-toggle button { min-height: 36px; padding: 0 12px; border-radius: 8px; color: var(--text-dim); font: 600 11px var(--mono); }
-.source-view-toggle button[aria-pressed="true"] { background: var(--sage-bg); color: var(--sage); }
+.source-view-toggle { display: flex; gap: 6px; padding: 10px 14px 2px; }
+.source-view-toggle button { min-height: 36px; padding: 0 14px; border-radius: 999px; color: var(--text-dim); font: 600 12.5px var(--font); }
+.source-view-toggle button[aria-pressed="true"] { background: var(--surface-2); color: var(--text-strong); }
 .source-view-toggle button:disabled { cursor: not-allowed; opacity: .52; }
 .source-render-notice { margin: 0; padding: 9px 14px; border-bottom: 1px solid var(--border); background: var(--amber-bg); color: var(--text-dim); font: 500 11px/1.5 var(--mono); }
 .source-body { min-height: 9rem; overflow: auto; overscroll-behavior: contain; }
@@ -534,7 +571,11 @@ input.box:checked { background: var(--amber); border-color: var(--amber); }
 .sheet .tag { display: flex; align-items: center; gap: 7px; margin-bottom: 13px; }
 .sheet .tag .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--sage); }
 .sheet .tag .label { font: 600 10px var(--mono); color: var(--sage); letter-spacing: .12em; }
-.sheet textarea { width: 100%; min-height: 84px; resize: none; background: var(--bg-screen); border: 1px solid var(--control-border); border-radius: 14px; padding: 15px; font-size: 16px; line-height: 1.5; color: var(--text-strong); margin-bottom: 8px; }
+/* text-first capture: a plain-language title + what happens to it, then the field. */
+.sheet-title { font-size: 15px; color: var(--text-strong); margin-bottom: 4px; }
+.sheet-sub { font-size: 12.5px; color: var(--text-dim); margin-bottom: 14px; text-wrap: pretty; }
+.sheet-voice-note { margin-top: 12px; font: 500 10.5px var(--mono); color: var(--text-faint); overflow-wrap: anywhere; }
+.sheet textarea { width: 100%; min-height: 84px; resize: none; background: var(--bg-screen); border: 1px solid var(--control-border); border-radius: 14px; padding: 15px; font-size: 16px; line-height: 1.5; color: var(--text-strong); caret-color: var(--peri); margin-bottom: 8px; }
 .sheet .target { font: 500 11px var(--mono); color: var(--text-faint); margin-bottom: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sheet .actions { display: flex; gap: 10px; }
 .sheet .cancel, .sheet .record-capture { flex: none; padding: 14px 16px; border-radius: 14px; border: 1px solid var(--control-border); color: var(--text-dim); font-size: 14px; font-weight: 500; }

@@ -60,7 +60,7 @@ describe("Brief", () => {
     />);
     fireEvent.click(screen.getByRole("button", { name: /\+1 more, later/ }));
     expect(screen.getAllByText("Follow up with Jane")).toHaveLength(1);
-    expect(screen.getByText(/today · 1 open/i)).toBeDefined();
+    expect(screen.getByText(/1 focus/i)).toBeDefined();
     expect(screen.queryByText(/2 open/i)).toBeNull();
   });
 
@@ -114,7 +114,7 @@ describe("Brief", () => {
     expect(screen.getByText("dome proposals")).toBeDefined();
     expect(screen.getByText(/2 more items need attention/)).toBeDefined();
     expect(screen.getByText("dome check --decisions")).toBeDefined();
-    expect(screen.getByText(/today · 3 need attention/i)).toBeDefined();
+    expect(screen.getByText(/3 review/i)).toBeDefined();
     expect(screen.queryByRole("button", { name: "apply" })).toBeNull();
     expect(screen.queryByRole("button", { name: "reject" })).toBeNull();
   });
@@ -127,7 +127,7 @@ describe("Brief", () => {
     };
     render(<Brief today={today} onResolve={noop} />);
     expect(screen.queryByText("You're clear.")).toBeNull();
-    expect(screen.getByText(/today · 2 need attention/i)).toBeDefined();
+    expect(screen.getByText(/2 review/i)).toBeDefined();
   });
 
   test("uses the bounded review count even when no review rows were loaded", () => {
@@ -138,7 +138,7 @@ describe("Brief", () => {
     };
     render(<Brief today={today} onResolve={noop} />);
     expect(screen.queryByText("You're clear.")).toBeNull();
-    expect(screen.getByText(/today · 3 need attention/i)).toBeDefined();
+    expect(screen.getByText(/3 review/i)).toBeDefined();
   });
 
   test("folds 30-day backlog debt separately and expands it with live settlement", async () => {
@@ -154,7 +154,7 @@ describe("Brief", () => {
     };
 
     render(<Brief today={today} onResolve={noop} onSettle={onSettle} />);
-    expect(screen.getByText(/today · 1 in focus · 2 open total/i)).toBeDefined();
+    expect(screen.getByText(/2 focus/i)).toBeDefined();
     expect(screen.getByText("Recent backlog")).toBeDefined();
     expect(screen.queryByText("Old backlog")).toBeNull();
 
@@ -176,7 +176,7 @@ describe("Brief", () => {
     };
 
     render(<Brief today={today} onResolve={noop} />);
-    expect(screen.getByText(/today · 3 in focus · 10 open total/i)).toBeDefined();
+    expect(screen.getByText(/10 focus/i)).toBeDefined();
     expect(screen.getByRole("button", { name: /\+2 more, later/ })).toBeDefined();
     expect(screen.getByText("7 additional open items omitted from this view")).toBeDefined();
     expect(screen.queryByText(/\+9 more, later/)).toBeNull();
