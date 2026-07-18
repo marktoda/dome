@@ -6,12 +6,17 @@ import { join } from "node:path";
 import {
   assertHomePredecessorObservation,
   assertKnownHistoricalFailure,
+  normalizePinnedHomePredecessorTarForTests,
   parseHomePredecessorReceipt,
   parseHomePredecessorCliArgs,
   readHomePredecessorReceipt,
   reconstructHomePredecessorArtifact,
   type HomePredecessorObservation,
 } from "../../scripts/home-predecessor-artifact";
+import {
+  createNormalizedHomeArtifactTarHeader,
+  inspectHomeArtifactTar,
+} from "../../src/product-host/home-artifact-archive";
 
 const RECEIPT_PATH = join(
   import.meta.dir,
@@ -100,6 +105,43 @@ describe("Home predecessor artifact provenance", () => {
     expect(source).not.toContain('requireSuccess(["tar", "-t');
   });
 
+  test("normalizes only the frozen predecessor's exact legacy symlink-mode inventory", () => {
+    const root = "dome-home-0.1.0-darwin-arm64";
+    const suffixes = [
+      "app/node_modules/.bin/crc32",
+      "app/node_modules/.bin/esparse",
+      "app/node_modules/.bin/esvalidate",
+      "app/node_modules/.bin/isogit",
+      "app/node_modules/.bin/js-yaml",
+      "app/node_modules/.bin/node-which",
+      "app/node_modules/.bin/sha.js",
+      "app/node_modules/.bin/yaml",
+    ];
+    const headers = [
+      createNormalizedHomeArtifactTarHeader(`${root}/`, { mode: 0o755, size: 0, type: "5", link: "" }),
+      ...suffixes.map((suffix) => legacySymlinkHeader(`${root}/${suffix}`)),
+    ];
+    const legacy = Buffer.concat([...headers, Buffer.alloc(1024)]);
+
+    expect(() => inspectHomeArtifactTar(legacy)).toThrow(
+      `Home artifact tar mode is not normalized: ${root}/${suffixes[0]}`,
+    );
+    const canonical = normalizePinnedHomePredecessorTarForTests(legacy, root);
+    expect(inspectHomeArtifactTar(canonical).entries).toHaveLength(headers.length);
+    for (let offset = 512; offset < headers.length * 512; offset += 512) {
+      expect(readTarMode(canonical, offset)).toBe(0o755);
+    }
+
+    const unrelated = Buffer.concat([
+      createNormalizedHomeArtifactTarHeader("unrelated/", { mode: 0o755, size: 0, type: "5", link: "" }),
+      legacySymlinkHeader("unrelated/link"),
+      Buffer.alloc(1024),
+    ]);
+    expect(() => inspectHomeArtifactTar(unrelated)).toThrow("mode is not normalized: unrelated/link");
+    expect(() => normalizePinnedHomePredecessorTarForTests(unrelated, "unrelated"))
+      .toThrow("unexpected legacy tar mode: unrelated/link");
+  });
+
   test("orchestrates exactly two independent builds, compare, then publish", async () => {
     const root = await mkdtemp(join(tmpdir(), "dome-predecessor-test-"));
     try {
@@ -164,4 +206,22 @@ function observed(
       artifactId: receipt.manifest.artifactId,
     },
   };
+}
+
+function legacySymlinkHeader(path: string): Buffer {
+  const header = createNormalizedHomeArtifactTarHeader(path, {
+    mode: 0o755,
+    size: 0,
+    type: "2",
+    link: "../target",
+  });
+  header.write("0000777\0", 100, 8, "ascii");
+  header.fill(0x20, 148, 156);
+  const checksum = header.reduce((sum, byte) => sum + byte, 0);
+  header.write(`${checksum.toString(8).padStart(6, "0")}\0 `, 148, 8, "ascii");
+  return header;
+}
+
+function readTarMode(tar: Buffer, headerOffset: number): number {
+  return Number.parseInt(tar.subarray(headerOffset + 100, headerOffset + 108).toString("ascii").replace(/\0.*$/, ""), 8);
 }

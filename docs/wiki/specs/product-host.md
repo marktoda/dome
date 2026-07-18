@@ -848,9 +848,15 @@ previously distributed release. `scripts/home-predecessor-artifact.ts`
 reproduces it only on darwin-arm64 with Bun 1.2.13: two
 `git clone --no-local` detached clean checkouts build the exact source commit
 with isolated caches, accept only the pinned historical post-archive rehearsal
-failure, verify the archive checksum before private extraction, run the current
-artifact verifier, bind raw-manifest identity, require byte-identical archives,
-and only then publish the result. Receipt parsing and orchestration remain
+failure, and verify the archive checksum before private extraction. That
+byte-pinned archive predates canonical USTAR modes and contains exactly eight
+package-manager `.bin` symlinks recorded as `0777`. Its compatibility adapter
+accepts only the frozen receipt hash and that closed eight-path header inventory,
+rewrites those modes to `0755` in a private derivative, and routes the derivative
+through the ordinary strict archive boundary; arbitrary legacy modes remain
+rejected. It then runs the current artifact verifier, binds raw-manifest identity,
+requires byte-identical raw archives, and only then publishes the result.
+Receipt parsing and orchestration remain
 hermetic cross-platform tests; reconstruction itself is a release-gate
 operation.
 

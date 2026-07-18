@@ -29,7 +29,10 @@ import { isHomePairingReadiness } from "../src/product-host/home-readiness";
 import { HOME_STORE_MIGRATIONS } from "../src/product-host/home-store-migrations";
 import { isHomeUpgradeVersionAdvance } from "../src/product-host/home-upgrade-version";
 import { materializeHomeArtifactArchive } from "../src/product-host/home-artifact-archive";
-import { readHomePredecessorReceipt } from "./home-predecessor-artifact";
+import {
+  materializePinnedHomePredecessorArchive,
+  readHomePredecessorReceipt,
+} from "./home-predecessor-artifact";
 import { runHomePwaChromiumAcceptance } from "./home-pwa-chromium-acceptance";
 import { runHomePwaUpdateRehearsal } from "./home-pwa-update-rehearsal";
 import { parsePwaShellHashedAssetPath } from "./home-pwa-shell";
@@ -371,18 +374,10 @@ async function prepareRealArtifacts(input: InstalledHomeUpgradeRehearsalInput): 
 
   const temporary = await mkdtemp(join(tmpdir(), "dome-installed-upgrade-"));
   try {
-    const predecessorMaterialization = await materializeHomeArtifactArchive({
+    const predecessorMaterialization = await materializePinnedHomePredecessorArchive({
       archive: predecessorArchive,
+      receipt,
       temporaryParent: temporary,
-      expected: {
-        compressedBytes: receipt.archive.bytes,
-        compressedSha256: receipt.archive.sha256,
-        artifactRoot: receipt.archive.root,
-        manifestBytes: receipt.manifest.bytes,
-        manifestSha256: receipt.manifest.sha256,
-        artifactId: receipt.manifest.artifactId,
-        productVersion: receipt.manifest.productVersion,
-      },
     });
     const candidateMaterialization = await materializeHomeArtifactArchive({
       archive: candidateArchive,

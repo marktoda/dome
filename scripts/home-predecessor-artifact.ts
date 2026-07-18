@@ -1,16 +1,32 @@
 #!/usr/bin/env bun
 
 import { constants } from "node:fs";
-import { copyFile, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { copyFile, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
-import { materializeHomeArtifactArchive } from "../src/product-host/home-artifact-archive";
+import { gunzipSync, gzipSync } from "node:zlib";
+import {
+  MAX_HOME_ARTIFACT_TAR_BYTES,
+  materializeHomeArtifactArchive,
+  type MaterializedHomeArtifact,
+} from "../src/product-host/home-artifact-archive";
 
 const RECEIPT_SCHEMA = "dome.home-predecessor-artifact/v1" as const;
 const DEFAULT_RECEIPT = resolve(
   import.meta.dir,
   "../tests/fixtures/home-upgrade/n-1/0.1.0-eb644dc2/artifact-receipt.json",
 );
+const PINNED_LEGACY_MODE_SUFFIXES = Object.freeze([
+  "app/node_modules/.bin/crc32",
+  "app/node_modules/.bin/esparse",
+  "app/node_modules/.bin/esvalidate",
+  "app/node_modules/.bin/isogit",
+  "app/node_modules/.bin/js-yaml",
+  "app/node_modules/.bin/node-which",
+  "app/node_modules/.bin/sha.js",
+  "app/node_modules/.bin/yaml",
+]);
 
 export type HomePredecessorReceipt = Readonly<{
   schema: typeof RECEIPT_SCHEMA;
@@ -177,6 +193,147 @@ export function assertHomePredecessorObservation(
   }
 }
 
+/**
+ * Admit the one byte-pinned 0.1 compatibility floor through today's strict
+ * archive boundary. The historical archive records eight package-manager
+ * symlinks as 0777. We first prove the immutable raw receipt, rewrite exactly
+ * those eight USTAR headers in private memory, then let ordinary strict
+ * materialization validate the complete canonical derivative.
+ */
+export async function materializePinnedHomePredecessorArchive(input: Readonly<{
+  archive: string;
+  receipt: HomePredecessorReceipt;
+  temporaryParent?: string;
+}>): Promise<MaterializedHomeArtifact> {
+  const receipt = parseHomePredecessorReceipt(input.receipt);
+  const archive = resolve(input.archive);
+  const info = await lstat(archive);
+  if (!info.isFile() || info.isSymbolicLink() || info.size !== receipt.archive.bytes) {
+    throw new Error("pinned predecessor archive is not the immutable receipt file");
+  }
+  const raw = await readFile(archive);
+  if (raw.byteLength !== receipt.archive.bytes || sha256(raw) !== receipt.archive.sha256) {
+    throw new Error("pinned predecessor archive differs from its immutable receipt");
+  }
+  let tar: Buffer;
+  try {
+    tar = gunzipSync(raw, { maxOutputLength: MAX_HOME_ARTIFACT_TAR_BYTES });
+  } catch {
+    throw new Error("pinned predecessor archive is not the immutable gzip payload");
+  }
+  const canonicalTar = normalizePinnedHomePredecessorTar(tar, receipt.archive.root);
+  const parent = resolve(input.temporaryParent ?? tmpdir());
+  const workspace = await mkdtemp(join(parent, "dome-home-predecessor-admission-"));
+  let materialized: MaterializedHomeArtifact | undefined;
+  let primary: unknown;
+  try {
+    const canonicalArchive = join(workspace, "canonical.tar.gz");
+    await writeFile(canonicalArchive, gzipSync(canonicalTar, { level: 9 }), { flag: "wx", mode: 0o600 });
+    materialized = await materializeHomeArtifactArchive({
+      archive: canonicalArchive,
+      temporaryParent: workspace,
+      expected: {
+        artifactRoot: receipt.archive.root,
+        manifestBytes: receipt.manifest.bytes,
+        manifestSha256: receipt.manifest.sha256,
+        artifactId: receipt.manifest.artifactId,
+        productVersion: receipt.manifest.productVersion,
+      },
+    });
+    const strict = materialized;
+    return Object.freeze({
+      ...strict,
+      // Evidence names the byte-pinned input, not the private compatibility
+      // derivative that exists only long enough to pass strict admission.
+      archiveBytes: receipt.archive.bytes,
+      archiveSha256: receipt.archive.sha256,
+      dispose: async () => {
+        // Retain the compatibility workspace if strict disposal cannot prove
+        // ownership; deleting its parent would erase the evidence it retained.
+        await strict.dispose();
+        await rm(workspace, { recursive: true, force: true });
+      },
+    });
+  } catch (error) {
+    primary = error;
+    throw error;
+  } finally {
+    if (materialized === undefined) {
+      try { await rm(workspace, { recursive: true, force: true }); }
+      catch (cleanup) {
+        if (primary !== undefined) {
+          throw new AggregateError([primary, cleanup], "predecessor admission and cleanup both failed");
+        }
+        throw cleanup;
+      }
+    }
+  }
+}
+
+/** Test seam for the exact historical header migration used above. */
+export function normalizePinnedHomePredecessorTarForTests(tar: Buffer, artifactRoot: string): Buffer {
+  return normalizePinnedHomePredecessorTar(tar, artifactRoot);
+}
+
+function normalizePinnedHomePredecessorTar(input: Buffer, artifactRoot: string): Buffer {
+  const tar = Buffer.from(input);
+  const expected = new Set(PINNED_LEGACY_MODE_SUFFIXES.map((path) => `${artifactRoot}/${path}`));
+  const normalized = new Set<string>();
+  let offset = 0;
+  while (offset + 512 <= tar.byteLength) {
+    const header = tar.subarray(offset, offset + 512);
+    if (header.every((byte) => byte === 0)) break;
+    const name = tarString(header, 0, 100);
+    const prefix = tarString(header, 345, 155);
+    const path = prefix === "" ? name : `${prefix}/${name}`;
+    const type = String.fromCharCode(header[156]!);
+    const mode = tarOctal(header, 100, 8);
+    const size = tarOctal(header, 124, 12);
+    const canonicalMode = type === "0" ? ((mode & 0o111) === 0 ? 0o644 : 0o755) : 0o755;
+    if (mode !== canonicalMode) {
+      if (!expected.has(path) || type !== "2" || mode !== 0o777 || canonicalMode !== 0o755) {
+        throw new Error(`pinned predecessor contains an unexpected legacy tar mode: ${path}`);
+      }
+      writeTarOctal(header, 100, 8, canonicalMode);
+      rewriteTarChecksum(header);
+      normalized.add(path);
+    }
+    const bodyBlocks = Math.ceil(size / 512);
+    offset += 512 + bodyBlocks * 512;
+  }
+  if (offset + 1024 > tar.byteLength ||
+    !tar.subarray(offset, offset + 1024).every((byte) => byte === 0) ||
+    normalized.size !== expected.size || [...expected].some((path) => !normalized.has(path))) {
+    throw new Error("pinned predecessor legacy tar mode inventory changed");
+  }
+  return tar;
+}
+
+function tarString(header: Buffer, offset: number, length: number): string {
+  const field = header.subarray(offset, offset + length);
+  const nul = field.indexOf(0);
+  return field.subarray(0, nul < 0 ? field.byteLength : nul).toString("utf8");
+}
+
+function tarOctal(header: Buffer, offset: number, length: number): number {
+  const value = tarString(header, offset, length).trim();
+  if (!/^[0-7]+$/.test(value)) throw new Error("pinned predecessor tar has a malformed octal field");
+  const parsed = Number.parseInt(value, 8);
+  if (!Number.isSafeInteger(parsed) || parsed < 0) throw new Error("pinned predecessor tar octal field is invalid");
+  return parsed;
+}
+
+function writeTarOctal(header: Buffer, offset: number, length: number, value: number): void {
+  const encoded = `${value.toString(8).padStart(length - 1, "0")}\0`;
+  header.write(encoded, offset, length, "ascii");
+}
+
+function rewriteTarChecksum(header: Buffer): void {
+  header.fill(0x20, 148, 156);
+  const checksum = header.reduce((sum, byte) => sum + byte, 0);
+  header.write(`${checksum.toString(8).padStart(6, "0")}\0 `, 148, 8, "ascii");
+}
+
 export async function reconstructHomePredecessorArtifact(input: {
   readonly repoRoot: string;
   readonly outputDir: string;
@@ -226,18 +383,7 @@ async function buildHistoricalClone(input: {
 }
 
 async function observeArchive(path: string, receipt: HomePredecessorReceipt): Promise<HomePredecessorObservation> {
-  const materialized = await materializeHomeArtifactArchive({
-    archive: path,
-    expected: {
-      compressedBytes: receipt.archive.bytes,
-      compressedSha256: receipt.archive.sha256,
-      artifactRoot: receipt.archive.root,
-      manifestBytes: receipt.manifest.bytes,
-      manifestSha256: receipt.manifest.sha256,
-      artifactId: receipt.manifest.artifactId,
-      productVersion: receipt.manifest.productVersion,
-    },
-  });
+  const materialized = await materializePinnedHomePredecessorArchive({ archive: path, receipt });
   try {
     const manifest = materialized.manifest;
     return Object.freeze({
@@ -296,6 +442,10 @@ async function requireSuccess(
 
 async function filesEqual(left: string, right: string): Promise<boolean> {
   return Buffer.from(await readFile(left)).equals(await readFile(right));
+}
+
+function sha256(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("hex");
 }
 
 async function publishExclusive(source: string, destination: string): Promise<void> {
