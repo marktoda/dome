@@ -156,8 +156,8 @@ describe("runStatus", () => {
     expect(out).not.toContain("\n  LOOPS\n"); // no loop detail section
     expect(out).toContain("diagnostics"); expect(out).toContain("√ 0"); // diagnostic row
     expect(out).toContain("questions"); expect(out).toContain("√ 0"); // questions row
-    expect(out).toMatch(/runs.*0 pending ·.*0 failed/s);
-    expect(out).toMatch(/outbox.*0 pending ·.*0 failed/s);
+    expect(out).toMatch(/^\s*runs\s+0 pending · 0 failed\s*$/m);
+    expect(out).toMatch(/^\s*outbox\s+0 pending · 0 failed\s*$/m);
     expect(out).toContain("quarantine"); // quarantine row
     expect(out).toContain("serve"); expect(out).toContain("o off"); // serve row (off glyph)
   });
