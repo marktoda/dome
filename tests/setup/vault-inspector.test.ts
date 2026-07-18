@@ -6,6 +6,7 @@ import { join } from "node:path";
 import {
   SETUP_VAULT_INSPECTION_CAPS,
   inspectSetupVaultSource,
+  sameExactFilesystemObject,
   type SetupGitRunner,
 } from "../../src/setup/vault-inspector";
 import {
@@ -22,6 +23,13 @@ afterEach(async () => {
 });
 
 describe("read-only setup vault inspector", () => {
+  test("compares live filesystem identities without Git's uint32 truncation", () => {
+    const left = { dev: 1n, ino: 7n };
+    expect(sameExactFilesystemObject(left, { ...left })).toBe(true);
+    expect(sameExactFilesystemObject(left, { dev: 1n, ino: 7n + 0x1_0000_0000n })).toBe(false);
+    expect(sameExactFilesystemObject(left, { dev: 1n + 0x1_0000_0000n, ino: 7n })).toBe(false);
+  });
+
   test("classifies new, empty, and existing non-Git paths without creating state", async () => {
     const root = await temporary();
     const missing = join(root, "missing");

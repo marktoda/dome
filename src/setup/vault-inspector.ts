@@ -1086,16 +1086,28 @@ async function detectIgnoreCase(
   gitignorePath: string,
   canonical: Awaited<ReturnType<typeof lstat>>,
 ): Promise<boolean> {
+  const exactCanonical = await lstat(gitignorePath, { bigint: true });
+  if (!exactCanonical.isFile() || exactCanonical.isSymbolicLink() ||
+    Number(exactCanonical.dev) !== Number(canonical.dev) || Number(exactCanonical.ino) !== Number(canonical.ino) ||
+    exactCanonical.size !== BigInt(canonical.size) || Number(exactCanonical.mode) !== Number(canonical.mode)) {
+    throw new Error(".gitignore changed during case-behavior inspection");
+  }
   try {
-    const alias = await lstat(join(dirname(gitignorePath), ".GITIGNORE"));
-    if (unsigned32(alias.dev) === unsigned32(canonical.dev) && unsigned32(alias.ino) === unsigned32(canonical.ino)) {
-      return true;
-    }
+    const alias = await lstat(join(dirname(gitignorePath), ".GITIGNORE"), { bigint: true });
+    if (sameExactFilesystemObject(exactCanonical, alias)) return true;
     throw new Error(".gitignore has a distinct case-variant collision");
   } catch (error) {
     if (hasCode(error, "ENOENT")) return false;
     throw error;
   }
+}
+
+/** Live directory-entry identity must never inherit Git index's uint32 truncation. */
+export function sameExactFilesystemObject(
+  left: Readonly<{ dev: bigint; ino: bigint }>,
+  right: Readonly<{ dev: bigint; ino: bigint }>,
+): boolean {
+  return left.dev === right.dev && left.ino === right.ino;
 }
 
 function trackingFor(
