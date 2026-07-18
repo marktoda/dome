@@ -63,7 +63,16 @@ export function createNormalizedHomeArtifactTarHeader(
   const header = Buffer.alloc(512);
   const { name, prefix } = splitHomeTarPath(path);
   homeTarField(header, 0, 100, name);
-  homeTarOctalField(header, 100, 8, values.mode);
+  // Filesystem metadata is not portable here: Linux commonly reports 0777
+  // for symlinks while Darwin reports 0755. Preserve only executable intent
+  // for regular files and make every other admitted entry mode canonical.
+  // Keeping this at the header writer closes every artifact producer over the
+  // same normalized USTAR contract, including package-manager-generated
+  // node_modules/.bin links.
+  const mode = values.type === "0"
+    ? ((values.mode & 0o111) === 0 ? 0o644 : 0o755)
+    : 0o755;
+  homeTarOctalField(header, 100, 8, mode);
   homeTarOctalField(header, 108, 8, 0);
   homeTarOctalField(header, 116, 8, 0);
   homeTarOctalField(header, 124, 12, values.size);

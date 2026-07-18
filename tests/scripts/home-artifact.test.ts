@@ -4,6 +4,9 @@ import { chmod, link, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import {
+  createNormalizedHomeArtifactTarHeader,
+} from "../../src/product-host/home-artifact-archive";
+import {
   createDeterministicTar,
   compileHomeCredentialHelper,
   exerciseArtifactHomeReadinessForTests,
@@ -720,6 +723,28 @@ describe("Dome Home artifact", () => {
     }
   });
 
+  test("normalizes generated package bin modes at the USTAR writer boundary", () => {
+    // Package managers create node_modules/.bin links with host-dependent
+    // lstat modes (commonly 0777 on Linux and 0755 on Darwin). The archive
+    // contract must not depend on which release host assembled it.
+    const generatedBin = createNormalizedHomeArtifactTarHeader(
+      "dome/app/node_modules/.bin/crc32",
+      { mode: 0o777, size: 0, type: "2", link: "../crc-32/bin/crc32.njs" },
+    );
+    const generatedTarget = createNormalizedHomeArtifactTarHeader(
+      "dome/app/node_modules/crc-32/bin/crc32.njs",
+      { mode: 0o775, size: 1, type: "0", link: "" },
+    );
+    const ordinaryFile = createNormalizedHomeArtifactTarHeader(
+      "dome/app/node_modules/crc-32/package.json",
+      { mode: 0o660, size: 1, type: "0", link: "" },
+    );
+
+    expect(tarHeaderMode(generatedBin)).toBe(0o755);
+    expect(tarHeaderMode(generatedTarget)).toBe(0o755);
+    expect(tarHeaderMode(ordinaryFile)).toBe(0o644);
+  });
+
   test("encodes one Bun body plus the exact extractable Home hardlink", async () => {
     const root = await mkdtemp(join(tmpdir(), "dome-home-tar-hardlink-"));
     const extracted = await mkdtemp(join(tmpdir(), "dome-home-tar-hardlink-extract-"));
@@ -1183,6 +1208,12 @@ function tarHeaderOffset(tar: Buffer, expectedPath: string): number {
     offset += 512 + size + ((512 - (size % 512)) % 512);
   }
   throw new Error(`missing tar header ${expectedPath}`);
+}
+
+function tarHeaderMode(header: Buffer): number {
+  const field = header.subarray(100, 108);
+  const zero = field.indexOf(0);
+  return Number.parseInt(field.subarray(0, zero < 0 ? field.length : zero).toString(), 8);
 }
 
 function rewriteTarName(tar: Buffer, headerOffset: number, name: string): void {
