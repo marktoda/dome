@@ -2047,6 +2047,10 @@ describe("Product Host terminal upgrade history", () => {
       )).rejects.toThrow("direct owned directory");
       expect((await stat(target)).mode & 0o777).toBe(0o755);
     } finally { await rm(f.root, { recursive: true, force: true }); }
+  }, {
+    // This full filesystem/SQLite/FULL-sync fixture needs a bounded hosted
+    // budget above Bun's implicit 5s; 10s remains below the 30s ownership wait.
+    timeout: 10_000,
   });
 
   test("fails closed for non-terminal, wrong-service, and duplicate destination evidence", async () => {
