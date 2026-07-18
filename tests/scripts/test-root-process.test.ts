@@ -1,10 +1,19 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { superviseRootTestChild } from "../../scripts/test-root";
+import {
+  spawnRootTestProcess,
+  superviseRootTestChild,
+  type PipedRootTestChild,
+  type RootTestChild,
+} from "../../scripts/test-root";
 
-const children: Array<ReturnType<typeof Bun.spawn>> = [];
+const children: RootTestChild[] = [];
+const ownedProcessGroups: number[] = [];
 
 afterEach(async () => {
+  for (const pgid of ownedProcessGroups.splice(0)) {
+    try { process.kill(-pgid, "SIGKILL"); } catch {}
+  }
   for (const child of children.splice(0)) {
     try { child.kill(9); } catch {}
     await Promise.race([child.exited.catch(() => -1), Bun.sleep(1_000)]);
@@ -13,6 +22,113 @@ afterEach(async () => {
 });
 
 describe("root test real process supervision", () => {
+  test("a deadline retires a TERM-ignoring owner and its TERM-ignoring descendant", async () => {
+    if (process.platform === "win32") return;
+
+    const child = spawnRootTestProcess([process.execPath, "-e", `
+      const descendant = Bun.spawn([process.execPath, "-e", ${JSON.stringify(`
+        process.on("SIGTERM", () => {});
+        console.log("ready");
+        setInterval(() => {}, 1_000);
+      `)}], { stdin: "ignore", stdout: "pipe", stderr: "ignore" });
+      const reader = descendant.stdout.getReader();
+      await reader.read();
+      reader.releaseLock();
+      descendant.unref();
+      process.on("SIGTERM", () => {});
+      console.log(JSON.stringify({ ownerPid: process.pid, descendantPid: descendant.pid }));
+      setInterval(() => {}, 1_000);
+    `], {
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    children.push(child);
+    ownedProcessGroups.push(child.pid);
+    const { ownerPid, descendantPid } = await readPidPair(child);
+
+    try {
+      expect(await superviseRootTestChild(child, {
+        timeoutMs: 20,
+        shutdownGraceMs: 50,
+      })).toMatchObject({
+        kind: "timed-out",
+        termination: "sigkill",
+      });
+      expect(isProcessAlive(ownerPid)).toBeFalse();
+      expect(isProcessAlive(descendantPid)).toBeFalse();
+    } finally {
+      try { process.kill(-ownerPid, "SIGKILL"); } catch {}
+    }
+  });
+
+  test("a direct owner exit still retires a live descendant before returning", async () => {
+    const child = spawnRootTestProcess([process.execPath, "-e", `
+      const descendant = Bun.spawn([process.execPath, "-e", ${JSON.stringify(`
+        process.on("SIGTERM", () => {});
+        console.log("ready");
+        setInterval(() => {}, 1_000);
+      `)}], { stdin: "ignore", stdout: "pipe", stderr: "ignore" });
+      const reader = descendant.stdout.getReader();
+      await reader.read();
+      reader.releaseLock();
+      descendant.unref();
+      console.log(JSON.stringify({ ownerPid: process.pid, descendantPid: descendant.pid }));
+      setTimeout(() => process.exit(37), 30);
+    `], {
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    children.push(child);
+    ownedProcessGroups.push(child.pid);
+    const { ownerPid, descendantPid } = await readPidPair(child);
+
+    expect(await superviseRootTestChild(child, {
+      timeoutMs: 1_000,
+      shutdownGraceMs: 50,
+    })).toEqual({ kind: "exited", exitCode: 37 });
+    expect(isProcessAlive(ownerPid)).toBeFalse();
+    expect(isProcessAlive(descendantPid)).toBeFalse();
+  });
+
+  test("an owner interrupt retires descendants that outlive the direct child", async () => {
+    const child = spawnRootTestProcess([process.execPath, "-e", `
+      const descendant = Bun.spawn([process.execPath, "-e", ${JSON.stringify(`
+        process.on("SIGINT", () => {});
+        process.on("SIGTERM", () => {});
+        console.log("ready");
+        setInterval(() => {}, 1_000);
+      `)}], { stdin: "ignore", stdout: "pipe", stderr: "ignore" });
+      const reader = descendant.stdout.getReader();
+      await reader.read();
+      reader.releaseLock();
+      descendant.unref();
+      process.on("SIGINT", () => process.exit(42));
+      console.log(JSON.stringify({ ownerPid: process.pid, descendantPid: descendant.pid }));
+      setInterval(() => {}, 1_000);
+    `], {
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    children.push(child);
+    ownedProcessGroups.push(child.pid);
+    const { ownerPid, descendantPid } = await readPidPair(child);
+
+    expect(await superviseRootTestChild(child, {
+      interrupted: Promise.resolve("SIGINT"),
+      shutdownGraceMs: 50,
+    })).toEqual({
+      kind: "interrupted",
+      signal: "SIGINT",
+      termination: "sigkill",
+      observedExitCode: 42,
+    });
+    expect(isProcessAlive(ownerPid)).toBeFalse();
+    expect(isProcessAlive(descendantPid)).toBeFalse();
+  });
+
   test("a deadline sends TERM and observes graceful child exit", async () => {
     const child = await spawnReady(`
       process.on("SIGTERM", () => process.exit(41));
@@ -68,8 +184,8 @@ describe("root test real process supervision", () => {
 
   test("a supervisor process finalizes boundedly after killing a stuck child", async () => {
     const outer = Bun.spawn([process.execPath, "-e", `
-      import { superviseRootTestChild } from "./scripts/test-root.ts";
-      const child = Bun.spawn([process.execPath, "-e", ${JSON.stringify(`
+      import { spawnRootTestProcess, superviseRootTestChild } from "./scripts/test-root.ts";
+      const child = spawnRootTestProcess([process.execPath, "-e", ${JSON.stringify(`
         process.on("SIGTERM", () => {});
         console.log("ready");
         setInterval(() => {}, 1_000);
@@ -127,13 +243,14 @@ describe("root test real process supervision", () => {
   });
 });
 
-async function spawnReady(source: string): Promise<ReturnType<typeof Bun.spawn>> {
-  const child = Bun.spawn([process.execPath, "-e", source], {
+async function spawnReady(source: string): Promise<PipedRootTestChild> {
+  const child = spawnRootTestProcess([process.execPath, "-e", source], {
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
   });
   children.push(child);
+  ownedProcessGroups.push(child.pid);
   const reader = child.stdout.getReader();
   try {
     const first = await Promise.race([
@@ -148,4 +265,42 @@ async function spawnReady(source: string): Promise<ReturnType<typeof Bun.spawn>>
     reader.releaseLock();
   }
   return child;
+}
+
+async function readPidPair(child: PipedRootTestChild): Promise<Readonly<{
+  ownerPid: number;
+  descendantPid: number;
+}>> {
+  const reader = child.stdout.getReader();
+  try {
+    const first = await Promise.race([
+      reader.read(),
+      child.exited.then((exitCode) => {
+        throw new Error(`fixture owner exited before readiness (${exitCode})`);
+      }),
+      Bun.sleep(1_000).then(() => { throw new Error("fixture owner was not ready"); }),
+    ]);
+    const parsed = JSON.parse(new TextDecoder().decode(first.value)) as {
+      ownerPid: unknown;
+      descendantPid: unknown;
+    };
+    if (!Number.isInteger(parsed.ownerPid) || !Number.isInteger(parsed.descendantPid)) {
+      throw new Error("fixture owner emitted malformed process identifiers");
+    }
+    return Object.freeze({
+      ownerPid: parsed.ownerPid as number,
+      descendantPid: parsed.descendantPid as number,
+    });
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
 }

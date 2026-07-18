@@ -166,8 +166,16 @@ Work:
    lifecycle and serve-cleanup tests cascaded. Per-file process ownership is the
    smallest uniform isolation seam and replaces both measured failure modes
    without retries, global timeout changes, allowlists, or coverage loss. The
-   four areas remain progress groupings, not isolation boundaries. Do not use
-   bare recursive `bun test`, which also crosses into nested packages.
+   four areas remain progress groupings, not isolation boundaries. Each file
+   owns a private POSIX process group: normal direct exit, timeout, and owner
+   interruption all retire the full group before the runner advances, even
+   when a wrapper exits before its descendants. POSIX exposes only a numeric
+   process-group id rather than a handle-bound group capability, so the runner
+   signals immediately at the ownership boundary, treats `ESRCH` as terminal,
+   and never signals that id again after observing retirement; this is the
+   narrow conventional defense against identifier reuse without adding
+   platform FFI to the test gate. Do not use bare recursive `bun test`, which
+   also crosses into nested packages.
 4. Run `bun run check:pwa` as its own explicit gate, alongside typecheck and
    the root tests, so the PWA remains required without conflating test roots.
    Keep one macOS job with named attributable steps unless measured latency or

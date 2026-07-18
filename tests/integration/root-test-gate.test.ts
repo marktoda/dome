@@ -24,12 +24,14 @@ test("local, CI, and contributor root gates use the per-file runner", async () =
   expect(agents).toContain("`bun run test`");
   expect(agents).toContain("executes each file in its own fresh Bun process");
   const runner = await readFile(resolve(REPO_ROOT, "scripts", "test-root.ts"), "utf8");
-  expect(runner).toContain("Bun.spawn(rootTestCommand(file)");
+  expect(runner).toContain("spawnRootTestProcess(rootTestCommand(file)");
+  expect(runner).toContain("detached: true");
   expect(runner).toContain('process.on("SIGINT"');
   expect(runner).toContain('process.on("SIGTERM"');
   expect(runner).toContain("await superviseRootTestChild(child, { interrupted })");
   expect(runner).toContain("ROOT_TEST_FILE_TIMEOUT_MS = 5 * 60_000");
-  expect(runner).toContain("child.kill(signal.number)");
+  expect(runner).toContain("process.kill(-group.pgid, signal)");
+  expect(runner).toContain("process.kill(-group.pgid, 0)");
   expect(runner).toContain("child.unref()");
   expect(runner).toContain("process.exit(exitCode)");
 });

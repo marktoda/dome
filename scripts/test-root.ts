@@ -33,6 +33,20 @@ export type RootTestChild = Readonly<{
   unref: () => void;
 }>;
 
+export type RootTestSpawnOptions = Readonly<{
+  cwd?: string;
+  stdin: "ignore" | "inherit";
+  stdout: "ignore" | "inherit" | "pipe";
+  stderr: "ignore" | "inherit" | "pipe";
+}>;
+
+export type SpawnedRootTestChild = RootTestChild & Readonly<{ pid: number }>;
+
+export type PipedRootTestChild = SpawnedRootTestChild & Readonly<{
+  stdout: ReadableStream<Uint8Array>;
+  stderr: ReadableStream<Uint8Array>;
+}>;
+
 export type RootTestTermination = "sigint" | "sigterm" | "sigkill" | "unobserved";
 
 export type RootTestChildOutcome =
@@ -57,6 +71,44 @@ export type RootTestWaitWithin = <T>(
   promise: Promise<T>,
   milliseconds: number,
 ) => Promise<RootTestWaitResult<T>>;
+
+type PrivateRootTestProcessGroup = {
+  readonly pgid: number;
+  retired: boolean;
+};
+
+const privateRootTestProcessGroups = new WeakMap<RootTestChild, PrivateRootTestProcessGroup>();
+
+/**
+ * Spawn one test command with process-tree ownership hidden behind RootTestChild.
+ * Bun's detached POSIX spawn creates a new session whose group id is the child
+ * pid. The supervisor can therefore retire descendants without making callers
+ * or unit-test fakes coordinate pid/group signaling themselves.
+ */
+export function spawnRootTestProcess(
+  command: ReadonlyArray<string>,
+  options: RootTestSpawnOptions & Readonly<{ stdout: "pipe"; stderr: "pipe" }>,
+): PipedRootTestChild;
+export function spawnRootTestProcess(
+  command: ReadonlyArray<string>,
+  options: RootTestSpawnOptions,
+): SpawnedRootTestChild;
+export function spawnRootTestProcess(
+  command: ReadonlyArray<string>,
+  options: RootTestSpawnOptions,
+): SpawnedRootTestChild {
+  assertRootTestProcessGroupsSupported();
+  const child = Bun.spawn([...command], {
+    ...options,
+    detached: true,
+  });
+  if (!Number.isSafeInteger(child.pid) || child.pid <= 1) {
+    try { child.kill(9); } catch {}
+    throw new Error("root test process did not receive a valid private process-group id");
+  }
+  privateRootTestProcessGroups.set(child, { pgid: child.pid, retired: false });
+  return child as SpawnedRootTestChild;
+}
 
 export function rootTestSignalExitCode(signal: RootTestSignal): 130 | 143 {
   return signal === "SIGINT" ? 130 : 143;
@@ -124,7 +176,21 @@ export async function superviseRootTestChild(
       ]);
   const first = await waitWithin(firstObservation, timeoutMs);
   if (first.kind === "settled") {
-    if (first.value.kind === "exited") return first.value;
+    if (first.value.kind === "exited") {
+      if (privateRootTestProcessGroups.has(child)) {
+        const retirement = await terminateRootTestChild(
+          child,
+          exitObservation,
+          shutdownGraceMs,
+          waitWithin,
+          15,
+        );
+        if (retirement.termination === "unobserved") {
+          throw new Error("root test process group remained live after its direct child exited");
+        }
+      }
+      return first.value;
+    }
     const termination = await terminateRootTestChild(
       child,
       exitObservation,
@@ -222,7 +288,7 @@ export async function runRootTests(repoRoot: string = REPO_ROOT): Promise<number
           interrupt = resolveInterrupt;
         });
         interruptActive = interrupt;
-        const child = Bun.spawn(rootTestCommand(file), {
+        const child = spawnRootTestProcess(rootTestCommand(file), {
           cwd: repoRoot,
           stdin: "inherit",
           stdout: "inherit",
@@ -302,21 +368,142 @@ async function terminateRootTestChild(
         { number: 15, termination: "sigterm" },
         { number: 9, termination: "sigkill" },
       ];
-  for (const signal of signals) {
-    try { child.kill(signal.number); } catch {}
-    const observed = await waitWithin(exitObservation, shutdownGraceMs);
-    if (observed.kind === "settled") {
-      return Object.freeze({
-        termination: signal.termination,
-        observedExitCode: observed.value.exitCode,
-      });
+  try {
+    const ownership = rootTestProcessOwnership(child);
+    for (const signal of signals) {
+      ownership.signal(signal.number);
+      const retirement = ownership.retirement(exitObservation);
+      let observed: RootTestWaitResult<Readonly<{ kind: "exited"; exitCode: number }>>;
+      try {
+        observed = await waitWithin(retirement.promise, shutdownGraceMs);
+      } finally {
+        retirement.cancel();
+      }
+      if (observed.kind === "settled") {
+        return Object.freeze({
+          termination: signal.termination,
+          observedExitCode: observed.value.exitCode,
+        });
+      }
     }
+  } catch (error) {
+    // A platform signaling/probing failure is fatal, but must not make the
+    // detached child an event-loop owner while that failure is reported.
+    try { child.unref(); } catch {}
+    throw error;
   }
   // A broken exit observer must not retain the runner's event loop after the
   // owned TERM/KILL sequence. The main entrypoint force-exits timeout/signal
   // outcomes; unref covers imported callers and a kill implementation throw.
   try { child.unref(); } catch {}
   return Object.freeze({ termination: "unobserved" as const, observedExitCode: null });
+}
+
+type RootTestProcessOwnership = Readonly<{
+  signal: (signal: 2 | 9 | 15) => void;
+  retirement: (
+    exitObservation: Promise<Readonly<{ kind: "exited"; exitCode: number }>>,
+  ) => Readonly<{
+    promise: Promise<Readonly<{ kind: "exited"; exitCode: number }>>;
+    cancel: () => void;
+  }>;
+}>;
+
+function rootTestProcessOwnership(child: RootTestChild): RootTestProcessOwnership {
+  const group = privateRootTestProcessGroups.get(child);
+  if (group === undefined) {
+    return Object.freeze({
+      signal: (signal: 2 | 9 | 15): void => {
+        try { child.kill(signal); } catch {}
+      },
+      retirement: (exitObservation: Promise<Readonly<{ kind: "exited"; exitCode: number }>>) =>
+        Object.freeze({ promise: exitObservation, cancel: () => {} }),
+    });
+  }
+  return Object.freeze({
+    signal: (signal: 2 | 9 | 15): void => signalPrivateRootTestProcessGroup(group, signal),
+    retirement: (exitObservation: Promise<Readonly<{ kind: "exited"; exitCode: number }>>) => {
+      let cancelled = false;
+      return Object.freeze({
+        promise: waitForPrivateRootTestProcessGroupRetirement(
+          group,
+          exitObservation,
+          () => cancelled,
+        ),
+        cancel: () => { cancelled = true; },
+      });
+    },
+  });
+}
+
+function signalPrivateRootTestProcessGroup(
+  group: PrivateRootTestProcessGroup,
+  signal: 2 | 9 | 15,
+): void {
+  if (group.retired) return;
+  // POSIX offers no handle-bound whole-group signal. Signal immediately at
+  // the ownership boundary; the ESRCH latch below prevents every later reuse
+  // of the numeric id after retirement has actually been observed.
+  try {
+    process.kill(-group.pgid, signal);
+  } catch (error) {
+    if (isNoSuchProcess(error)) {
+      // ESRCH is the one terminal observation. Once seen, never signal this
+      // numeric group id again: the kernel may eventually reuse it.
+      group.retired = true;
+      return;
+    }
+    throw new Error(
+      `root test process-group signal failed for ${group.pgid}: ${errorMessage(error)}`,
+    );
+  }
+}
+
+async function waitForPrivateRootTestProcessGroupRetirement(
+  group: PrivateRootTestProcessGroup,
+  exitObservation: Promise<Readonly<{ kind: "exited"; exitCode: number }>>,
+  cancelled: () => boolean,
+): Promise<Readonly<{ kind: "exited"; exitCode: number }>> {
+  while (!cancelled()) {
+    if (probePrivateRootTestProcessGroup(group) === "retired") {
+      return await exitObservation;
+    }
+    await Bun.sleep(5);
+  }
+  return await new Promise<never>(() => {});
+}
+
+function probePrivateRootTestProcessGroup(
+  group: PrivateRootTestProcessGroup,
+): "live" | "retired" {
+  if (group.retired) return "retired";
+  try {
+    process.kill(-group.pgid, 0);
+    return "live";
+  } catch (error) {
+    if (isNoSuchProcess(error)) {
+      group.retired = true;
+      return "retired";
+    }
+    if ((error as NodeJS.ErrnoException).code === "EPERM") return "live";
+    throw new Error(
+      `root test process-group probe failed for ${group.pgid}: ${errorMessage(error)}`,
+    );
+  }
+}
+
+function assertRootTestProcessGroupsSupported(): void {
+  if (process.platform !== "darwin" && process.platform !== "linux") {
+    throw new Error(`root test process ownership is unsupported on ${process.platform}`);
+  }
+}
+
+function isNoSuchProcess(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException).code === "ESRCH";
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 async function waitWithinDeadline<T>(
