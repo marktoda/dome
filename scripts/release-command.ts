@@ -69,7 +69,7 @@ export async function runBoundedReleaseCommand(
     stderr: "pipe",
     ...(ownsProcessGroup ? { detached: true } : {}),
   });
-  const killOwnedProcess = (): void => {
+  const killOwnedProcessGroup = (): void => {
     if (ownsProcessGroup) {
       try {
         process.kill(-child.pid, "SIGKILL");
@@ -103,7 +103,6 @@ export async function runBoundedReleaseCommand(
   const stdout = collect(stdoutReader, snapshot.maxStdoutBytes, "stdout");
   const stderr = collect(stderrReader, snapshot.maxStderrBytes, "stderr");
   const exited = child.exited;
-  const settled = Promise.all([stdout, stderr, exited]);
   const drained = Promise.allSettled([stdout, stderr, exited]);
   const waitWithin = async <T>(value: Promise<T>, milliseconds: number): Promise<
     | Readonly<{ kind: "settled"; value: T }>
@@ -133,17 +132,13 @@ export async function runBoundedReleaseCommand(
     const cancelled = await waitWithin(drained, 100);
     return cancelled.kind === "settled" ? cancelled.value : null;
   };
-  const completed = settled.then(([stdout, stderr, exitCode]) => Object.freeze({
-    kind: "completed" as const,
-    stdout,
-    stderr,
-    exitCode,
-  }));
-  const nonzeroExit = new Promise<Readonly<{ kind: "nonzero"; exitCode: number }>>((resolveExit, rejectExit) => {
-    void exited.then((exitCode) => {
-      if (exitCode !== 0) resolveExit(Object.freeze({ kind: "nonzero" as const, exitCode }));
-    }, rejectExit);
-  });
+  const directExit = exited.then((exitCode) => Object.freeze({ exitCode }));
+  // A stream failure must interrupt a still-running command. Successful EOF
+  // carries no ownership information; the direct process exit does.
+  const outputFailure = Promise.all([stdout, stderr]).then<never>(
+    () => new Promise<never>(() => {}),
+    (error) => Promise.reject(error),
+  );
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_resolve, reject) => {
     timer = setTimeout(
@@ -160,37 +155,23 @@ export async function runBoundedReleaseCommand(
     };
     if (readAbortSignalAborted(snapshot.signal!)) onAbort();
   });
-  let outcome: Awaited<typeof completed> | Awaited<typeof nonzeroExit>;
+  let outcome: Awaited<typeof directExit>;
   try {
     outcome = await Promise.race(
-      aborted === null ? [completed, nonzeroExit, timeout] : [completed, nonzeroExit, timeout, aborted],
+      aborted === null ? [directExit, outputFailure, timeout] : [directExit, outputFailure, timeout, aborted],
     );
   } catch (error) {
-    killOwnedProcess();
+    killOwnedProcessGroup();
     await drainOwnedProcess();
     throw error;
   } finally {
     if (timer !== undefined) clearTimeout(timer);
     try { removeAbort(); } catch {}
   }
-  if (outcome.kind === "completed") {
-    if (outcome.exitCode === 0) {
-      return Object.freeze({ stdout: outcome.stdout, stderr: outcome.stderr, exitCode: outcome.exitCode });
-    }
-    killOwnedProcess();
-    await drainOwnedProcess();
-    if (snapshot.allowFailure) {
-      return Object.freeze({ stdout: outcome.stdout, stderr: outcome.stderr, exitCode: outcome.exitCode });
-    }
-    const diagnostic = (outcome.stderr.byteLength === 0 ? outcome.stdout : outcome.stderr)
-      .toString("utf8").trim();
-    throw new Error(`${executable} failed (${outcome.exitCode}): ${diagnostic}`);
-  }
-
-  // A failed direct wrapper may leave npm/Bun descendants holding its pipes.
-  // Observe that exit independently, terminate the owned group immediately,
-  // and only then drain diagnostics.
-  killOwnedProcess();
+  // Direct exit closes the command's ownership lifetime. A successful wrapper
+  // can orphan descendants just as a failed wrapper can, so retire the whole
+  // private group before waiting for inherited output pipes to reach EOF.
+  killOwnedProcessGroup();
   const results = await drainOwnedProcess();
   let stdoutBytes: Buffer<ArrayBufferLike> = Buffer.alloc(0);
   let stderrBytes: Buffer<ArrayBufferLike> = Buffer.alloc(0);
@@ -203,7 +184,7 @@ export async function runBoundedReleaseCommand(
     if (stdoutResult.status === "fulfilled") stdoutBytes = stdoutResult.value;
     if (stderrResult.status === "fulfilled") stderrBytes = stderrResult.value;
   }
-  if (snapshot.allowFailure) {
+  if (outcome.exitCode === 0 || snapshot.allowFailure) {
     return Object.freeze({ stdout: stdoutBytes, stderr: stderrBytes, exitCode: outcome.exitCode });
   }
   const diagnostic = (stderrBytes.byteLength === 0 ? stdoutBytes : stderrBytes).toString("utf8").trim();

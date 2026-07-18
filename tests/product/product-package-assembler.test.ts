@@ -364,6 +364,44 @@ describe("complete product package assembler", () => {
     }
   });
 
+  test("zero direct exit promptly retires a descendant and returns closed output", async () => {
+    const fixture = await repositoryFixture();
+    const pidPath = join(fixture.temporary, "successful-pids.json");
+    let ownedPids: number[] = [];
+    const program = [
+      `const child = Bun.spawn([process.execPath, "-e", ${JSON.stringify("setInterval(() => {}, 1_000)")}], { stdout: "inherit", stderr: "inherit" });`,
+      `await Bun.write(${JSON.stringify(pidPath)}, JSON.stringify([process.pid, child.pid]));`,
+      `process.stdout.write("packed\\n");`,
+      `process.stderr.write("notice\\n");`,
+      "process.exit(0);",
+    ].join("\n");
+    try {
+      const startedAt = Date.now();
+      const result = await runBoundedProductCommand([process.execPath, "-e", program], fixture.repo, {
+        timeoutMs: 2_000,
+        maxStdoutBytes: 1_024,
+        maxStderrBytes: 1_024,
+      });
+      expect(Date.now() - startedAt).toBeLessThan(1_000);
+      expect(result).toMatchObject({ exitCode: 0 });
+      expect(result.stdout.toString("utf8")).toBe("packed\n");
+      expect(result.stderr.toString("utf8")).toBe("notice\n");
+      ownedPids = JSON.parse(await readFile(pidPath, "utf8")) as number[];
+      expect(ownedPids).toHaveLength(2);
+      for (const pid of ownedPids) {
+        let alive = true;
+        for (let attempt = 0; attempt < 40 && alive; attempt += 1) {
+          try { process.kill(pid, 0); await Bun.sleep(25); }
+          catch { alive = false; }
+        }
+        expect(alive).toBeFalse();
+      }
+    } finally {
+      for (const pid of ownedPids) try { process.kill(pid, "SIGKILL"); } catch {}
+      await fixture.cleanup();
+    }
+  });
+
   test("proxied abort signals are rejected without executing traps", async () => {
     const fixture = await repositoryFixture();
     let traps = 0;

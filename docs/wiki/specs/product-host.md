@@ -429,7 +429,9 @@ and source-less consumer verification without printing vault content, paths, or
 credentials. Release subprocesses share one bounded-command seam: argv,
 environment, and limits are synchronously snapshotted; each Unix command owns a
 private process group; timeout, abort, or output overflow kills and drains the
-direct child and descendants. Caller-owned abort signals are brand-checked and
+direct child and descendants. A direct wrapper exit, whether zero or nonzero,
+also retires any surviving descendants before inherited output is drained and
+the direct exit is classified. Caller-owned abort signals are brand-checked and
 observed only through captured platform intrinsics, so accessors or mutation
 cannot change command truth or mask cleanup. Home build and installed-upgrade commands have a
 five-minute command bound, while installed loopback HTTP requests retain a
