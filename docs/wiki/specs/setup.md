@@ -318,19 +318,37 @@ The ordered mutation is deliberately small:
 4. Create the exact config or merge only the managed `content_scope`, then
    create one exact configuration commit on the admitted parent.
 
-Every setup file publication uses a same-directory, no-follow, exclusive temp
-file, file and directory durability syncs, and create-without-overwrite or
-admitted replacement. Existing config comments and filesystem permissions are
-preserved. Each prepared file and each Git ref transition is a fault-injection
-boundary.
+Every setup file publication goes through one kernel-relative filesystem
+Module. It opens every vault and destination-parent component with
+`O_NOFOLLOW`, holds and revalidates their directory identities, and performs
+`openat` / `linkat` / `renameat` / `unlinkat` relative to the held parent.
+Replacing an ancestor name with a symlink therefore cannot redirect a create
+or managed merge outside the admitted vault. Publication uses a
+same-directory exclusive temp, exact mode, file sync, and destination-parent
+sync; a retry after a returned link/rename but before parent sync repeats that
+parent sync. Existing config comments and filesystem permissions are
+preserved. Prepared, published, ref-advanced, and committed transitions are
+fault-injection boundaries.
 
-Recovery has no setup database. A retry accepts only the exact prefix
-attributable to the consented plan: exact temporary/final bytes, exact Dome
-commit identity and trailers, exact parent chain, and exact tree delta. It
-looks only at current `HEAD`; a matching substring or an older history entry is
-not ownership evidence. Owner drift, unexpected paths, forged commits, changed
-modes, and partial or foreign temp bytes block instead of being folded into a
-Dome commit.
+Recovery has no mutable workflow database, but it does retain minimal
+plan-owned publication witnesses under
+`.dome/state/setup/<plan-sha256>/`. A prepared witness binds exact bytes, mode,
+path, operation, and plan before publication; a distinct published witness is
+durable only after the kernel publication succeeds. Exact final bytes without
+that published witness are owner state, not a recoverable Dome prefix. A retry
+also requires exact temporary bytes and mode, exact Dome commit identity and
+trailers, exact parent chain, and exact tree delta. It looks only at current
+`HEAD`; a matching substring or an older history entry is not ownership
+evidence. Owner drift, unexpected paths, forged commits, changed modes, and
+partial or foreign temp/witness bytes block instead of being folded into a Dome
+commit.
+
+Commit publication binds symbolic `HEAD`, the approved branch name, and the
+old branch OID in one Git-lock transition. An exact expected parent disables
+CAS rebasing. If a crash lands an admitted setup commit before index repair,
+recovery resets selected entries only when their complete staged OID/mode/stage
+snapshot still equals the exact parent; already-recovered entries are a no-op,
+and conflicting owner staging is preserved byte-for-byte and blocks recovery.
 
 ## Read and mutation boundaries
 
@@ -352,9 +370,11 @@ seam. Home remains outside this mutation boundary.
 Exact JSON fixtures for all seven vault classifications and adversarial
 validator coverage live in `tests/setup/contracts.test.ts` and
 `tests/setup/compiler.test.ts`. `tests/setup/apply.test.ts` injects failure at
-every durable boundary and pins races, forged commit markers, partial temp
-files, binary owner content, executable modes, config preservation, and
-idempotent recovery. CLI adapter coverage proves that omission of
+every durable boundary and pins ancestor symlink races, symbolic-HEAD switches,
+conflicting staged state, forged commit markers, witness-free final bytes,
+post-publication durability replay, partial temp files, binary owner content,
+executable modes, config preservation, and idempotent recovery. CLI adapter
+coverage proves that omission of
 `--dry-run` cannot invoke discovery and JSON is the exact validated plan. The
 case-sensitive inventory fixture and generated-config round trip pin setup to
 the same versioned ContentScope interface used by the setup contract.

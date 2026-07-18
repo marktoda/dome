@@ -32,6 +32,10 @@ const ALLOWED_FILES = new Set([
   // model, integration, or ordinary engine mutation. init.ts remains allowed
   // only until the next checkpoint collapses that adapter onto this seam.
   "src/setup/apply.ts",
+  // Kernel-relative implementation behind setup/apply's publication seam.
+  // It holds and revalidates no-follow ancestor descriptors and confines
+  // temp, witness, and final-name mutations to their admitted vault parent.
+  "src/setup/anchored-files.ts",
   // Host-level service scaffolding (launchd plist / systemd user unit +
   // gitignored log dir), not an engine write path — same boundary class as
   // init.ts.

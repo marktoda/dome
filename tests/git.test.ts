@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import {
   commit,
   commitFilesOnHead,
+  commitInitialFiles,
   commitSingleFileOnHead,
   countCommitsSince,
   fileInfoAtCommit,
@@ -312,6 +313,76 @@ describe("git boundary", () => {
       expect(
         await readBlob({ path, commit: captureOid, filepath: "inbox/raw/x.md" }),
       ).toBe("the capture\n");
+    } finally {
+      await rm(path, { recursive: true, force: true });
+    }
+  });
+
+  test("commitFilesOnHead atomically rejects a same-OID symbolic HEAD switch", async () => {
+    const path = mkdtempSync(join(tmpdir(), "dome-git-head-switch-"));
+    try {
+      await initRepo(path);
+      await write(path, "base.md", "base\n");
+      const base = await commit({ path, message: "base", files: ["base.md"] });
+      await expect(commitFilesOnHead({
+        path,
+        files: [{ filepath: "Dome.md", content: "dome\n" }],
+        message: "candidate",
+        expectedHead: base,
+        expectedBranch: "main",
+        beforeRefAdvance: async () => {
+          const switched = Bun.spawn(["git", "-C", path, "switch", "-c", "raced"], { stderr: "pipe" });
+          expect(await switched.exited).toBe(0);
+        },
+      })).rejects.toThrow(/symbolic HEAD changed/);
+      expect(await resolveRef({ path, ref: "refs/heads/main" })).toBe(base);
+      expect(await resolveRef({ path, ref: "refs/heads/raced" })).toBe(base);
+    } finally {
+      await rm(path, { recursive: true, force: true });
+    }
+  });
+
+  test("commitFilesOnHead never retries an exact expected parent", async () => {
+    const path = mkdtempSync(join(tmpdir(), "dome-git-exact-parent-"));
+    try {
+      await initRepo(path);
+      await write(path, "base.md", "base\n");
+      const base = await commit({ path, message: "base", files: ["base.md"] });
+      let attempts = 0;
+      let concurrent = "";
+      await expect(commitFilesOnHead({
+        path,
+        files: [{ filepath: "Dome.md", content: "dome\n" }],
+        message: "candidate",
+        expectedHead: base,
+        beforeRefAdvance: async () => {
+          attempts += 1;
+          await write(path, "owner.md", "owner\n");
+          concurrent = await commit({ path, message: "owner", files: ["owner.md"] });
+        },
+      })).rejects.toThrow(/expected/);
+      expect(attempts).toBe(1);
+      expect(await resolveRef({ path, ref: "refs/heads/main" })).toBe(concurrent);
+    } finally {
+      await rm(path, { recursive: true, force: true });
+    }
+  });
+
+  test("commitInitialFiles rejects an unborn symbolic HEAD switch", async () => {
+    const path = mkdtempSync(join(tmpdir(), "dome-git-initial-switch-"));
+    try {
+      await initRepo(path);
+      await expect(commitInitialFiles({
+        path,
+        files: [{ filepath: "Dome.md", content: Buffer.from("dome\n"), mode: "100644" }],
+        message: "initial",
+        expectedBranch: "main",
+        beforeRefAdvance: async () => {
+          const renamed = Bun.spawn(["git", "-C", path, "branch", "-m", "raced"], { stderr: "pipe" });
+          expect(await renamed.exited).toBe(0);
+        },
+      })).rejects.toThrow(/symbolic HEAD changed/);
+      expect(await Bun.file(join(path, ".git/HEAD")).text()).toBe("ref: refs/heads/raced\n");
     } finally {
       await rm(path, { recursive: true, force: true });
     }
