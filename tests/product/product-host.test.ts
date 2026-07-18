@@ -289,7 +289,10 @@ describe("P3 Product Host", () => {
 
   test("a slow model turn does not block readiness, adopted reads, or capture", async () => {
     const vault = await initializedVault();
-    const pairingCode = await mintPairingCode(vault, "Concurrent phone", [
+    // Pair before the host owns the authority store. Pairing concurrency is
+    // covered by the device-authority tests; this proof is about independent
+    // Product Host operation classes while generation remains in flight.
+    const auth = await bootstrapBrowserAuth(vault, "Concurrent phone", [
       "capture", "converse", "read", "resolve",
     ]);
     let release!: () => void;
@@ -314,24 +317,33 @@ describe("P3 Product Host", () => {
     expect(started.ok).toBe(true);
     if (!started.ok) return;
     hosts.push(started.value);
-    const auth = await pair(started.value.url, pairingCode);
-
-    const created = await fetch(`${started.value.url}/sessions`, {
-      method: "POST",
-      headers: mutationHeaders(started.value.url, auth),
-    });
-    expect(created.status).toBe(201);
-    const turn = await fetch(`${started.value.url}/sessions/slow-session/messages`, {
-      method: "POST",
-      headers: {
-        ...mutationHeaders(started.value.url, auth),
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ message: "wait" }),
-    });
-    expect(turn.status).toBe(200);
-
+    let turn: Response | null = null;
     try {
+      const created = await fetchTextWithin(
+        "slow-turn session creation",
+        5_000,
+        `${started.value.url}/sessions`,
+        {
+          method: "POST",
+          headers: mutationHeaders(started.value.url, auth),
+        },
+      );
+      expect(created.response.status).toBe(201);
+      turn = await fetchResponseWithin(
+        "slow-turn SSE headers",
+        5_000,
+        `${started.value.url}/sessions/slow-session/messages`,
+        {
+          method: "POST",
+          headers: {
+            ...mutationHeaders(started.value.url, auth),
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ message: "wait" }),
+        },
+      );
+      expect(turn.status).toBe(200);
+
       const [ready, today, doc, capture] = await within(Promise.all([
         fetch(`${started.value.url}/readyz`, { headers: { cookie: auth.cookie } }),
         fetch(`${started.value.url}/tasks`, { headers: { cookie: auth.cookie } }),
@@ -384,8 +396,15 @@ describe("P3 Product Host", () => {
           readiness.adoption.head === readiness.adoption.adopted;
       }, 3_000);
     } finally {
+      // Bun does not cancel an async test body when its test deadline fires.
+      // Always unblock and drain the deliberately cancellation-resistant model
+      // fixture, then close the host while its SQLite files still exist.
       release();
-      await turn.text();
+      try {
+        if (turn !== null) await turn.text();
+      } finally {
+        await closeTrackedHost(started.value);
+      }
     }
   }, 30_000);
 
@@ -616,6 +635,24 @@ async function fetchTextWithin(
       `${operation} exceeded ${milliseconds}ms${detail === undefined ? "" : ` (${detail})`}`,
       { cause: error },
     );
+  }
+}
+
+async function fetchResponseWithin(
+  operation: string,
+  milliseconds: number,
+  url: string,
+  init: RequestInit,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), milliseconds);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (!controller.signal.aborted) throw error;
+    throw new Error(`${operation} exceeded ${milliseconds}ms`, { cause: error });
+  } finally {
+    clearTimeout(timer);
   }
 }
 
