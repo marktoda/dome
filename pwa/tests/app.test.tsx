@@ -197,6 +197,37 @@ describe("App", () => {
     expect(document.activeElement).toBe(diagnostics);
   });
 
+  test("connection diagnostics own PageDown across short responsive viewports", async () => {
+    render(<App />);
+    const summary = await screen.findByRole("button", { name: /Connection · ready/i });
+    fireEvent.click(summary);
+    const diagnostics = screen.getByRole("region", { name: "Connection details" }) as HTMLElement;
+
+    // Exact client/scroll heights observed in installed Chrome at the audit's
+    // two bounded short viewports and its adjacent tall control viewport.
+    for (const geometry of [
+      { viewport: "844x390", clientHeight: 50, scrollHeight: 117, expected: 50 },
+      { viewport: "320x568", clientHeight: 50, scrollHeight: 137, expected: 50 },
+      { viewport: "390x844", clientHeight: 137, scrollHeight: 137, expected: 0 },
+    ]) {
+      Object.defineProperties(diagnostics, {
+        clientHeight: { configurable: true, value: geometry.clientHeight },
+        scrollHeight: { configurable: true, value: geometry.scrollHeight },
+        scrollTop: { configurable: true, value: 0, writable: true },
+      });
+      const keydown = new KeyboardEvent("keydown", {
+        bubbles: true,
+        cancelable: true,
+        key: "PageDown",
+      });
+
+      diagnostics.dispatchEvent(keydown);
+
+      expect(diagnostics.scrollTop, geometry.viewport).toBe(geometry.expected);
+      expect(keydown.defaultPrevented, geometry.viewport).toBe(geometry.expected > 0);
+    }
+  });
+
   test("does not show healthy connection before post-pair readiness validates", async () => {
     let releaseReadiness!: (response: Response) => void;
     globalThis.fetch = mock(async (request: Request) => {

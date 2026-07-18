@@ -1,10 +1,25 @@
-import { useState } from "react";
+import { useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { HomeConnectionControl } from "../auth/PairingGate";
 import type { ProductSession } from "../connection/product-session";
 
 type Props = {
   session: ProductSession;
 };
+
+function scrollDiagnosticsPage(event: ReactKeyboardEvent<HTMLDivElement>): void {
+  if (event.key !== "PageDown" || event.target !== event.currentTarget) return;
+  const diagnostics = event.currentTarget;
+  const maximum = Math.max(0, diagnostics.scrollHeight - diagnostics.clientHeight);
+  if (maximum === 0) return;
+  // Own the paged movement while the region itself has focus. Chromium's
+  // native overflow scroll is compositor-scheduled, so its first observable
+  // frame is not a stable keyboard contract for this bounded disclosure.
+  event.preventDefault();
+  diagnostics.scrollTop = Math.min(
+    maximum,
+    diagnostics.scrollTop + diagnostics.clientHeight,
+  );
+}
 
 export function Connection({ session }: Props): React.ReactElement {
   const [open, setOpen] = useState(false);
@@ -18,7 +33,14 @@ export function Connection({ session }: Props): React.ReactElement {
         aria-controls="dome-connection-details"
         onClick={() => setOpen((value) => !value)}
       >Connection · {session.connection.label}</button>
-      {open ? <div id="dome-connection-details" className="connection-body" role="region" aria-label="Connection details" tabIndex={0}>
+      {open ? <div
+        id="dome-connection-details"
+        className="connection-body"
+        role="region"
+        aria-label="Connection details"
+        tabIndex={0}
+        onKeyDown={scrollDiagnosticsPage}
+      >
         {document === null ? <p>No connection details are available yet.</p> : (
           <>
             <p>{document.vault.name} · {document.device.name}</p>
