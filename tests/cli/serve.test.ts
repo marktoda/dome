@@ -584,90 +584,108 @@ ledger:
     fixtures.push(f);
     silenceConsole();
 
-    // Generous, equal poll/operational intervals: after the initial adoption
-    // settles there is a wide, quiet window in which to dirty the tree and
-    // enqueue work BEFORE the next operational tick fires. This makes the
-    // ordering (tree dirty before any tick can drain) deterministic rather than
-    // racing a 20ms loop with side-channel state injection.
-    const intervalMs = 250;
+    const pollIntervalMs = 25;
+    const operationalIntervalMs = 1_000;
+    const outboxPath = join(f.vaultPath, ".dome", "state", "outbox.db");
+    const beforeServe = await openOutboxDb({ path: outboxPath });
+    if (!beforeServe.ok) throw new Error(`could not open outbox: ${beforeServe.error.kind}`);
+    try {
+      insertPending(beforeServe.value.db, {
+        effect: externalActionEffect({
+          capability: "calendar.write",
+          idempotencyKey: "serve-initial-cycle-proof",
+          payload: { event: "initial" },
+          sourceRefs: [sourceRef({ commit: commitOid(f.initialSha), path: "wiki/seed.md" })],
+        }),
+        runId: "run-initial-cycle-proof",
+      });
+    } finally {
+      beforeServe.value.db.close();
+    }
     const controller = new AbortController();
     const servePromise = runServe(
       {
         vault: f.vaultPath,
         bundlesRoot: f.bundlesRoot,
-        pollIntervalMs: intervalMs,
+        pollIntervalMs,
       },
       {
         signal: controller.signal,
-        operationalIntervalMs: intervalMs,
+        operationalIntervalMs,
       },
     );
-
-    await waitFor(
-      async () => (await getAdoptedRef(f.vaultPath, "main")) === f.initialSha,
-      3000,
-    );
-    // `getAdoptedRef === initialSha` becomes true mid-cycle (the ref advances
-    // inside the adoption cycle, before its operational phase finishes). Wait
-    // out two full intervals so that initial cycle — and its outbox drain — has
-    // completed and the loop is idle between operational ticks before we inject.
-    await new Promise((r) => setTimeout(r, intervalMs * 2));
-
-    // Dirty the working tree with an uncommitted file. This is the "live editor
-    // mid-edit" state: the daemon must hold off all tick work so it never
-    // rewrites files out from under the editor.
-    const draftPath = join(f.vaultPath, "wiki", "draft.md");
-    await writeFile(draftPath, "work in progress\n", "utf8");
-
-    const outboxPath = join(f.vaultPath, ".dome", "state", "outbox.db");
-    const outbox = await openOutboxDb({ path: outboxPath });
-    if (!outbox.ok) throw new Error(`could not open outbox: ${outbox.error.kind}`);
     try {
-      insertPending(outbox.value.db, {
-        effect: externalActionEffect({
-          capability: "calendar.write",
-          idempotencyKey: "serve-dirty-defer",
-          payload: { event: "x" },
-          sourceRefs: [
-            sourceRef({
-              commit: commitOid(f.initialSha),
-              path: "wiki/seed.md",
-            }),
-          ],
-        }),
-        runId: "run-test",
-      });
-    } finally {
-      outbox.value.db.close();
-    }
+      await waitFor(
+        async () => (await getAdoptedRef(f.vaultPath, "main")) === f.initialSha,
+        3000,
+      );
+      // Prove the initial cycle has completed by observing work that only its
+      // operational phase can drain. Ref advancement alone happens mid-cycle.
+      await waitFor(async () => {
+        const proof = await openOutboxDb({ path: outboxPath });
+        if (!proof.ok) return false;
+        try {
+          return queryOutbox(proof.value.db)
+            .find((row) => row.idempotencyKey === "serve-initial-cycle-proof")
+            ?.status === "failed";
+        } finally {
+          proof.value.db.close();
+        }
+      }, 3000);
 
-    // Across several operational ticks with the tree dirty, the pending item
-    // must NOT drain — the daemon defers every tick.
-    await new Promise((r) => setTimeout(r, intervalMs * 4));
-    const whileDirty = await openOutboxDb({ path: outboxPath });
-    if (!whileDirty.ok) throw new Error("could not reopen outbox");
-    try {
-      expect(queryOutbox(whileDirty.value.db)[0]?.status).toBe("pending");
-    } finally {
-      whileDirty.value.db.close();
-    }
-
-    // Clean the tree (remove the uncommitted draft). The daemon resumes and
-    // drains the pending item.
-    await rm(draftPath, { force: true });
-    await waitFor(async () => {
-      const check = await openOutboxDb({ path: outboxPath });
-      if (!check.ok) return false;
+      // Enter the editor-dirty state before the next long operational interval.
+      const draftPath = join(f.vaultPath, "wiki", "draft.md");
+      await writeFile(draftPath, "work in progress\n", "utf8");
+      const outbox = await openOutboxDb({ path: outboxPath });
+      if (!outbox.ok) throw new Error(`could not open outbox: ${outbox.error.kind}`);
       try {
-        return queryOutbox(check.value.db)[0]?.status === "failed";
+        insertPending(outbox.value.db, {
+          effect: externalActionEffect({
+            capability: "calendar.write",
+            idempotencyKey: "serve-dirty-defer",
+            payload: { event: "x" },
+            sourceRefs: [
+              sourceRef({
+                commit: commitOid(f.initialSha),
+                path: "wiki/seed.md",
+              }),
+            ],
+          }),
+          runId: "run-test",
+        });
       } finally {
-        check.value.db.close();
+        outbox.value.db.close();
       }
-    }, 3000);
 
-    controller.abort();
-    const code = await servePromise;
-    expect(code).toBe(0);
+      // Cross a complete operational interval while dirty.
+      await new Promise((r) => setTimeout(r, operationalIntervalMs + 250));
+      const whileDirty = await openOutboxDb({ path: outboxPath });
+      if (!whileDirty.ok) throw new Error("could not reopen outbox");
+      try {
+        const deferred = queryOutbox(whileDirty.value.db)
+          .find((row) => row.idempotencyKey === "serve-dirty-defer");
+        expect(deferred?.status).toBe("pending");
+      } finally {
+        whileDirty.value.db.close();
+      }
+
+      await rm(draftPath, { force: true });
+      await waitFor(async () => {
+        const check = await openOutboxDb({ path: outboxPath });
+        if (!check.ok) return false;
+        try {
+          return queryOutbox(check.value.db)
+            .find((row) => row.idempotencyKey === "serve-dirty-defer")
+            ?.status === "failed";
+        } finally {
+          check.value.db.close();
+        }
+      }, 3000);
+    } finally {
+      controller.abort();
+      const code = await servePromise;
+      expect(code).toBe(0);
+    }
   }, 15_000);
 
   test("--quiet suppresses banner, adoption, and shutdown chatter", async () => {
