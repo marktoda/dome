@@ -276,15 +276,8 @@ describe("Home owner-beta aggregation", () => {
 });
 
 describe("Home owner-beta CLI boundary", () => {
-  test("prints JSON on success and changes exit only for require-ready", async () => {
-    const root = await mkdtemp(join(tmpdir(), "dome-beta-cli-test-"));
-    try {
-      const paths: string[] = [];
-      for (const [index, input] of packetSet().entries()) {
-        const path = join(root, `${index}.json`);
-        await writeFile(path, JSON.stringify(input));
-        paths.push(path);
-      }
+  test("validates one packet as JSON and requires an explicit product version", async () => {
+    await withCliPacketFiles(async ({ paths }) => {
       const validate = await runCli([
         "validate", "--input", paths[0]!, "--expected-receipt", RECEIPT,
       ]);
@@ -296,7 +289,11 @@ describe("Home owner-beta CLI boundary", () => {
       ], false);
       expect(missingVersion.exitCode).toBe(64);
       expect(JSON.parse(missingVersion.stdout).error).toBe("usage");
+    });
+  });
 
+  test("makes operator review explicit before a qualifying aggregate is ready", async () => {
+    await withCliPacketFiles(async ({ root, paths }) => {
       const aggregateArgs = paths.flatMap((path) => ["--input", path]);
       const pendingReview = await runCli([
         "aggregate", ...aggregateArgs, "--expected-receipt", RECEIPT, "--require-ready",
@@ -310,7 +307,12 @@ describe("Home owner-beta CLI boundary", () => {
       expect(ready.exitCode).toBe(0);
       expect(JSON.parse(ready.stdout).status).toBe("ready");
       expect(ready.stdout).not.toContain(root);
+    });
+  });
 
+  test("changes aggregate exit status only when readiness is required", async () => {
+    await withCliPacketFiles(async ({ paths }) => {
+      const aggregateArgs = paths.flatMap((path) => ["--input", path]);
       const failedPacket = packet(1);
       failedPacket.steps.install = failed(10);
       await writeFile(paths[0]!, JSON.stringify(failedPacket));
@@ -327,16 +329,19 @@ describe("Home owner-beta CLI boundary", () => {
       expect(JSON.parse(required.stdout).blockers)
         .toEqual(["one-or-more-nonqualifying-packets"]);
       expect(JSON.parse(required.stdout).manualReview.status).toBe("completed");
+    });
+  });
 
+  test("rejects a duplicate operator-review flag as usage error", async () => {
+    await withCliPacketFiles(async ({ paths }) => {
+      const aggregateArgs = paths.flatMap((path) => ["--input", path]);
       const duplicateReviewFlag = await runCli([
         "aggregate", ...aggregateArgs, "--expected-receipt", RECEIPT,
         "--operator-reviewed", "--operator-reviewed",
       ]);
       expect(duplicateReviewFlag.exitCode).toBe(64);
       expect(JSON.parse(duplicateReviewFlag.stdout).error).toBe("usage");
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
+    });
   });
 
   test("rejects symlinks, oversized files, non-files, and invalid JSON with fixed safe errors", async () => {
@@ -450,6 +455,22 @@ describe("Home owner-beta CLI boundary", () => {
 
 function packetSet(): ReturnType<typeof packet>[] {
   return [1, 2, 3, 4, 5].map(packet);
+}
+
+async function withCliPacketFiles<T>(
+  run: (fixture: { root: string; paths: string[] }) => Promise<T>,
+): Promise<T> {
+  const root = await mkdtemp(join(tmpdir(), "dome-beta-cli-test-"));
+  try {
+    const inputs = packetSet();
+    const paths = inputs.map((_, index) => join(root, `${index}.json`));
+    await Promise.all(inputs.map((input, index) => (
+      writeFile(paths[index]!, JSON.stringify(input))
+    )));
+    return await run({ root, paths });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 }
 
 function packet(seed: number): HomeBetaEvidence {
