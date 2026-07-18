@@ -19,6 +19,9 @@ import { vaultServiceSlug } from "../../src/surface/service-probe";
 const MULTI_TRANSACTION_SCENARIO_TIMEOUT_MS = 15_000;
 
 describe("encrypted vault backup checkpoint", () => {
+  // One keygen, one create, two direct verification paths, and eleven restore
+  // rehearsals need hosted-macOS headroom; production ownership remains bounded
+  // independently by its 30-second wait.
   test("keygen, create, verify, and internal blank-target rehearsal need no native git", async () => {
     const root = await mkdtemp(join(tmpdir(), "dome-backup-"));
     try {
@@ -227,7 +230,7 @@ describe("encrypted vault backup checkpoint", () => {
       expect(fileHash(await readFile(archive))).toBe(archiveHash);
       expect(fileHash(await readFile(identity))).toBe(identityHash);
     } finally { await rm(root, { recursive: true, force: true }); }
-  });
+  }, MULTI_TRANSACTION_SCENARIO_TIMEOUT_MS);
 
   test("fails closed on unknown state and still restarts a previously loaded Home", async () => {
     const root = await mkdtemp(join(tmpdir(), "dome-backup-restart-"));
