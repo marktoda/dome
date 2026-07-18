@@ -296,6 +296,19 @@ Work:
    paths, mutable development dependencies, or non-reproducible generated
    output.
 
+Implementation checkpoint 2 now concentrates steps 1–3 and the packaging
+parts of step 5 behind one complete-product assembler. It directly stages
+bounded blobs from a captured clean commit, invokes the existing Home build
+once, binds the verified Home build commit and PWA inventory to that same
+source, and closes exact checksummed inventories in the shipped pure
+`dome.product-package/v1` parser. The build-only path runs `npm pack` against
+private staging and uses fixed `tar@7.5.19` to stream-verify every actual tgz
+member twice without extraction before inode-bound exclusive publication.
+The portable test seam cannot issue release evidence; the
+production adapter hardwires all three trusted implementations. The remaining
+M2 checkpoint is step 4 plus its acceptance evidence: isolated global-prefix
+installation and operation after the repository becomes unavailable.
+
 Acceptance gate:
 
 - `bun install -g <exact-packed-tarball>` succeeds in a clean prefix;

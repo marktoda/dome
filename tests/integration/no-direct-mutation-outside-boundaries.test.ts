@@ -34,6 +34,10 @@ const ALLOWED_FILES = new Set([
   // macOS-only atomic no-replace directory publication for verified blank-host
   // restores. This is a host filesystem boundary, not a vault content writer.
   "src/platform/exclusive-rename.ts",
+  // Shared inode-bound private-directory staging used by Home and complete
+  // product release tooling. It writes only an absent caller-selected host
+  // output and owned same-filesystem temporary state, never vault content.
+  "src/platform/private-directory-publication.ts",
   "src/product-host/home-lifecycle.ts",
   // Strict Home archive materialization writes and removes only one private
   // mode-0700 temp workspace after bounded read, normalized USTAR inspection,

@@ -363,6 +363,46 @@ and the shipped `verifyHomeArtifact` evidence before the root is returned;
 optional receipt identity is checked at the same seam, and failed
 materialization removes its private workspace.
 
+`src/product-package/manifest.ts` is the shipped pure parser for the closed
+`dome.product-package/v1` identity and inventories. It has no build-tool or tar
+dependency. `scripts/product-package/assembler.ts` is the build-only
+complete-product assembly module. Its small portable interface exists for deterministic testing and can
+return only `evidence: false`; `scripts/product-package.ts` is the sole
+release-capable adapter and hardwires the real Home builder, the archive
+admission module above, and exclusive directory publication. Assembly requires
+one clean tracked `HEAD`, captures that commit once, validates bounded selected
+Git blob sizes, and materializes those blobs directly by object id rather than
+using worktree or `git archive` attribute semantics. Every subprocess has
+bounded output, deadline, kill, and drain behavior. The
+normalized tracked stage is inventoried before the expensive Home build, so
+selected secret paths, high-confidence secret content, special entries, and
+noncanonical modes fail early. Ignored owner files such as a root `.env` are
+not inputs and do not make an otherwise clean repository unpackageable.
+
+Exactly one Home build is admitted into private staging. Its archive identity
+and build commit must equal the captured package commit through the shared
+admission module; the archived
+`app/pwa/dist`—never an ambient PWA build directory—supplies the independently
+checksummed production PWA and must exactly match the verified Home manifest's
+PWA file inventory. `product/manifest.json` uses
+`dome.product-package/v1` and closes the package name/version/source commit,
+darwin-arm64 platform, Home archive bytes and identity, PWA inventory, and the
+sorted path/size/hash/mode inventory for every other packed file. The stage is
+re-inventoried after closure, source `HEAD` is re-proved unchanged, and `npm
+pack` runs only against that private stage. The build-only, fixed
+`tar@7.5.19` parser streams the actual npm tgz without extraction and requires
+every `package/` member's path, bytes, digest, and exact mode to match the
+closed stage. The copied publication tarball is verified again. The shared
+private-directory publication module re-proves parent inode identity and
+target absence before exclusive rename and only cleans staging it still owns.
+Only then is one absent output directory published atomically.
+
+The operator form is
+`bun run build:product-package -- --output <absent-directory>`. It is a package
+production command, not the end-user installer. Global-prefix installation and
+repository-unavailable execution evidence remain the next M2 checkpoint; npm
+publication, tags, and a GitHub release remain outside this command.
+
 Managed publication copies that verified twin once to the direct, host-wide
 path `~/Library/Application Support/Dome/Home/runtime/Dome Home` while holding
 the global release-store owner. The file and its parent are fsynced, and every
@@ -735,7 +775,7 @@ dangling symlink; the builder creates only its parent and never deletes,
 merges, or replaces prior output. It assembles the expanded artifact and its
 archive together in a private same-filesystem sibling, then runs the shipped
 artifact verifier and the ordinary archive rehearsal in that fixed order. The
-exact `0.3.9` builder then privately reconstructs the pinned `0.1.0`
+exact `0.4.0` builder then privately reconstructs the pinned `0.1.0`
 predecessor twice, runs the installed N-1→N rehearsal against that archive,
 the exact staged candidate archive, and the frozen fixture, and binds the
 returned predecessor, candidate, fixture, host, and scenario identity. It
@@ -748,7 +788,7 @@ failures remove their private staging state when
 its owned inode is still present and expose neither final path; cleanup never
 follows a replaced path. Concurrent builders leave one complete winner and
 never replace it. This is an atomic-visibility and no-replace boundary, not a
-new power-loss durability claim. The package is `0.3.9`; only this closed
+new power-loss durability claim. The package is `0.4.0`; only this closed
 installed-gated builder writes `distribution.upgradeSupported: true`. The
 exported fixture metadata writer remains fixed-false and cannot publish.
 

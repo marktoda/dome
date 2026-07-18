@@ -16,6 +16,7 @@ describe("V1 package scripts", () => {
     expect(scripts.typecheck).toContain("tsconfig.scripts.json");
     expect(scripts["v1:check"]).toContain("bun run typecheck");
     expect(scripts["check:pwa"]).toBe("bun run --cwd pwa check");
+    expect(scripts["build:product-package"]).toBe("bun scripts/product-package.ts");
     expect(scripts["v1:check"]).toContain("bun run check:pwa");
     expect(scripts["v1:check"]).toContain("git diff --check");
     expect(scripts.test).toBe("bun scripts/test-root.ts");

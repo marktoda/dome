@@ -22,6 +22,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "nod
 import { gzipSync } from "node:zlib";
 import { compareStrings } from "../src/core/compare";
 import { publishDirectoryExclusive } from "../src/platform/exclusive-rename";
+import { preparePrivateDirectoryPublication } from "../src/platform/private-directory-publication";
 import {
   HOME_ARTIFACT_SCHEMA,
   HOME_ARTIFACT_TARGET,
@@ -101,7 +102,7 @@ const ACTIVATION_SCENARIOS = Object.freeze([
   "committed-exact-repair",
 ] as const);
 const HOME_ARTIFACT_RELEASE_CLAIM = Object.freeze({
-  version: "0.3.9",
+  version: "0.4.0",
   upgradeSupported: true,
 } as const);
 
@@ -133,13 +134,6 @@ export type HomeArtifactCandidatePaths = Readonly<{
 
 type CandidatePublisher = (source: string, target: string) => Promise<void>;
 
-type CandidateParent = Readonly<{
-  lexical: string;
-  canonical: string;
-  device: number;
-  inode: number;
-}>;
-
 /**
  * Assemble and gate a complete release candidate before exposing any final
  * output. The output directory is the transaction unit: publishing its two
@@ -161,29 +155,26 @@ export async function stageAndPublishHomeArtifactCandidate(input: Readonly<{
     throw new Error(`invalid Home artifact name: ${input.artifactName}`);
   }
   const requestedOutput = resolve(input.outputDir);
-  await assertOutputTargetAbsent(requestedOutput);
   await assertAllowedStagingParent(dirname(requestedOutput), input.forbiddenStagingRoots ?? []);
-  const parent = await prepareCandidateParent(dirname(requestedOutput));
-  const outputDir = join(parent.canonical, basename(requestedOutput));
-  await assertOutputTargetAbsent(outputDir);
-  await assertAllowedStagingParent(parent.canonical, input.forbiddenStagingRoots ?? []);
-
-  const candidateOutput = await mkdtemp(join(parent.canonical, ".dome-home-candidate-"));
-  const candidateInfo = await lstat(candidateOutput);
+  const publication = await preparePrivateDirectoryPublication({
+    target: requestedOutput,
+    prefix: ".dome-home-candidate-",
+    label: "Home artifact",
+  });
+  const candidateOutput = publication.stage;
+  const outputDir = publication.target;
+  await assertAllowedStagingParent(dirname(candidateOutput), input.forbiddenStagingRoots ?? []);
   const paths: HomeArtifactCandidatePaths = Object.freeze({
     artifactName: input.artifactName,
     archiveName: `${input.artifactName}.tar.gz`,
     directory: join(candidateOutput, input.artifactName),
     archive: join(candidateOutput, `${input.artifactName}.tar.gz`),
   });
-  let published = false;
   try {
     await input.assemble(paths);
     await input.verifyArtifact(paths);
     await input.rehearseArchive(paths);
-    await assertCandidateParentUnchanged(parent);
-    await publish(candidateOutput, outputDir);
-    published = true;
+    await publication.publish(publish);
     return Object.freeze({
       artifactName: paths.artifactName,
       archiveName: paths.archiveName,
@@ -191,30 +182,7 @@ export async function stageAndPublishHomeArtifactCandidate(input: Readonly<{
       archive: join(outputDir, paths.archiveName),
     });
   } finally {
-    if (!published) await removeOwnedCandidate(candidateOutput, candidateInfo.dev, candidateInfo.ino);
-  }
-}
-
-async function prepareCandidateParent(parentPath: string): Promise<CandidateParent> {
-  await mkdir(parentPath, { recursive: true });
-  const info = await lstat(parentPath);
-  if (!info.isDirectory() || info.isSymbolicLink()) {
-    throw new Error(`Home artifact output parent must be a direct non-symlink directory: ${parentPath}`);
-  }
-  const canonical = await realpath(parentPath);
-  const canonicalInfo = await lstat(canonical);
-  if (!canonicalInfo.isDirectory() || canonicalInfo.isSymbolicLink() ||
-    canonicalInfo.dev !== info.dev || canonicalInfo.ino !== info.ino) {
-    throw new Error(`Home artifact output parent identity is inconsistent: ${parentPath}`);
-  }
-  return Object.freeze({ lexical: parentPath, canonical, device: info.dev, inode: info.ino });
-}
-
-async function assertCandidateParentUnchanged(parent: CandidateParent): Promise<void> {
-  const info = await lstat(parent.lexical);
-  if (!info.isDirectory() || info.isSymbolicLink() || info.dev !== parent.device || info.ino !== parent.inode ||
-    await realpath(parent.lexical) !== parent.canonical) {
-    throw new Error(`Home artifact output parent changed during candidate assembly: ${parent.lexical}`);
+    await publication.dispose();
   }
 }
 
@@ -246,16 +214,6 @@ async function canonicalizePotentialPath(pathInput: string): Promise<string> {
 function pathContains(root: string, candidate: string): boolean {
   const path = relative(root, candidate);
   return path === "" || (path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path));
-}
-
-async function removeOwnedCandidate(path: string, device: number, inode: number): Promise<void> {
-  try {
-    const info = await lstat(path);
-    if (!info.isDirectory() || info.isSymbolicLink() || info.dev !== device || info.ino !== inode) return;
-    await rm(path, { recursive: true, force: true });
-  } catch (error) {
-    if (!isNodeError(error) || error.code !== "ENOENT") throw error;
-  }
 }
 
 async function assertOutputTargetAbsent(outputDir: string): Promise<void> {

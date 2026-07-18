@@ -40,7 +40,7 @@ import {
 
 const INSTALLED_READINESS = Object.freeze({
   schema: "dome.product.readiness/v1",
-  productVersion: "0.3.9",
+  productVersion: "0.4.0",
   artifactId: "artifact-test",
   writesAdmitted: true,
   contractVersions: Object.freeze(["dome.product.readiness/v1"]),
@@ -65,7 +65,7 @@ const INSTALLED_READINESS = Object.freeze({
 
 describe("installed Chromium core-readiness evidence", () => {
   const expected = Object.freeze({
-    productVersion: "0.3.9",
+    productVersion: "0.4.0",
     vaultName: "work",
     deviceName: "Dome installed Chromium acceptance",
   });

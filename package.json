@@ -1,6 +1,6 @@
 {
   "name": "@marktoda/dome",
-  "version": "0.3.9",
+  "version": "0.4.0",
   "description": "Dome — a local, self-tending operating system for your second brain.",
   "license": "MIT",
   "author": "Mark Toda",
@@ -33,6 +33,7 @@
     "assets/extensions/",
     "assets/model-providers/",
     "assets/source-handlers/",
+    "product/",
     "bin/dome",
     "LICENSE",
     "README.md"
@@ -60,6 +61,7 @@
     "check:pwa": "bun run --cwd pwa check",
     "build:home-artifact": "bun scripts/home-artifact.ts",
     "build:home-distribution": "bun scripts/home-macos-distribution.ts",
+    "build:product-package": "bun scripts/product-package.ts",
     "test:invariants": "bun test tests/invariants",
     "typecheck": "bunx tsc --noEmit && bunx tsc --noEmit -p tsconfig.bundles.json && bunx tsc --noEmit -p tsconfig.scripts.json",
     "v1:smoke": "bun scripts/v1-smoke.ts",
@@ -92,6 +94,7 @@
     "@types/bun": "latest",
     "@types/semver": "^7.7.1",
     "playwright-core": "1.61.1",
+    "tar": "7.5.19",
     "typescript": "^5.5.0"
   }
 }

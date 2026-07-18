@@ -28,7 +28,7 @@ const identityMutations: ReadonlyArray<readonly [string, (value: MutableBinding)
   ["fixture.canaryDigest", (value) => { value.fixture.canaryDigest = "changed"; }],
 ];
 
-describe("Dome Home 0.3 activation", () => {
+describe("Dome Home 0.4 activation", () => {
   test("keeps one closed activation order while portable execution emits no evidence", async () => {
     const events: string[] = [];
     const result = await exerciseHomeArtifactActivationForTests(operations(events));
@@ -209,11 +209,11 @@ describe("Dome Home 0.3 activation", () => {
       .toThrow("identity does not match the staged release");
   });
 
-  test("fixes the official release claim at package 0.3.9 and upgrade support true", async () => {
+  test("fixes the official release claim at package 0.4.0 and upgrade support true", async () => {
     const pkg = JSON.parse(await readFile(join(import.meta.dir, "..", "..", "package.json"), "utf8")) as {
       readonly version: string;
     };
-    expect(homeArtifactReleaseClaimForTests()).toEqual({ version: "0.3.9", upgradeSupported: true });
+    expect(homeArtifactReleaseClaimForTests()).toEqual({ version: "0.4.0", upgradeSupported: true });
     expect(pkg.version).toBe(homeArtifactReleaseClaimForTests().version);
   });
 

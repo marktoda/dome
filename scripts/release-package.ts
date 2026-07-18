@@ -3,8 +3,13 @@
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
+import {
+  PRODUCT_PACKAGE_CAPS,
+  PRODUCT_PACKAGE_SOURCE_PATHS,
+} from "../src/product-package/manifest";
+import { assembleCompleteProductPackage } from "./product-package";
 
 const repoRoot = resolve(import.meta.dir, "..");
 
@@ -27,7 +32,7 @@ const EXPECTED_EXPORTS = Object.freeze({
 
 const EXPECTED_MANIFEST_FIELDS = Object.freeze({
   name: RELEASE_PACKAGE_NAME,
-  version: "0.3.9",
+  version: "0.4.0",
   description: "Dome — a local, self-tending operating system for your second brain.",
   license: "MIT",
   author: "Mark Toda",
@@ -50,27 +55,14 @@ const EXPECTED_MANIFEST_FIELDS = Object.freeze({
 const PACKAGE_PATH_SEGMENTS = packagePathSegments(RELEASE_PACKAGE_NAME);
 
 export const RELEASE_PACKAGE_CAPS = Object.freeze({
-  entries: 500,
-  packedBytes: 2_000_000,
-  unpackedBytes: 5_000_000,
+  entries: PRODUCT_PACKAGE_CAPS.packedEntries,
+  packedBytes: PRODUCT_PACKAGE_CAPS.packedBytes,
+  unpackedBytes: PRODUCT_PACKAGE_CAPS.unpackedBytes,
 });
 
 const ALLOWED_PATHS = Object.freeze([
-  "src/",
-  "contracts/agent-stream.ts",
-  "contracts/capture.ts",
-  "contracts/product-readiness.ts",
-  "contracts/source-document.ts",
-  "contracts/task-backlog.ts",
-  "contracts/task-backlog-review.ts",
-  "assets/extensions/",
-  "assets/model-providers/",
-  "assets/source-handlers/",
-  "bin/dome",
-  "LICENSE",
-  "README.md",
-  // npm always includes package.json independently of the files allowlist.
-  "package.json",
+  ...PRODUCT_PACKAGE_SOURCE_PATHS,
+  "product/",
 ]);
 
 type PackFile = {
@@ -112,6 +104,9 @@ export type ReleasePackageReport = {
 };
 
 export function validatePackResult(result: PackResult): void {
+  if (result.filename !== "marktoda-dome-0.4.0.tgz") {
+    throw new Error(`release artifact filename is unexpected: ${result.filename}`);
+  }
   if (result.entryCount !== result.files.length) {
     throw new Error(`npm pack entry count mismatch: ${result.entryCount} != ${result.files.length}`);
   }
@@ -123,6 +118,9 @@ export function validatePackResult(result: PackResult): void {
   }
   if (result.unpackedSize > RELEASE_PACKAGE_CAPS.unpackedBytes) {
     throw new Error(`release artifact is ${result.unpackedSize} unpacked bytes (cap ${RELEASE_PACKAGE_CAPS.unpackedBytes})`);
+  }
+  if (new Set(result.files.map((file) => file.path)).size !== result.files.length) {
+    throw new Error("release artifact contains duplicate paths");
   }
 
   for (const file of result.files) {
@@ -161,10 +159,18 @@ export function validatePackResult(result: PackResult): void {
     "assets/extensions/dome.markdown/manifest.yaml",
     "assets/model-providers/anthropic.ts",
     "assets/source-handlers/claude-slack.sh",
+    "product/manifest.json",
+    "product/pwa/index.html",
   ]) {
     if (!result.files.some((file) => file.path === required)) {
       throw new Error(`release artifact is missing runtime path: ${required}`);
     }
+  }
+  const homeArchives = result.files.filter((file) =>
+    /^product\/home\/dome-home-0\.4\.0-darwin-arm64\.tar\.gz$/.test(file.path)
+  );
+  if (homeArchives.length !== 1 || (homeArchives[0]!.mode & 0o111) !== 0) {
+    throw new Error("release artifact must contain exactly one non-executable Home archive");
   }
 }
 
@@ -220,20 +226,13 @@ function isAllowedPackagePath(path: string): boolean {
 export async function rehearseReleasePackage(): Promise<ReleasePackageReport> {
   const temporary = await mkdtemp(join(tmpdir(), "dome-release-package-"));
   try {
-    const packOutput = await run([
-      "npm",
-      "pack",
-      "--json",
-      "--pack-destination",
-      temporary,
-    ], repoRoot);
-    const parsed = JSON.parse(packOutput.stdout) as ReadonlyArray<PackResult>;
-    const packed = parsed[0];
-    if (packed === undefined || parsed.length !== 1) {
-      throw new Error(`npm pack returned ${parsed.length} artifacts; expected exactly one`);
-    }
+    const product = await assembleCompleteProductPackage({
+      repoRoot,
+      outputDir: join(temporary, "complete-product"),
+    });
+    const packed = product.packed;
     validatePackResult(packed);
-    const tarball = join(temporary, basename(packed.filename));
+    const tarball = product.tarball;
     if (!existsSync(tarball)) throw new Error(`npm pack did not create ${tarball}`);
     if ((await stat(tarball)).size !== packed.size) {
       throw new Error("npm pack reported a different tarball size than the file on disk");

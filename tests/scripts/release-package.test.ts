@@ -33,6 +33,7 @@ describe("release package rehearsal", () => {
       "assets/extensions/",
       "assets/model-providers/",
       "assets/source-handlers/",
+      "product/",
       "bin/dome",
       "LICENSE",
       "README.md",
@@ -129,9 +130,12 @@ describe("release package rehearsal", () => {
       { path: "assets/extensions/dome.markdown/manifest.yaml", size: 1, mode: 0o644 },
       { path: "assets/model-providers/anthropic.ts", size: 1, mode: 0o644 },
       { path: "assets/source-handlers/claude-slack.sh", size: 1, mode: 0o755 },
+      { path: "product/manifest.json", size: 1, mode: 0o644 },
+      { path: "product/pwa/index.html", size: 1, mode: 0o644 },
+      { path: "product/home/dome-home-0.4.0-darwin-arm64.tar.gz", size: 1, mode: 0o644 },
     ];
     const base = {
-      filename: "marktoda-dome.tgz",
+      filename: "marktoda-dome-0.4.0.tgz",
       size: 6,
       unpackedSize: 6,
       entryCount: requiredFiles.length,
@@ -157,6 +161,18 @@ describe("release package rehearsal", () => {
       ...base,
       size: RELEASE_PACKAGE_CAPS.packedBytes + 1,
     })).toThrow("packed bytes");
+    expect(() => validatePackResult({
+      ...base,
+      entryCount: requiredFiles.length - 1,
+      files: requiredFiles.filter((file) => !file.path.startsWith("product/home/")),
+    })).toThrow("exactly one");
+    expect(() => validatePackResult({
+      ...base,
+      entryCount: requiredFiles.length + 1,
+      files: [...requiredFiles, requiredFiles.at(-1)!],
+    })).toThrow("duplicate paths");
+    expect(() => validatePackResult({ ...base, filename: "marktoda-dome.tgz" }))
+      .toThrow("filename is unexpected");
   });
 
   test("current-schema evidence claims only successful opens and stable semantic refs", () => {
