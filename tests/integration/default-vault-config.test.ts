@@ -12,9 +12,11 @@ import {
   FIRST_PARTY_EXTENSION_DEFAULTS,
 } from "../../src/cli/default-vault-config";
 import { resolveShippedBundlesRoot } from "../../src/cli/commands/sync-shared";
+import { DEFAULT_CONTENT_SCOPE_CONFIG } from "../../src/core/content-scope";
 import {
   DEFAULT_RUNTIME_CONFIG,
   loadCapabilityPolicy,
+  parseCapabilityPolicy,
 } from "../../src/engine/core/capability-policy";
 import { graphWriteCovers } from "../../src/engine/core/capability-broker";
 import { readablePath } from "../../src/engine/core/path-capabilities";
@@ -22,7 +24,13 @@ import { loadBundles } from "../../src/extensions/loader";
 
 describe("default vault config", () => {
   test("rendered YAML round-trips to the typed default record", () => {
-    expect(parseYaml(defaultConfigYaml())).toEqual(defaultConfigRecord());
+    const yaml = defaultConfigYaml();
+    const record = defaultConfigRecord();
+    expect(parseYaml(yaml)).toEqual(record);
+    expect(record.content_scope).toEqual(DEFAULT_CONTENT_SCOPE_CONFIG);
+    const runtime = parseCapabilityPolicy(yaml);
+    expect(runtime.ok).toBe(true);
+    if (runtime.ok) expect(runtime.value.contentScope).toEqual(DEFAULT_CONTENT_SCOPE_CONFIG);
   });
 
   test("model-provider YAML round-trips to the typed provider default", () => {

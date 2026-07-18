@@ -6,6 +6,7 @@ import { lstat, mkdir, readFile, realpath, unlink } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
 import { findGitRoot } from "../git";
+import { homeServiceLabelForVault } from "../core/vault-service-identity";
 import { readServeHeartbeatStatus } from "../engine/host/compiler-host-heartbeat";
 import {
   acquireOperationalWriterLease,
@@ -21,7 +22,6 @@ import {
 import {
   resolveServiceDeps,
   serviceLabelForVault,
-  vaultServiceSlug,
   type ServiceDeps,
 } from "../surface/service-probe";
 import {
@@ -154,9 +154,7 @@ type OwnedMutationResult =
       readonly releasePublished?: boolean;
     };
 
-export function homeServiceLabelForVault(vaultPath: string): string {
-  return `com.dome.home.${vaultServiceSlug(vaultPath)}`;
-}
+export { homeServiceLabelForVault } from "../core/vault-service-identity";
 
 export async function manageHome(input: {
   readonly action: HomeLifecycleAction;

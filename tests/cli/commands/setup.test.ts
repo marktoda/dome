@@ -11,6 +11,7 @@ function evidence(blocked = false): SetupCompilerInput {
     source: {
       schema: "dome.setup.vault-source-inspection/v1",
       targetPath: "/Users/example/Vault",
+      targetState: blocked ? "existing" : "missing",
       kind: blocked ? "unsafe-or-ambiguous-state" : "new-path",
       git: {
         state: "absent", head: null, branch: null, direct: false, ancestorRoot: null, operationMarkers: [],

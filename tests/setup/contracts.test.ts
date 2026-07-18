@@ -8,17 +8,18 @@ import {
   type SetupPlan,
   type VaultAssessment,
 } from "../../src/setup/contracts";
+import { homeServiceLabelForVault } from "../../src/core/vault-service-identity";
 
 const HEAD = "1".repeat(40);
 const FINGERPRINT = "2".repeat(64);
 const ARTIFACT = "3".repeat(64);
 const MANIFEST = "4".repeat(64);
-const SERVICE = "com.dome.home.example-vault";
+const SERVICE = homeServiceLabelForVault("/Users/example/Vault");
 
 function assessment(): VaultAssessment {
   return validateVaultAssessment({
     schema: VAULT_ASSESSMENT_SCHEMA,
-    target: { path: "/Users/example/Vault", kind: "existing-git-vault" },
+    target: { path: "/Users/example/Vault", state: "existing", kind: "existing-git-vault" },
     revision: { head: HEAD, worktreeFingerprint: FINGERPRINT },
     host: { platform: "darwin", architecture: "arm64", supported: true },
     product: {
@@ -106,6 +107,39 @@ describe("VaultAssessment contract", () => {
     const value = assessment();
     expect(validateVaultAssessment(JSON.parse(JSON.stringify(value)))).toEqual(value);
     expect(value).not.toHaveProperty("actions");
+    expect(isDeeplyFrozen(value)).toBe(true);
+  });
+
+  test("rejects proxies, accessors, and oversized arrays before traversal", () => {
+    let trapCount = 0;
+    const hostile = new Proxy({}, {
+      getPrototypeOf() { trapCount += 1; throw new Error("must not inspect proxy"); },
+      ownKeys() { trapCount += 1; throw new Error("must not inspect proxy"); },
+    });
+    expect(() => validateVaultAssessment(hostile)).toThrow("must not be a Proxy");
+    expect(trapCount).toBe(0);
+
+    let accessorCount = 0;
+    const accessor = { ...assessment() } as Record<string, unknown>;
+    Object.defineProperty(accessor, "schema", {
+      enumerable: true,
+      get() { accessorCount += 1; return VAULT_ASSESSMENT_SCHEMA; },
+    });
+    expect(() => validateVaultAssessment(accessor)).toThrow("must be an enumerable data property");
+    expect(accessorCount).toBe(0);
+
+    let elementCount = 0;
+    const oversized = new Array(100_001);
+    Object.defineProperty(oversized, "0", {
+      enumerable: true,
+      get() { elementCount += 1; return "notes/never-read.md"; },
+    });
+    const value = assessment();
+    expect(() => validateVaultAssessment({
+      ...value,
+      markdown: { ...value.markdown, tracked: oversized },
+    })).toThrow("must contain at most 100000 entries");
+    expect(elementCount).toBe(0);
   });
 
   test("rejects unknown fields, non-canonical paths, and case-variant Markdown", () => {
@@ -144,6 +178,18 @@ describe("VaultAssessment contract", () => {
       git: { ...value.git, state: "dirty" },
     })).toThrow("dirty-worktree");
   });
+
+  test("binds classification exactly to configured and active-operation evidence", () => {
+    const value = assessment();
+    expect(() => validateVaultAssessment({
+      ...value,
+      dome: { state: "configured", contentScope: "configured" },
+    })).toThrow("must equal existing-dome-vault");
+    expect(() => validateVaultAssessment({
+      ...value,
+      target: { ...value.target, kind: "incompatible-active-operation" },
+    })).toThrow("must equal existing-git-vault");
+  });
 });
 
 describe("SetupPlan contract", () => {
@@ -154,6 +200,18 @@ describe("SetupPlan contract", () => {
     expect(value).not.toHaveProperty("commits");
     expect(value).not.toHaveProperty("serviceActions");
     expect(value.actions.filter((action) => action.kind === "activate-home")).toHaveLength(1);
+    expect(isDeeplyFrozen(value)).toBe(true);
+  });
+
+  test("preflights hostile plan arrays before Zod traversal", () => {
+    let elementCount = 0;
+    const oversized = new Array(100_000);
+    Object.defineProperty(oversized, "0", {
+      enumerable: true,
+      get() { elementCount += 1; return plan().actions[0]; },
+    });
+    expect(() => validateSetupPlan({ ...plan(), actions: oversized })).toThrow("must contain at most 8 entries");
+    expect(elementCount).toBe(0);
   });
 
   test("a blocked plan carries no applicable action", () => {
@@ -222,6 +280,7 @@ describe("SetupPlan contract", () => {
     for (const changed of [
       { ...activation, artifactId: MANIFEST },
       { ...activation, vaultPath: "/Users/example/Other" },
+      { ...activation, serviceLabel: "com.dome.home.forged-label" },
       { ...activation, disposition: "upgrade" as const },
     ]) {
       expect(() => validateSetupPlan({
@@ -231,3 +290,8 @@ describe("SetupPlan contract", () => {
     }
   });
 });
+
+function isDeeplyFrozen(value: unknown): boolean {
+  if (typeof value !== "object" || value === null) return true;
+  return Object.isFrozen(value) && Object.values(value).every(isDeeplyFrozen);
+}

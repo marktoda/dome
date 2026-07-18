@@ -6,7 +6,13 @@ import { dirname, join, parse, resolve } from "node:path";
 import { compareStrings } from "../core/compare";
 import { parseCapabilityPolicy } from "../engine/core/capability-policy";
 import { findGitRoot } from "../git";
-import { SETUP_CONTRACT_CAPS, VAULT_KINDS, type VaultAssessment } from "./contracts";
+import { SETUP_CONTRACT_CAPS, type VaultAssessment } from "./contracts";
+import {
+  classifySetupVault,
+  SETUP_TARGET_STATES,
+  VAULT_KINDS,
+  type SetupTargetState,
+} from "./classification";
 
 export const SETUP_VAULT_INSPECTION_SCHEMA = "dome.setup.vault-source-inspection/v1" as const;
 
@@ -43,6 +49,7 @@ export type SetupGitRunner = (
 export type SetupVaultSourceInspection = Readonly<{
   schema: typeof SETUP_VAULT_INSPECTION_SCHEMA;
   targetPath: string;
+  targetState: SetupTargetState;
   kind: VaultAssessment["target"]["kind"];
   git: Readonly<{
     state: VaultAssessment["git"]["state"];
@@ -190,7 +197,14 @@ export async function inspectSetupVaultSource(
   }
 
   const blockerList = Object.freeze([...blockers.values()].sort((left, right) => compareStrings(left.code, right.code)));
-  const kind = classifyTarget(target, git, dome, blockerList);
+  const targetState = setupTargetState(target);
+  const kind = classifySetupVault({
+    targetState,
+    gitState: git.state,
+    gitDirect: git.direct,
+    domeState: dome.state,
+    blockerCodes: blockerList.map((blocker) => blocker.code),
+  });
   const external = normalizeExternalEvidence(options.externalFingerprintEvidence ?? [], caps.externalEvidence);
   const fingerprint = hashJson({
     schema: "dome.setup.worktree-fingerprint/v1",
@@ -226,6 +240,7 @@ export async function inspectSetupVaultSource(
   return validateSetupVaultSourceInspection(Object.freeze({
     schema: SETUP_VAULT_INSPECTION_SCHEMA,
     targetPath,
+    targetState,
     kind,
     git: Object.freeze({
       state: git.state,
@@ -248,10 +263,14 @@ export async function inspectSetupVaultSource(
 /** Validate injected discovery evidence before the setup compiler trusts it. */
 export function validateSetupVaultSourceInspection(value: unknown): SetupVaultSourceInspection {
   const source = exactObject(value, "setup source inspection", [
-    "schema", "targetPath", "kind", "git", "dome", "markdown", "blockers", "worktreeFingerprint",
+    "schema", "targetPath", "targetState", "kind", "git", "dome", "markdown", "blockers", "worktreeFingerprint",
   ]);
   if (source["schema"] !== SETUP_VAULT_INSPECTION_SCHEMA) throw new Error("setup source inspection schema is invalid");
   const targetPath = normalizedAbsolutePath(source["targetPath"], "setup source target path");
+  if (!SETUP_TARGET_STATES.includes(source["targetState"] as SetupTargetState)) {
+    throw new Error("setup source target state is invalid");
+  }
+  const targetState = source["targetState"] as SetupTargetState;
   if (!VAULT_KINDS.includes(source["kind"] as typeof VAULT_KINDS[number])) {
     throw new Error("setup source classification is invalid");
   }
@@ -303,6 +322,7 @@ export function validateSetupVaultSourceInspection(value: unknown): SetupVaultSo
     throw new Error("setup source blockers are invalid");
   }
   let previousCode = "";
+  const observedBlockerCodes: BlockerCode[] = [];
   for (const candidate of source["blockers"]) {
     const blocker = exactObject(candidate, "setup source blocker", ["code", "message", "nextAction"]);
     if (!blockerCodes.includes(blocker["code"] as typeof blockerCodes[number]) ||
@@ -311,22 +331,33 @@ export function validateSetupVaultSourceInspection(value: unknown): SetupVaultSo
       throw new Error("setup source blocker is invalid or not canonically ordered");
     }
     previousCode = blocker["code"];
+    observedBlockerCodes.push(blocker["code"] as BlockerCode);
   }
   if (typeof source["worktreeFingerprint"] !== "string" || !/^[0-9a-f]{64}$/.test(source["worktreeFingerprint"])) {
     throw new Error("setup source fingerprint is invalid");
   }
-  const requiresGit = kind === "existing-git-vault" || kind === "existing-dome-vault";
-  const forbidsGit = kind === "new-path" || kind === "empty-directory" || kind === "existing-non-git-vault";
-  if (requiresGit && !git["direct"] || forbidsGit && (git["direct"] || state !== "absent") ||
-    kind === "existing-dome-vault" && dome["state"] !== "configured") {
+  const expectedKind = classifySetupVault({
+    targetState,
+    gitState: state,
+    gitDirect: git["direct"] as boolean,
+    domeState: dome["state"] as VaultAssessment["dome"]["state"],
+    blockerCodes: observedBlockerCodes,
+  });
+  if (kind !== expectedKind) {
     throw new Error("setup source classification disagrees with its evidence");
+  }
+  if ((state === "operation-active") !== observedBlockerCodes.includes("active-git-operation")) {
+    throw new Error("setup source active-operation blocker disagrees with Git evidence");
+  }
+  if ((git["direct"] || dome["state"] === "configured") && targetState !== "existing") {
+    throw new Error("setup source repository or Dome config requires an existing target");
   }
   if ((dome["state"] === "absent" || dome["state"] === "partial") && dome["contentScope"] !== "absent" ||
     (dome["state"] === "incompatible") !== (dome["contentScope"] === "incompatible")) {
     throw new Error("setup source content-scope evidence is inconsistent");
   }
-  if ((kind === "new-path" || kind === "empty-directory") && (tracked.length > 0 || untracked.length > 0) ||
-    kind === "existing-non-git-vault" && tracked.length > 0) {
+  if ((targetState === "missing" || targetState === "empty-directory") && (tracked.length > 0 || untracked.length > 0) ||
+    !git["direct"] && tracked.length > 0) {
     throw new Error("setup source Markdown inventory disagrees with its classification");
   }
   if (targetPath !== source["targetPath"]) throw new Error("setup source target path is not canonical");
@@ -790,18 +821,10 @@ async function inspectDomeState(
   });
 }
 
-function classifyTarget(
-  target: Readonly<{ exists: boolean; isDirectory: boolean; empty: boolean }>,
-  git: GitEvidence,
-  dome: VaultAssessment["dome"],
-  blockers: ReadonlyArray<VaultAssessment["blockers"][number]>,
-): VaultAssessment["target"]["kind"] {
-  if (git.state === "operation-active") return "incompatible-active-operation";
-  if (blockers.length > 0) return "unsafe-or-ambiguous-state";
-  if (git.direct) return dome.state === "configured" ? "existing-dome-vault" : "existing-git-vault";
-  if (!target.exists) return "new-path";
+function setupTargetState(target: Readonly<{ exists: boolean; isDirectory: boolean; empty: boolean }>): SetupTargetState {
+  if (!target.exists) return "missing";
   if (target.isDirectory && target.empty) return "empty-directory";
-  return "existing-non-git-vault";
+  return "existing";
 }
 
 function markdownPaths(paths: ReadonlySet<string>): string[] {

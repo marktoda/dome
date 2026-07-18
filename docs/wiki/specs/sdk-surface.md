@@ -638,7 +638,8 @@ both the CLI's `--json` mode and the MCP tools emit. The layer's contract:
 | `src/surface/format.ts` | `formatJson` — the canonical JSON serialization for surface documents |
 | `src/surface/command-error.ts` | `COMMAND_ERROR_SCHEMA` (`dome.command-error/v1`) |
 | `src/surface/resolve-vault.ts` | `resolveVaultPath` — git-style upward vault-root discovery |
-| `src/surface/service-probe.ts` | launchd service identity (`vaultServiceSlug`, `serviceLabelForVault`) + read-only `probeServiceState`; the write-side service lifecycle stays in the CLI's `install` command |
+| `src/core/vault-service-identity.ts` | neutral deterministic per-vault slug plus serve/Home service identities, shared by setup previews and lifecycle application |
+| `src/surface/service-probe.ts` | read-only service state probe plus compatibility re-exports for serve identity; the write-side service lifecycle stays in the CLI's `install` command |
 | `src/surface/diagnostic-summary.ts` | Diagnostic grouping/summary shaping embedded in the check/status documents |
 | `src/surface/next-actions.ts` | `next_actions` derivation (`nextActionsForCheck`, `nextActionsForStatus`) |
 | `src/surface/maintenance-loop-summary.ts` | `collectMaintenanceLoopSummaries` + the loop-summary types (rendering stays in `src/cli/maintenance-loop-summary.ts`) |

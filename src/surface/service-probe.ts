@@ -9,18 +9,20 @@
 // src/cli/commands/install.ts (launchd) and install-systemd.ts (systemd);
 // both import the identity helpers and deps boundary from here.
 
-import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
+import {
+  serveServiceLabelForVault,
+  serveServiceUnitNameForVault,
+} from "../core/vault-service-identity";
 import type {
   LaunchctlResult,
   LaunchctlRunner,
 } from "../platform/launchd";
 
 export type { LaunchctlResult, LaunchctlRunner } from "../platform/launchd";
-
-const SERVICE_LABEL_PREFIX = "com.dome.serve.";
+export { vaultServiceSlug } from "../core/vault-service-identity";
 
 /** Same SDK-entry resolution as `dome serve --daemon` (see serve.ts). */
 const DOME_BIN = resolve(import.meta.dir, "../../bin/dome");
@@ -123,30 +125,14 @@ async function spawnSystemctl(
 
 // ----- Label / plist derivation (pure, exported for tests) ------------------
 
-/**
- * Deterministic per-vault service slug: lowercased basename with
- * non-`[a-z0-9-]` runs collapsed to `-`, plus the first 8 hex chars of the
- * SHA-256 of the resolved vault path. Same path → same slug; distinct
- * vaults (even with the same basename) never collide.
- */
-export function vaultServiceSlug(vaultPath: string): string {
-  const resolved = resolve(vaultPath);
-  const base = basename(resolved)
-    .toLowerCase()
-    .replace(/[^a-z0-9-]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  const hash = createHash("sha256").update(resolved).digest("hex").slice(0, 8);
-  return `${base.length > 0 ? base : "vault"}-${hash}`;
-}
-
 /** launchd label for a vault's ambient `dome serve` service. */
 export function serviceLabelForVault(vaultPath: string): string {
-  return `${SERVICE_LABEL_PREFIX}${vaultServiceSlug(vaultPath)}`;
+  return serveServiceLabelForVault(vaultPath);
 }
 
 /** systemd user-unit name for a vault's ambient `dome serve` service. */
 export function serviceUnitNameForVault(vaultPath: string): string {
-  return `dome-serve-${vaultServiceSlug(vaultPath)}.service`;
+  return serveServiceUnitNameForVault(vaultPath);
 }
 
 // ----- probeServiceState ----------------------------------------------------

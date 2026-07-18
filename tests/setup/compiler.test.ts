@@ -22,6 +22,7 @@ function input(kind: SetupCompilerInput["source"]["kind"]): SetupCompilerInput {
     source: {
       schema: "dome.setup.vault-source-inspection/v1",
       targetPath: "/Users/example/Vault",
+      targetState: kind === "new-path" ? "missing" : kind === "empty-directory" ? "empty-directory" : "existing",
       kind,
       git: {
         state: kind === "incompatible-active-operation" ? "operation-active" : gitPresent ? "clean" : "absent",
@@ -214,6 +215,14 @@ describe("setup compiler", () => {
       ...base,
       source: { ...base.source, schema: "forged" as typeof base.source.schema },
     })).toThrow("schema is invalid");
+    expect(() => compileSetupPlan({
+      ...base,
+      scaffold: { ...base.scaffold, vaultConfig: `${base.scaffold.vaultConfig}unknown_runtime_key: true\n` },
+    })).toThrow("vault config scaffold is not valid runtime config");
+    expect(() => compileSetupPlan({
+      ...base,
+      scaffold: { ...base.scaffold, contentScopeConfig: `${base.scaffold.contentScopeConfig}extensions: []\n` },
+    })).toThrow("content-scope merge scaffold is not valid runtime config");
     const existing = input("existing-git-vault");
     expect(() => compileSetupPlan({
       ...existing,
@@ -227,6 +236,17 @@ describe("setup compiler", () => {
       ...existing,
       source: { ...existing.source, git: { ...existing.source.git, operationMarkers: ["MERGE_HEAD"] } },
     })).toThrow("Git operation evidence is inconsistent");
+    expect(() => compileSetupPlan({
+      ...existing,
+      source: {
+        ...existing.source,
+        dome: { state: "configured", contentScope: "configured" },
+      },
+    })).toThrow("classification disagrees with its evidence");
+    expect(() => compileSetupPlan({
+      ...existing,
+      source: { ...existing.source, kind: "incompatible-active-operation" },
+    })).toThrow("classification disagrees with its evidence");
     expect(() => compileSetupPlan({
       ...base,
       scaffold: { ...base.scaffold, vaultConfig: "grants: standard\n" },
@@ -248,7 +268,7 @@ describe("setup compiler", () => {
         ...base.scaffold,
         vaultConfig: "content_scope:\n  version: 1\n  include: [\"**/*.md\", \"**/*.md\"]\n  exclude: [\".dome/**\", \".git/**\"]\n",
       },
-    })).toThrow("does not encode the proposed content scope");
+    })).toThrow("vault config scaffold is not valid runtime config");
     expect(() => compileSetupPlan({
       ...base,
       scaffold: { ...base.scaffold, agentsOrientation: "x".repeat(1024 * 1024 + 1) },

@@ -577,7 +577,7 @@ function validateInspectionAssessment(
 ): VaultAssessment {
   return validateVaultAssessment({
     schema: VAULT_ASSESSMENT_SCHEMA,
-    target: { path: inspected.targetPath, kind: inspected.kind },
+    target: { path: inspected.targetPath, state: inspected.targetState, kind: inspected.kind },
     revision: { head: inspected.git.head, worktreeFingerprint: inspected.worktreeFingerprint },
     host: { platform: "darwin", architecture: "arm64", supported: true },
     product: {

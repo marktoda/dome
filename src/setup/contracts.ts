@@ -1,24 +1,26 @@
 import { z } from "zod";
 import {
   canonicalContentScopeSchema,
-  CONTENT_SCOPE_MAX_GLOBS,
   type ContentScopeConfig,
 } from "../core/content-scope";
+import { homeServiceLabelForVault } from "../core/vault-service-identity";
+import {
+  deepFreezeSetupContract,
+  passiveSetupContractSnapshot,
+  SETUP_CONTRACT_LIMITS,
+} from "./passive-contract";
+import {
+  classifySetupVault,
+  SETUP_TARGET_STATES,
+  VAULT_KINDS,
+} from "./classification";
 
 export type { ContentScopeConfig };
 
 export const VAULT_ASSESSMENT_SCHEMA = "dome.setup.vault-assessment/v1" as const;
 export const SETUP_PLAN_SCHEMA = "dome.setup.plan/v1" as const;
 
-export const VAULT_KINDS = [
-  "new-path",
-  "empty-directory",
-  "existing-non-git-vault",
-  "existing-git-vault",
-  "existing-dome-vault",
-  "incompatible-active-operation",
-  "unsafe-or-ambiguous-state",
-] as const;
+export { VAULT_KINDS } from "./classification";
 
 export const ADAPTATION_ACTION_KINDS = [
   "create-vault-directory",
@@ -40,14 +42,7 @@ export const ADAPTATION_ACTION_IDS = [
   "home-activation",
 ] as const;
 
-export const SETUP_CONTRACT_CAPS = Object.freeze({
-  markdownPaths: 100_000,
-  scopeGlobs: CONTENT_SCOPE_MAX_GLOBS,
-  writes: 256,
-  writeBytes: 1024 * 1024,
-  warnings: 64,
-  recoveryCommands: 32,
-});
+export const SETUP_CONTRACT_CAPS = SETUP_CONTRACT_LIMITS;
 
 const sha1 = z.string().regex(/^[0-9a-f]{40}$/);
 const sha256 = z.string().regex(/^[0-9a-f]{64}$/);
@@ -146,7 +141,7 @@ const blockerSchema = z.object({
 
 const assessmentSchemaBase = z.object({
   schema: z.literal(VAULT_ASSESSMENT_SCHEMA),
-  target: z.object({ path: absolutePath, kind: z.enum(VAULT_KINDS) }).strict(),
+  target: z.object({ path: absolutePath, state: z.enum(SETUP_TARGET_STATES), kind: z.enum(VAULT_KINDS) }).strict(),
   revision: z.object({
     head: sha1.nullable(),
     worktreeFingerprint: sha256,
@@ -194,7 +189,7 @@ const assessmentSchemaBase = z.object({
     untracked: sortedUnique(markdownPath).max(SETUP_CONTRACT_CAPS.markdownPaths),
     proposedScope: contentScopeSchema,
   }).strict(),
-  blockers: z.array(blockerSchema).max(12),
+  blockers: z.array(blockerSchema).max(SETUP_CONTRACT_CAPS.blockers),
 }).strict();
 
 export const vaultAssessmentSchema = assessmentSchemaBase.superRefine((assessment, context) => {
@@ -229,9 +224,16 @@ export const vaultAssessmentSchema = assessmentSchemaBase.superRefine((assessmen
   if (new Set(blockerCodes).size !== blockerCodes.length || blockerCodes.some((code, index) => index > 0 && blockerCodes[index - 1]! >= code)) {
     context.addIssue({ code: "custom", path: ["blockers"], message: "must be sorted and unique by code" });
   }
-  const blockedKind = assessment.target.kind === "incompatible-active-operation" || assessment.target.kind === "unsafe-or-ambiguous-state";
-  if (blockedKind !== (assessment.blockers.length > 0)) {
-    context.addIssue({ code: "custom", path: ["blockers"], message: "must agree with the vault classification" });
+  const expectedKind = classifySetupVault({
+    targetState: assessment.target.state,
+    gitState: assessment.git.state,
+    gitDirect: assessment.git.state !== "absent",
+    domeState: assessment.dome.state,
+    blockerCodes,
+    installedHomeState: assessment.installedHome.state,
+  });
+  if (assessment.target.kind !== expectedKind) {
+    context.addIssue({ code: "custom", path: ["target", "kind"], message: `must equal ${expectedKind} for the observed evidence` });
   }
   if (assessment.host.supported === assessment.blockers.some((blocker) => blocker.code === "unsupported-host")) {
     context.addIssue({ code: "custom", path: ["host", "supported"], message: "must agree with unsupported-host blocker" });
@@ -276,15 +278,15 @@ export const vaultAssessmentSchema = assessmentSchemaBase.superRefine((assessmen
     (installedIdentity.some((value) => value !== null) || assessment.installedHome.selectedVaultPath !== null)) {
     context.addIssue({ code: "custom", path: ["installedHome"], message: "absent Home evidence cannot identify an artifact, build, or vault" });
   }
-  if ((assessment.target.kind === "new-path" || assessment.target.kind === "empty-directory") &&
+  if ((assessment.target.state === "missing" || assessment.target.state === "empty-directory") &&
     (assessment.markdown.tracked.length > 0 || assessment.markdown.untracked.length > 0)) {
     context.addIssue({ code: "custom", path: ["markdown"], message: "a new or empty target cannot contain Markdown" });
   }
-  if (assessment.target.kind === "existing-non-git-vault" && assessment.markdown.tracked.length > 0) {
+  if (assessment.git.state === "absent" && assessment.markdown.tracked.length > 0) {
     context.addIssue({ code: "custom", path: ["markdown", "tracked"], message: "a non-Git target cannot contain tracked Markdown" });
   }
-  if (assessment.target.kind === "existing-dome-vault" && assessment.dome.state !== "configured") {
-    context.addIssue({ code: "custom", path: ["dome", "state"], message: "an existing Dome vault must be configured" });
+  if (assessment.dome.state === "configured" && assessment.target.state !== "existing") {
+    context.addIssue({ code: "custom", path: ["target", "state"], message: "configured Dome evidence requires an existing target" });
   }
   if ((assessment.dome.state === "absent" || assessment.dome.state === "partial") &&
     assessment.dome.contentScope !== "absent") {
@@ -297,12 +299,6 @@ export const vaultAssessmentSchema = assessmentSchemaBase.superRefine((assessmen
       message: "must be incompatible exactly when Dome config is incompatible",
     });
   }
-  const targetRequiresGit = assessment.target.kind === "existing-git-vault" || assessment.target.kind === "existing-dome-vault";
-  const targetForbidsGit = assessment.target.kind === "new-path" || assessment.target.kind === "empty-directory" ||
-    assessment.target.kind === "existing-non-git-vault";
-  if ((targetRequiresGit && assessment.git.state === "absent") || (targetForbidsGit && assessment.git.state !== "absent")) {
-    context.addIssue({ code: "custom", path: ["git", "state"], message: "must agree with the vault classification" });
-  }
 });
 
 export type VaultAssessment = z.infer<typeof vaultAssessmentSchema>;
@@ -311,11 +307,11 @@ const setupPlanSchemaBase = z.object({
   schema: z.literal(SETUP_PLAN_SCHEMA),
   status: z.enum(["ready", "blocked"]),
   assessment: vaultAssessmentSchema,
-  actions: z.array(adaptationActionSchema).max(ADAPTATION_ACTION_IDS.length),
+  actions: z.array(adaptationActionSchema).max(SETUP_CONTRACT_CAPS.actions),
   optionalSteps: z.array(z.object({
     kind: z.enum(["configure-model", "configure-integration"]),
     description: nonEmpty,
-  }).strict()).max(2),
+  }).strict()).max(SETUP_CONTRACT_CAPS.optionalSteps),
   recoveryCommands: sortedUnique(nonEmpty).max(SETUP_CONTRACT_CAPS.recoveryCommands),
   warnings: z.array(z.object({ code: nonEmpty, message: nonEmpty }).strict()).max(SETUP_CONTRACT_CAPS.warnings),
 }).strict();
@@ -391,7 +387,7 @@ export type SetupPlan = z.infer<typeof setupPlanSchema>;
 function expectedSetupActionIds(assessment: VaultAssessment): ReadonlyArray<AdaptationAction["id"]> {
   if (assessment.blockers.length > 0) return [];
   const ids: AdaptationAction["id"][] = [];
-  if (assessment.target.kind === "new-path") ids.push("vault-directory");
+  if (assessment.target.state === "missing") ids.push("vault-directory");
   if (assessment.git.state === "absent") ids.push("git-repository");
   if (assessment.dome.state !== "configured") {
     ids.push("dome-directory", "dome-state-directory", "agents-orientation", "gitignore", "vault-config");
@@ -409,7 +405,8 @@ function validateHomeActivation(
   context: z.RefinementCtx,
 ): void {
   const candidate = assessment.product.packagedHome;
-  if (action.artifactId !== candidate.artifactId || action.vaultPath !== assessment.target.path) {
+  if (action.artifactId !== candidate.artifactId || action.vaultPath !== assessment.target.path ||
+    action.serviceLabel !== homeServiceLabelForVault(assessment.target.path)) {
     context.addIssue({ code: "custom", path: [...path], message: "must activate the packaged Home for the assessed vault" });
   }
   const installedMatchesCandidate = assessment.installedHome.state === "owned" &&
@@ -425,11 +422,13 @@ function validateHomeActivation(
 }
 
 export function validateVaultAssessment(value: unknown): VaultAssessment {
-  return vaultAssessmentSchema.parse(value);
+  const snapshot = passiveSetupContractSnapshot(value, "vault assessment");
+  return deepFreezeSetupContract(vaultAssessmentSchema.parse(snapshot));
 }
 
 export function validateSetupPlan(value: unknown): SetupPlan {
-  return setupPlanSchema.parse(value);
+  const snapshot = passiveSetupContractSnapshot(value, "setup plan");
+  return deepFreezeSetupContract(setupPlanSchema.parse(snapshot));
 }
 
 function sortedByUniqueKey<T>(

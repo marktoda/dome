@@ -9,11 +9,12 @@ exports[`setup compiler compiles every closed classification into one exact plan
       "schema": "dome.setup.vault-assessment/v1",
       "target": {
         "path": "/Users/example/Vault",
+        "state": "missing",
         "kind": "new-path"
       },
       "revision": {
         "head": null,
-        "worktreeFingerprint": "3df6ab08b3cbaafeb6e9ce6eadc44e41c7e75020f2eb66cab74b6acda3da7fe3"
+        "worktreeFingerprint": "bdde782f01fe957df37ac328d55f00c3a75749331a51349cec7128f49a3f039e"
       },
       "host": {
         "platform": "darwin",
@@ -176,11 +177,12 @@ exports[`setup compiler compiles every closed classification into one exact plan
       "schema": "dome.setup.vault-assessment/v1",
       "target": {
         "path": "/Users/example/Vault",
+        "state": "empty-directory",
         "kind": "empty-directory"
       },
       "revision": {
         "head": null,
-        "worktreeFingerprint": "1077fe5a5d0915975cb634bc80645fca61f134f7f8e27b5ce1ca62e8e7c33850"
+        "worktreeFingerprint": "8ee15756437babb0463149811f184468c625aeea845df52073193e4c77b616cd"
       },
       "host": {
         "platform": "darwin",
@@ -336,11 +338,12 @@ exports[`setup compiler compiles every closed classification into one exact plan
       "schema": "dome.setup.vault-assessment/v1",
       "target": {
         "path": "/Users/example/Vault",
+        "state": "existing",
         "kind": "existing-non-git-vault"
       },
       "revision": {
         "head": null,
-        "worktreeFingerprint": "ec6d164a0532af5b793608b238883371999feeec82899a3ee8a796397d82f3df"
+        "worktreeFingerprint": "800cb69df02d802ebfe5cfb597e7a9ef40e771691ec7f85c552e5590bac57678"
       },
       "host": {
         "platform": "darwin",
@@ -503,11 +506,12 @@ exports[`setup compiler compiles every closed classification into one exact plan
       "schema": "dome.setup.vault-assessment/v1",
       "target": {
         "path": "/Users/example/Vault",
+        "state": "existing",
         "kind": "existing-git-vault"
       },
       "revision": {
         "head": "1111111111111111111111111111111111111111",
-        "worktreeFingerprint": "fd24497266a42f8620affc2718b3d8bd3801ad54a6b1efbb0ed519a06070eacf"
+        "worktreeFingerprint": "ae3314bc6b50c9c8984b260c712c8e08b37d9b1c03b8fcfd30425818e2d99bd6"
       },
       "host": {
         "platform": "darwin",
@@ -664,11 +668,12 @@ exports[`setup compiler compiles every closed classification into one exact plan
       "schema": "dome.setup.vault-assessment/v1",
       "target": {
         "path": "/Users/example/Vault",
+        "state": "existing",
         "kind": "existing-dome-vault"
       },
       "revision": {
         "head": "1111111111111111111111111111111111111111",
-        "worktreeFingerprint": "17791d1871692893b7362fab952928f18c928a4a074b1e0a3fdda5f76177137f"
+        "worktreeFingerprint": "8e4c7962ee6d3a0415410642fa7fa18bdb5bbf1c717600bf9daa3d3a1125dfed"
       },
       "host": {
         "platform": "darwin",
@@ -771,11 +776,12 @@ exports[`setup compiler compiles every closed classification into one exact plan
       "schema": "dome.setup.vault-assessment/v1",
       "target": {
         "path": "/Users/example/Vault",
+        "state": "existing",
         "kind": "incompatible-active-operation"
       },
       "revision": {
         "head": "1111111111111111111111111111111111111111",
-        "worktreeFingerprint": "934d5787dc7b8b545fcf215aa589f5c2b8e14752411b8b631c0688a7045fceda"
+        "worktreeFingerprint": "beeb77da7524d9ca8cb3b06b41b0244d629d9e2086656eaadc05d22c2328e4fb"
       },
       "host": {
         "platform": "darwin",
@@ -860,11 +866,12 @@ exports[`setup compiler compiles every closed classification into one exact plan
       "schema": "dome.setup.vault-assessment/v1",
       "target": {
         "path": "/Users/example/Vault",
+        "state": "existing",
         "kind": "unsafe-or-ambiguous-state"
       },
       "revision": {
         "head": "1111111111111111111111111111111111111111",
-        "worktreeFingerprint": "d08571493fb5c7be4c41b254d36df53e2442bbde3d30000f366f77c1b8b276ce"
+        "worktreeFingerprint": "2b66be3b72230c4c91dd428f3b99a7957093e5c06827d69e158076a45f6bb7f5"
       },
       "host": {
         "platform": "darwin",
@@ -950,7 +957,7 @@ exports[`setup compiler renders human and JSON forms from the same validated pla
 Vault: /Users/example/Vault
 Status: ready
 Classification: existing-non-git-vault
-Revision: no Git HEAD / ec6d164a0532af5b793608b238883371999feeec82899a3ee8a796397d82f3df
+Revision: no Git HEAD / 800cb69df02d802ebfe5cfb597e7a9ef40e771691ec7f85c552e5590bac57678
 
 Planned actions:
 - Initialize Git at /Users/example/Vault

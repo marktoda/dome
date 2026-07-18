@@ -22,7 +22,8 @@ fifth core concept.
 `dome.setup.vault-assessment/v1` is a recomputed observation of a selected
 vault path. It contains:
 
-- the selected path and exactly one closed vault classification;
+- the selected path, its observed state (`missing`, `empty-directory`, or
+  `existing`), and exactly one closed vault classification;
 - a Git `HEAD` when the target is a Git worktree and a deterministic worktree
   fingerprint in all cases;
 - host, installed-package, packaged-product, prerequisite, Git, Dome, and
@@ -54,6 +55,14 @@ blockers. Dirty worktrees, an
 active Git operation, an active Home upgrade, conflicting Home ownership,
 symlink ambiguity, an unsupported host, and missing prerequisites are modeled
 as blockers instead of implicit choices.
+
+`src/setup/classification.ts` owns the one deterministic evidence-to-kind
+mapping used by the inspector, compiler, and public validators. Configuration
+evidence produces `existing-dome-vault`; a Git or Home active operation alone
+produces `incompatible-active-operation`; other blockers produce
+`unsafe-or-ambiguous-state`; the remaining ready kinds follow direct Git and
+observed target state. A supplied kind that disagrees with that evidence is
+invalid rather than a caller-controlled label.
 
 Prerequisite evidence distinguishes absence from incompatibility: a missing
 tool has no observed version and a `missing-prerequisite` blocker; an observed
@@ -177,6 +186,13 @@ A ready plan has status `ready` and no assessment blockers. Unknown fields,
 unknown discriminants, unsafe paths, inconsistent Git/HEAD evidence, and
 non-canonical arrays fail validation.
 
+Public assessment and plan validators first compile untrusted values into a
+bounded passive snapshot. Proxies are rejected before their traps run,
+accessor-backed properties are never invoked, and array lengths are checked
+against field-specific caps before any element traversal. Zod sees only that
+inert snapshot. Successful values are recursively frozen, so renderers and a
+future apply implementation consume one immutable canonical contract.
+
 Write actions bind their exact path, create-or-merge operation, bytes, hash,
 mode, and missing-file behavior. `ContentScopeConfig.version` is the literal
 `1`, so a future matching-language change cannot silently reinterpret an
@@ -185,14 +201,16 @@ accepted setup payload. The shape and matching semantics are owned by
 defining a second glob language. Both the in-memory proposal and the
 `content_scope` decoded from the exact rendered YAML pass through
 `canonicalContentScopeSchema`; unsorted, duplicate, unsupported, or malformed
-policies fail closed. The same runtime config parser consumes generated setup
-config, and content scope participates in the capability-policy hash. A fresh
-vault gets one complete create-file config action. An existing Dome vault with
-no scope gets one explicit `merge-managed-config` action carrying the exact
-managed fragment plus a `content-scope-migration` warning; setup never treats
-that migration as already accepted. Malformed existing scope blocks as
-incompatible. A plan cannot express a second config write or two writes to the
-same path.
+policies fail closed. The same runtime capability-policy parser validates the
+entire generated fresh config—not only its `content_scope` subtree—and the
+managed migration fragment must itself be standalone valid runtime config.
+Both parsed policies must carry the exact proposed scope. Content scope also
+participates in the capability-policy hash. A fresh vault gets one complete
+create-file config action. An existing Dome vault with no scope gets one
+explicit `merge-managed-config` action carrying the exact managed fragment
+plus a `content-scope-migration` warning; setup never treats that migration as
+already accepted. Malformed existing scope blocks as incompatible. A plan
+cannot express a second config write or two writes to the same path.
 
 The one atomic `activate-home` action projects the assessed artifact ID,
 selected vault path, service label, missing-service guard, and install
@@ -204,6 +222,10 @@ and `upgrade` for a different owned artifact selecting the same vault. M6 will
 consume this action through one deep Home activation call with rollback and
 recovery; there are no independently applicable install, select, service, or
 start rows.
+
+The action's service label is not caller-selected. Setup and the Home lifecycle
+derive it through the neutral `src/core/vault-service-identity.ts` Module, and
+the plan validator recomputes the exact label from the assessed vault path.
 
 For an existing non-Git vault, the M3 inspector already revision-binds every
 bounded, nonignored regular-file byte and mode—not only Markdown—and blocks

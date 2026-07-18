@@ -1,14 +1,14 @@
 import { createHash } from "node:crypto";
 
 import { valid, satisfies } from "semver";
-import { parse as parseYaml } from "yaml";
 
 import {
   canonicalContentScopeSchema,
   type ContentScopeConfig,
 } from "../core/content-scope";
 import { compareStrings } from "../core/compare";
-import { vaultServiceSlug } from "../surface/service-probe";
+import { homeServiceLabelForVault } from "../core/vault-service-identity";
+import { parseCapabilityPolicy } from "../engine/core/capability-policy";
 import {
   SETUP_PLAN_SCHEMA,
   SETUP_CONTRACT_CAPS,
@@ -23,6 +23,7 @@ import {
   validateSetupVaultSourceInspection,
   type SetupVaultSourceInspection,
 } from "./vault-inspector";
+import { classifySetupVault } from "./classification";
 
 export const SETUP_PREREQUISITE_POLICY = Object.freeze({
   bun: ">=1.2.13 <2",
@@ -92,11 +93,18 @@ export function compileSetupAssessment(input: SetupCompilerInput): VaultAssessme
   addHomeBlocker(blockers, input.installedHome);
 
   const blockerRows = [...blockers.values()].sort((left, right) => compareStrings(left.code, right.code));
-  const kind = classify(input.source.kind, input.installedHome.state, blockerRows.length > 0);
+  const kind = classifySetupVault({
+    targetState: input.source.targetState,
+    gitState: input.source.git.state,
+    gitDirect: input.source.git.direct,
+    domeState: input.source.dome.state,
+    blockerCodes: blockerRows.map((blocker) => blocker.code),
+    installedHomeState: input.installedHome.state,
+  });
 
   return validateVaultAssessment({
     schema: VAULT_ASSESSMENT_SCHEMA,
-    target: { path: input.source.targetPath, kind },
+    target: { path: input.source.targetPath, state: input.source.targetState, kind },
     revision: {
       head: input.source.git.head,
       worktreeFingerprint: fingerprintValidatedInput(input, contentScope),
@@ -176,18 +184,6 @@ function prerequisite(id: "bun" | "git", version: string | null): VaultAssessmen
   return Object.freeze({ id, status: supported ? "available" as const : "unsupported" as const, version });
 }
 
-function classify(
-  sourceKind: SetupVaultSourceInspection["kind"],
-  installedHome: SetupInstalledHomeEvidence["state"],
-  blocked: boolean,
-): VaultAssessment["target"]["kind"] {
-  if (!blocked) return sourceKind;
-  if (sourceKind === "incompatible-active-operation" || installedHome === "upgrade-active") {
-    return "incompatible-active-operation";
-  }
-  return "unsafe-or-ambiguous-state";
-}
-
 function addHomeBlocker(
   blockers: Map<VaultAssessment["blockers"][number]["code"], VaultAssessment["blockers"][number]>,
   home: SetupInstalledHomeEvidence,
@@ -220,7 +216,7 @@ function adaptationActions(input: SetupCompilerInput): AdaptationAction[] {
   const actions: AdaptationAction[] = [];
   const target = input.source.targetPath;
   const needsDomeScaffold = input.source.dome.state !== "configured";
-  if (input.source.kind === "new-path") actions.push({
+  if (input.source.targetState === "missing") actions.push({
     kind: "create-vault-directory", id: "vault-directory", path: target, mode: "0755", ifMissing: true,
   });
   if (input.source.git.state === "absent") actions.push({
@@ -254,7 +250,7 @@ function adaptationActions(input: SetupCompilerInput): AdaptationAction[] {
     input.installedHome.buildCommit === candidate.buildCommit &&
     input.installedHome.manifestSha256 === candidate.manifestSha256;
   const disposition = input.installedHome.state === "owned" && !sameCandidate ? "upgrade" as const : "install-or-resume" as const;
-  const serviceLabel = `com.dome.home.${vaultServiceSlug(target)}`;
+  const serviceLabel = homeServiceLabelForVault(target);
   actions.push({
     kind: "activate-home",
     id: "home-activation",
@@ -319,14 +315,9 @@ function assertScaffoldBindsScope(scaffold: SetupScaffoldEvidence, scope: Conten
     ["vault config", scaffold.vaultConfig],
     ["content-scope merge", scaffold.contentScopeConfig],
   ] as const) {
-    let decoded: unknown;
-    try { decoded = parseYaml(body); }
-    catch { throw new Error(`setup ${name} scaffold is invalid YAML`); }
-    const rawPersisted = typeof decoded === "object" && decoded !== null && !Array.isArray(decoded)
-      ? (decoded as Record<string, unknown>)["content_scope"]
-      : undefined;
-    const persisted = canonicalContentScopeSchema.safeParse(rawPersisted);
-    if (!persisted.success || stableJson(persisted.data) !== stableJson(scope)) {
+    const parsed = parseCapabilityPolicy(body, `setup ${name}`);
+    if (!parsed.ok) throw new Error(`setup ${name} scaffold is not valid runtime config: ${parsed.error}`);
+    if (parsed.value.contentScope === null || stableJson(parsed.value.contentScope) !== stableJson(scope)) {
       throw new Error(`setup ${name} scaffold does not encode the proposed content scope`);
     }
   }
