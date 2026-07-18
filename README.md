@@ -91,15 +91,17 @@ configuration, and first commit without filling it with fake example content.
 The planned no-checkout installation is:
 
 ```sh
-bun install -g @marktoda/dome
+npm install --global @marktoda/dome
 dome setup --dry-run ~/Vault
 ```
 
 That package is **not published yet**. The current source-built path above is
 the only documented installation path; the registry command is the next
-distribution milestone. The setup command currently provides a safe,
-revision-bound preview only. It makes no vault or host changes; setup apply
-remains the next onboarding milestone.
+distribution milestone. npm is the package installer; Dome still runs on Bun.
+This boundary preserves the packed CLI's exact executable permissions, which
+the current Bun global installer does not. The setup command currently provides
+a safe, revision-bound preview only. It makes no vault or host changes; setup
+apply remains the next onboarding milestone.
 
 ## How it works
 

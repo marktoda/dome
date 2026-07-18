@@ -21,8 +21,8 @@ export type ResolvedBundleRoots = {
  * directory (`<SDK>/assets/extensions/`).
  *
  * Resolved relative to this module's location via `import.meta.url`, so
- * the math works regardless of where the user installed the SDK (global
- * `bun install -g`, local `node_modules`, `bun link` symlink, or a
+ * the math works for a global package install, local `node_modules`, a
+ * `bun link` symlink, or a
  * `bun build`-produced single-file). From `src/extensions/bundle-roots.ts`,
  * two directories up reaches the SDK package root; `assets/extensions/` is
  * the canonical shipped-bundles dir.

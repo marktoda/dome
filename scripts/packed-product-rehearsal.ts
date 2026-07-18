@@ -2,7 +2,7 @@
 
 import { createHash } from "node:crypto";
 import { lstat, mkdir, mkdtemp, readFile, realpath, readdir, writeFile } from "node:fs/promises";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { tmpdir } from "node:os";
 
@@ -27,6 +27,36 @@ import {
 const REPO_ROOT = resolve(import.meta.dir, "..");
 const EXPORTS = Object.freeze([RELEASE_PACKAGE_NAME, `${RELEASE_PACKAGE_NAME}/cli`, `${RELEASE_PACKAGE_NAME}/mcp`]);
 
+/** npm owns package installation; the installed executable continues to run on Bun. */
+export const PACKED_PRODUCT_GLOBAL_INSTALL_CONTRACT = Object.freeze({
+  installer: "npm" as const,
+  runtime: "bun" as const,
+  isolatedPrefix: true as const,
+  isolatedCache: true as const,
+  productionOnly: true as const,
+  lifecycleScripts: false as const,
+  binTargetMode: "0755" as const,
+});
+
+export function buildPackedProductGlobalInstallCommand(input: Readonly<{
+  npmExecutable: string;
+  tarball: string;
+  prefix: string;
+  cache: string;
+}>): ReadonlyArray<string> {
+  if (![input.npmExecutable, input.tarball, input.prefix, input.cache].every(isAbsolute) ||
+    !["npm", "npm.cmd"].includes(basename(input.npmExecutable))) {
+    throw new Error("packed-product global install paths are invalid");
+  }
+  return Object.freeze([
+    input.npmExecutable, "install", "--global", input.tarball,
+    "--prefix", input.prefix,
+    "--cache", input.cache,
+    "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund",
+    "--registry=https://registry.npmjs.org",
+  ]);
+}
+
 export type PortablePackedProductReport = Readonly<{
   evidence: false;
   repositoryUnavailable: true;
@@ -38,7 +68,7 @@ export type PortablePackedProductReport = Readonly<{
 }>;
 
 export type PackedProductReport = Omit<PortablePackedProductReport, "evidence"> & Readonly<{
-  schema: "dome.packed-product-rehearsal/v2";
+  schema: "dome.packed-product-rehearsal/v3";
   evidence: "complete-packed-product";
   artifact: Readonly<{
     filename: "marktoda-dome-0.4.0.tgz";
@@ -48,12 +78,7 @@ export type PackedProductReport = Omit<PortablePackedProductReport, "evidence"> 
     packedBytes: number;
     unpackedBytes: number;
   }>;
-  globalInstall: Readonly<{
-    isolatedPrefix: true;
-    productionOnly: true;
-    lifecycleScripts: false;
-    backend: "copyfile";
-  }>;
+  globalInstall: typeof PACKED_PRODUCT_GLOBAL_INSTALL_CONTRACT;
 }>;
 
 export type PackedProductAcceptanceDependencies = Readonly<{
@@ -96,13 +121,13 @@ export async function rehearsePackedProduct(input: Readonly<{
 }> = {}): Promise<PackedProductReport> {
   const report = input.reportProgress;
   const repoRoot = await realpath(resolve(input.repoRoot ?? REPO_ROOT));
-  const temporary = await realpath(await mkdtemp(join(tmpdir(), "dome-packed-product-v2-")));
+  const temporary = await realpath(await mkdtemp(join(tmpdir(), "dome-packed-product-v3-")));
   let primary: unknown;
   try {
     const producer = join(temporary, "producer");
     const productOutput = join(temporary, "complete-product");
     const prefix = join(temporary, "prefix");
-    const globalDir = join(prefix, "global");
+    const globalDir = join(prefix, "lib", "node_modules");
     const globalBin = join(prefix, "bin");
     const installCache = join(prefix, "cache");
     const home = join(prefix, "home");
@@ -112,8 +137,9 @@ export async function rehearsePackedProduct(input: Readonly<{
     const xdgData = join(prefix, "xdg-data");
     const producerCache = join(temporary, "producer-cache");
     const producerHome = join(temporary, "producer-home");
+    const npmExecutable = Bun.which("npm");
+    if (npmExecutable === null) throw new Error("npm is required to rehearse the safe global package installation");
     await Promise.all([
-      mkdir(globalDir, { recursive: true, mode: 0o700 }),
       mkdir(globalBin, { recursive: true, mode: 0o700 }),
       mkdir(installCache, { recursive: true, mode: 0o700 }),
       mkdir(home, { recursive: true, mode: 0o700 }),
@@ -158,11 +184,13 @@ export async function rehearsePackedProduct(input: Readonly<{
     const tarballSha256 = sha256(tarballBytes);
 
     const baseEnv = Object.freeze({
-      ...isolatedEnvironment({ home, cache: installCache, path: `${globalBin}:${dirname(process.execPath)}:/usr/bin:/bin:/usr/sbin:/sbin` }),
-      BUN_INSTALL: prefix,
-      BUN_INSTALL_GLOBAL_DIR: globalDir,
-      BUN_INSTALL_BIN: globalBin,
-      BUN_INSTALL_CACHE_DIR: installCache,
+      ...isolatedEnvironment({
+        home,
+        cache: installCache,
+        path: `${globalBin}:${dirname(npmExecutable)}:${dirname(process.execPath)}:/usr/bin:/bin:/usr/sbin:/sbin`,
+      }),
+      NPM_CONFIG_PREFIX: prefix,
+      NPM_CONFIG_CACHE: installCache,
       XDG_CACHE_HOME: xdgCache,
       XDG_CONFIG_HOME: xdgConfig,
       XDG_DATA_HOME: xdgData,
@@ -173,11 +201,18 @@ export async function rehearsePackedProduct(input: Readonly<{
     let installedEvidence: InstalledProductEvidence | undefined;
     const portable = await runPackedProductAcceptanceForTests({
       install: async () => {
-        await runReleasePhase("global-install", report, async () => await command([
-          process.execPath, "install", "-g", product.tarball,
-          "--production", "--ignore-scripts", "--backend=copyfile", "--linker=hoisted",
-          "--registry=https://registry.npmjs.org",
-        ], probe, 10 * 60_000, 4 * 1024 * 1024, baseEnv));
+        await runReleasePhase("global-install", report, async () => await command(
+          buildPackedProductGlobalInstallCommand({
+            npmExecutable,
+            tarball: product.tarball,
+            prefix,
+            cache: installCache,
+          }),
+          probe,
+          10 * 60_000,
+          4 * 1024 * 1024,
+          baseEnv,
+        ));
         await assertGlobalInstallLinks(prefix, globalDir, globalBin, installedRoot, domeBin);
         const installedPackage = JSON.parse(await readFile(join(installedRoot, "package.json"), "utf8"));
         if (JSON.stringify(validateReleasePackageManifest(installedPackage)) !== JSON.stringify(EXPORTS)) {
@@ -188,7 +223,7 @@ export async function rehearsePackedProduct(input: Readonly<{
         await runReleasePhase("retire-producer-inputs", report, async () => await Promise.all([
           removeOwnedDirectory(producer, "producer repository"),
           removeOwnedDirectory(productOutput, "product build output"),
-          removeOwnedDirectory(installCache, "Bun install cache"),
+          removeOwnedDirectory(installCache, "npm install cache"),
           removeOwnedDirectory(producerCache, "producer dependency cache"),
           removeOwnedDirectory(producerHome, "producer home and XDG state"),
         ]));
@@ -198,7 +233,7 @@ export async function rehearsePackedProduct(input: Readonly<{
           assertAbsent(producer, "producer repository"),
           assertAbsent(productOutput, "product build output"),
           assertAbsent(product.tarball, "packed tarball"),
-          assertAbsent(installCache, "Bun install cache"),
+          assertAbsent(installCache, "npm install cache"),
           assertAbsent(producerCache, "producer dependency cache"),
           assertAbsent(producerHome, "producer home and XDG state"),
         ]));
@@ -266,7 +301,7 @@ export async function rehearsePackedProduct(input: Readonly<{
     if (installedEvidence === undefined) throw new Error("installed product evidence was not produced");
     return Object.freeze({
       ...portable,
-      schema: "dome.packed-product-rehearsal/v2" as const,
+      schema: "dome.packed-product-rehearsal/v3" as const,
       evidence: "complete-packed-product" as const,
       artifact: Object.freeze({
         filename: "marktoda-dome-0.4.0.tgz" as const,
@@ -276,12 +311,7 @@ export async function rehearsePackedProduct(input: Readonly<{
         packedBytes: product.packed.size,
         unpackedBytes: product.packed.unpackedSize,
       }),
-      globalInstall: Object.freeze({
-        isolatedPrefix: true as const,
-        productionOnly: true as const,
-        lifecycleScripts: false as const,
-        backend: "copyfile" as const,
-      }),
+      globalInstall: PACKED_PRODUCT_GLOBAL_INSTALL_CONTRACT,
     });
   } catch (error) {
     primary = error;
@@ -303,14 +333,16 @@ async function assertGlobalInstallLinks(
   prefix: string, globalDir: string, globalBin: string, installedRoot: string, domeBin: string,
 ): Promise<void> {
   const lexicalRoot = await lstat(installedRoot);
-  if (!lexicalRoot.isDirectory() || lexicalRoot.isSymbolicLink()) throw new Error("global package root is not copyfile-owned");
+  if (!lexicalRoot.isDirectory() || lexicalRoot.isSymbolicLink()) throw new Error("global package root is not a direct directory");
   const binInfo = await lstat(domeBin);
   if (!binInfo.isSymbolicLink()) throw new Error("global dome bin is not the expected package link");
   const binTarget = await realpath(domeBin);
   if (!contains(prefix, binTarget) || binTarget !== join(installedRoot, "bin", "dome")) {
     throw new Error("global dome bin escapes the isolated package prefix");
   }
-  if (((await lstat(binTarget)).mode & 0o7777) !== 0o755) throw new Error("global dome bin target mode is not 0755");
+  if (((await lstat(binTarget)).mode & 0o7777) !== Number.parseInt(PACKED_PRODUCT_GLOBAL_INSTALL_CONTRACT.binTargetMode, 8)) {
+    throw new Error(`global dome bin target mode is not ${PACKED_PRODUCT_GLOBAL_INSTALL_CONTRACT.binTargetMode}`);
+  }
   for (const root of [globalDir, globalBin]) await assertLinksContained(root, prefix);
 }
 

@@ -401,21 +401,31 @@ The operator form is
 `bun run build:product-package -- --output <absent-directory>`. It is a package
 production command, not the end-user installer. The M2 acceptance gate is
 `bun run release:packed-product-rehearsal`. It builds from a private clean clone
-at the captured commit, installs the exact tgz with `bun install -g` into fresh
-absolute Bun global-package, bin, and cache roots using `--production`,
-`--ignore-scripts`, and the copyfile backend, then removes the producer clone,
-package-build output, tarball, install cache, and producer HOME/XDG state. Only
-after their absence is proved does a neutral-cwd probe under a dead-proxy
-execution environment import every declared entrypoint, execute the direct
-isolated `dome` bin, and load the shipped installed-product verifier from the
-global package.
+at the captured commit, then installs the exact tgz with `npm install --global`
+into a fresh absolute prefix and cache using `--omit=dev`, `--ignore-scripts`,
+`--no-audit`, and `--no-fund`. npm owns only package installation; the installed
+CLI and product continue to run on Bun. This is the safe installation seam
+because npm preserves the packed `bin/dome` mode as exactly `0755`, while the
+current Bun global installer rewrites that target to `0777` on macOS and Linux.
+The verifier does not relax its group/world-writable rejection. It removes the
+producer clone, package-build output, tarball, npm cache, and producer HOME/XDG
+state and proves each absent. Only then does a neutral-cwd probe under a
+dead-proxy execution environment import every declared entrypoint, execute the
+direct isolated `dome` bin, and load the shipped installed-product verifier
+from the global package.
+
+The versioned `dome.packed-product-rehearsal/v3` report records npm as installer,
+Bun as runtime, isolated prefix and cache, production-only dependencies,
+disabled lifecycle scripts, and the exact `0755` executable target. The prior
+v2 report named Bun-specific backend behavior and is not accepted as v3
+evidence.
 
 `src/product-package/installed-product.ts` rejects an aliased package root and
 recursively closes the installed file and directory inventory, including
 manifest mode, unexpected entries, symlinks, special files, and same-handle
 bounded size/hash/mode evidence. It then re-admits the Home archive through the
 ordinary strict Home archive module and binds Home artifact, raw manifest, and
-build commit to the package manifest. The v2 rehearsal runs once in its own
+build commit to the package manifest. The v3 rehearsal runs once in its own
 Apple-Silicon CI job with Bun 1.2.13 and a private HOME/XDG environment. Its
 portable orchestration seam can return only `evidence: false`; only the
 hardwired real clone/build/global-install verifier promotes complete-product

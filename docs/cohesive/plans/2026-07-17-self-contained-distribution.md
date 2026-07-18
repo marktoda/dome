@@ -3,7 +3,7 @@ type: plan
 created: 2026-07-17
 updated: 2026-07-18
 status: reviewed
-description: "Remaining missions to make Dome a self-contained, source-checkout-free PWA product through one Bun package and one guided setup journey."
+description: "Remaining missions to make Dome a self-contained, source-checkout-free PWA product through one npm package, a Bun runtime, and one guided setup journey."
 sources:
   - "[[cohesive/plans/2026-07-11-productization-modernization]]"
   - "[[cohesive/plans/2026-07-11-pwa-first-product]]"
@@ -22,7 +22,7 @@ user can install Dome, safely adopt a new or existing vault, and reach the PWA
 without developer intervention:
 
 ```sh
-bun install -g @marktoda/dome
+npm install --global @marktoda/dome
 dome setup
 ```
 
@@ -34,8 +34,8 @@ The globally installed package is the source of an installation, not the
 long-lived Home execution location. `dome setup` verifies the package payload
 and delegates to the existing Home artifact and lifecycle seams, which install
 an immutable, content-addressed release into Dome's stable managed release
-store. `launchd` runs that managed release. A later Bun global update therefore
-cannot silently change the bytes of a running Home.
+store. `launchd` runs that managed release. A later global package update
+therefore cannot silently change the bytes of a running Home.
 
 This plan narrows the remaining distribution and onboarding work in
 [[cohesive/plans/2026-07-11-productization-modernization]] and P4/P6 of
@@ -299,7 +299,7 @@ Work:
    manifest verifier at setup time. Add only the narrow adapter needed to
    install the prebuilt artifact from package resources; the consumer machine
    does not rebuild Home.
-4. Install the tarball into an isolated Bun global prefix and prove the
+4. Install the tarball into an isolated npm global prefix and prove the
    executable and all exports work after the repository directory is made
    unavailable.
 5. Fail packaging on omitted runtime content, unexpected secrets, absolute
@@ -316,12 +316,16 @@ private staging and uses fixed `tar@7.5.19` to stream-verify every actual tgz
 member twice without extraction before inode-bound exclusive publication.
 The portable test seam cannot issue release evidence; the
 production adapter hardwires all three trusted implementations. Checkpoint 3
-implements step 4 as `dome.packed-product-rehearsal/v2`. A private clean clone
-produces the exact package; fresh Bun global package/bin/cache and HOME/XDG
-roots receive it through a production-only, scripts-disabled copyfile install.
-The producer clone, package output, tarball, install cache, and producer
-HOME/XDG state are then removed and proved absent before declared imports, the
-direct global CLI, the closed installed PWA inventory, and strict Home
+implements step 4 as `dome.packed-product-rehearsal/v3`. A private clean clone
+produces the exact package; a fresh npm prefix/cache and private HOME/XDG roots
+receive it through a production-only, scripts-disabled install. npm preserves
+the packed CLI mode as exactly `0755`; Bun remains the product runtime. The
+current Bun global installer is not admitted because it rewrites that target
+to `0777` on macOS and Linux, and the installed-product verifier correctly
+rejects group/world-writable shipped files. The producer clone, package output,
+tarball, install cache, and producer HOME/XDG state are then removed and proved
+absent before declared imports, the direct global CLI, the closed installed PWA
+inventory, and strict Home
 materialization run under a neutral working directory and dead-proxy execution
 environment. The real rehearsal is wired once as a pinned Apple-Silicon CI
 job; the progress ledger remains in progress until that hosted evidence
@@ -329,7 +333,7 @@ succeeds on the implementation commit.
 
 Acceptance gate:
 
-- `bun install -g <exact-packed-tarball>` succeeds in a clean prefix;
+- `npm install --global <exact-packed-tarball>` succeeds in a clean prefix;
 - `dome --help`, declared imports, PWA inventory verification, and Home payload
   verification work with no checkout or product build;
 - package contents are closed by a reviewed allowlist and checksum manifest;
@@ -670,7 +674,7 @@ already-rehearsed tarball rather than rebuilding it.
 
 Acceptance gate:
 
-- `bun install -g @marktoda/dome` resolves the approved version on a clean
+- `npm install --global @marktoda/dome` resolves the approved version on a clean
   machine;
 - its package hash matches the approved rehearsal;
 - `dome setup` completes the no-checkout first-value journey; and

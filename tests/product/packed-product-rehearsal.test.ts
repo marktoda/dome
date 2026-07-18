@@ -3,13 +3,15 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
+  buildPackedProductGlobalInstallCommand,
+  PACKED_PRODUCT_GLOBAL_INSTALL_CONTRACT,
   runPackedProductAcceptanceForTests,
   type PackedProductAcceptanceDependencies,
 } from "../../scripts/packed-product-rehearsal";
 import type { InstalledProductEvidence } from "../../src/product-package/installed-product";
 import { formatReleaseProgress, runReleasePhase } from "../../scripts/release-progress";
 
-describe("packed-product v2 rehearsal", () => {
+describe("packed-product v3 rehearsal", () => {
   test("portable orchestration retires every producer input before installed checks and cannot issue evidence", async () => {
     const events: string[] = [];
     const report = await runPackedProductAcceptanceForTests(dependencies(events));
@@ -32,14 +34,44 @@ describe("packed-product v2 rehearsal", () => {
     expect(events).toEqual(["install", "retire"]);
   });
 
-  test("production adapter hardwires isolated global install, input retirement, and shipped verification", async () => {
+  test("global installation is npm-owned until Bun preserves the packed executable mode", () => {
+    expect(PACKED_PRODUCT_GLOBAL_INSTALL_CONTRACT).toEqual({
+      installer: "npm",
+      runtime: "bun",
+      isolatedPrefix: true,
+      isolatedCache: true,
+      productionOnly: true,
+      lifecycleScripts: false,
+      binTargetMode: "0755",
+    });
+    expect(buildPackedProductGlobalInstallCommand({
+      npmExecutable: "/trusted/bin/npm",
+      tarball: "/private/product/marktoda-dome-0.4.0.tgz",
+      prefix: "/private/install",
+      cache: "/private/cache",
+    })).toEqual([
+      "/trusted/bin/npm", "install", "--global",
+      "/private/product/marktoda-dome-0.4.0.tgz",
+      "--prefix", "/private/install",
+      "--cache", "/private/cache",
+      "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund",
+      "--registry=https://registry.npmjs.org",
+    ]);
+    expect(() => buildPackedProductGlobalInstallCommand({
+      npmExecutable: "/trusted/bin/bun",
+      tarball: "/private/product/marktoda-dome-0.4.0.tgz",
+      prefix: "/private/install",
+      cache: "/private/cache",
+    })).toThrow("packed-product global install paths are invalid");
+  });
+
+  test("production adapter hardwires input retirement and shipped verification", async () => {
     const source = await readFile(join(import.meta.dir, "..", "..", "scripts", "packed-product-rehearsal.ts"), "utf8");
     for (const required of [
-      "BUN_INSTALL_GLOBAL_DIR", "BUN_INSTALL_BIN", "BUN_INSTALL_CACHE_DIR",
-      '"install", "-g", product.tarball', '"--production", "--ignore-scripts", "--backend=copyfile"',
+      "buildPackedProductGlobalInstallCommand", "assertGlobalInstallLinks",
       'removeOwnedDirectory(producer, "producer repository")',
       'removeOwnedDirectory(productOutput, "product build output")',
-      'removeOwnedDirectory(installCache, "Bun install cache")',
+      'removeOwnedDirectory(installCache, "npm install cache")',
       'removeOwnedDirectory(producerHome, "producer home and XDG state")',
       "src\", \"product-package\", \"installed-product.ts", "HTTP_PROXY: \"http://127.0.0.1:1\"",
     ]) expect(source).toContain(required);
