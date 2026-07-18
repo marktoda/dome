@@ -46,7 +46,7 @@ export const ADAPTATION_ACTION_IDS = [
   "dome-state-directory",
   "agents-orientation",
   "gitignore",
-  "vault-config",
+  "content-scope",
 ] as const;
 
 export const SETUP_CONTRACT_CAPS = SETUP_CONTRACT_LIMITS;
@@ -98,16 +98,13 @@ const contentScopeSchema = canonicalContentScopeSchema;
 const scaffoldFileId = z.enum(["gitignore", "agents-orientation"]);
 const scaffoldDirectoryId = z.enum(["dome-directory", "dome-state-directory"]);
 const contentScopeWriteSchema = z.object({
-  path: z.literal(".dome/config.yaml"),
-  operation: z.enum(["create-file", "merge-managed-config"]),
+  path: z.enum([".dome/config.yaml", ".dome/content-scope.yaml"]),
+  operation: z.literal("create-file"),
   bytes: z.number().int().nonnegative().max(SETUP_CONTRACT_CAPS.writeBytes),
   sha256,
   mode: z.literal("0644"),
-  ifMissing: z.boolean(),
-}).strict().refine(
-  (write) => (write.operation === "create-file") === write.ifMissing,
-  { message: "create-file must be if-missing; managed merge must target an existing config" },
-);
+  ifMissing: z.literal(true),
+}).strict();
 
 const actionSchemas = [
   z.object({
@@ -133,7 +130,7 @@ const actionSchemas = [
     sha256, mode: z.literal("0644"), ifMissing: z.literal(true),
   }).strict(),
   z.object({
-    kind: z.literal("set-content-scope"), id: z.literal("vault-config"), scope: contentScopeSchema,
+    kind: z.literal("set-content-scope"), id: z.literal("content-scope"), scope: contentScopeSchema,
     write: contentScopeWriteSchema,
   }).strict(),
 ] as const;
@@ -427,9 +424,11 @@ export const setupPlanSchema = setupPlanSchemaBase.superRefine((plan, context) =
     action.kind === "set-content-scope"
   );
   if (scopeAction !== undefined) {
-    const expectedOperation = plan.assessment.dome.state === "configured" ? "merge-managed-config" : "create-file";
-    if (scopeAction.write.operation !== expectedOperation) {
-      context.addIssue({ code: "custom", path: ["actions"], message: "content-scope write operation must match config presence" });
+    const expectedPath = plan.assessment.dome.state === "configured"
+      ? ".dome/content-scope.yaml"
+      : ".dome/config.yaml";
+    if (scopeAction.write.path !== expectedPath) {
+      context.addIssue({ code: "custom", path: ["actions"], message: "content-scope write path must match config presence" });
     }
   }
 });
@@ -443,9 +442,9 @@ function expectedSetupActionIds(assessment: VaultAssessment): ReadonlyArray<Adap
   if (assessment.git.state === "absent") ids.push("git-repository");
   if (assessment.git.state === "absent" && assessment.repository.baselineTracked.length > 0) ids.push("owner-baseline");
   if (assessment.dome.state !== "configured") {
-    ids.push("dome-directory", "dome-state-directory", "agents-orientation", "gitignore", "vault-config");
+    ids.push("dome-directory", "dome-state-directory", "agents-orientation", "gitignore", "content-scope");
   } else if (assessment.dome.contentScope === "absent") {
-    ids.push("vault-config");
+    ids.push("content-scope");
   }
   return ids;
 }

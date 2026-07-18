@@ -5,7 +5,10 @@ import { dirname, join, parse, resolve } from "node:path";
 import ignore from "ignore";
 
 import { compareStrings } from "../core/compare";
-import { parseCapabilityPolicy } from "../engine/core/capability-policy";
+import {
+  resolveCapabilityPolicyDocuments,
+  type CapabilityPolicyDocument,
+} from "../engine/core/capability-policy";
 import { findGitRoot } from "../git";
 import { SETUP_CONTRACT_CAPS, type VaultAssessment } from "./contracts";
 import {
@@ -987,42 +990,63 @@ async function inspectDomeState(
   addBlocker: (code: BlockerCode, message: string, nextAction: string) => void,
 ): Promise<VaultAssessment["dome"]> {
   const config = tree.find((entry) => entry.path === ".dome/config.yaml");
-  if (config === undefined) {
+  const overlay = tree.find((entry) => entry.path === ".dome/content-scope.yaml");
+  if (config === undefined && overlay === undefined) {
     return Object.freeze({
       state: tree.some((entry) => entry.path === ".dome" || entry.path.startsWith(".dome/")) ? "partial" : "absent",
       contentScope: "absent",
     });
   }
-  if (config.kind !== "file" || config.sha256 === null) {
-    addBlocker("ambiguous-state", "Dome configuration is not a bounded direct file.",
-      "Repair .dome/config.yaml, then reassess.");
+  let documents: {
+    base: CapabilityPolicyDocument | null;
+    contentScope: CapabilityPolicyDocument | null;
+  };
+  try {
+    documents = {
+      base: config === undefined ? null : await readPolicyEvidence(targetPath, config),
+      contentScope: overlay === undefined ? null : await readPolicyEvidence(targetPath, overlay),
+    };
+  } catch (error) {
+    addBlocker(
+      "ambiguous-state",
+      error instanceof Error ? error.message : String(error),
+      "Wait for concurrent changes or repair the named policy document, then reassess.",
+    );
     return Object.freeze({ state: "incompatible", contentScope: "incompatible" });
   }
-  const configPath = join(targetPath, ".dome", "config.yaml");
-  const current = await lstat(configPath);
-  if (!current.isFile() || current.isSymbolicLink() || current.size !== config.bytes ||
-    filesystemIdentityHash(current) !== config.filesystemIdentitySha256) {
-    addBlocker("ambiguous-state", "Dome configuration changed during setup inspection.",
-      "Wait for concurrent changes to finish, then reassess.");
-    return Object.freeze({ state: "incompatible", contentScope: "incompatible" });
-  }
-  const bytes = await readDirectFile(configPath, current);
-  if (sha256(bytes) !== config.sha256) {
-    addBlocker("ambiguous-state", "Dome configuration changed during setup inspection.",
-      "Wait for concurrent changes to finish, then reassess.");
-    return Object.freeze({ state: "incompatible", contentScope: "incompatible" });
-  }
-  const body = bytes.toString("utf8");
-  const parsed = parseCapabilityPolicy(body, ".dome/config.yaml");
+  const parsed = resolveCapabilityPolicyDocuments(documents);
   if (!parsed.ok) {
-    addBlocker("ambiguous-state", "Dome configuration is invalid.",
-      "Repair .dome/config.yaml, then reassess.");
+    addBlocker(
+      "ambiguous-state",
+      `Dome policy documents are invalid: ${parsed.error}`,
+      "Repair the named Dome policy document, then reassess.",
+    );
     return Object.freeze({ state: "incompatible", contentScope: "incompatible" });
   }
   return Object.freeze({
     state: "configured",
     contentScope: parsed.value.contentScope === null ? "absent" : "configured",
   });
+}
+
+async function readPolicyEvidence(
+  targetPath: string,
+  evidence: FileEvidence,
+): Promise<CapabilityPolicyDocument> {
+  if (evidence.kind !== "file" || evidence.sha256 === null) {
+    throw new Error(`${evidence.path} is not a bounded direct file`);
+  }
+  const path = join(targetPath, evidence.path);
+  const current = await lstat(path);
+  if (!current.isFile() || current.isSymbolicLink() || current.size !== evidence.bytes ||
+    filesystemIdentityHash(current) !== evidence.filesystemIdentitySha256) {
+    throw new Error(`${evidence.path} changed during setup inspection`);
+  }
+  const bytes = await readDirectFile(path, current);
+  if (sha256(bytes) !== evidence.sha256) {
+    throw new Error(`${evidence.path} changed during setup inspection`);
+  }
+  return Object.freeze({ body: bytes.toString("utf8"), path: evidence.path });
 }
 
 function setupTargetState(target: Readonly<{ exists: boolean; isDirectory: boolean; empty: boolean }>): SetupTargetState {

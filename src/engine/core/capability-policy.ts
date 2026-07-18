@@ -151,17 +151,67 @@ export function computeCapabilityPolicyHash(policy: CapabilityPolicy): string {
 export async function loadCapabilityPolicy(
   vaultPath: string,
 ): Promise<Result<CapabilityPolicy, string>> {
-  const path = join(vaultPath, ".dome", "config.yaml");
-  let body: string;
-  try {
-    body = await readFile(path, "utf8");
-  } catch (e) {
-    if (isMissingFile(e)) {
-      return ok(emptyPolicy(false));
+  const basePath = join(vaultPath, ".dome", "config.yaml");
+  const contentScopePath = join(vaultPath, ".dome", "content-scope.yaml");
+  const [base, contentScope] = await Promise.all([
+    readPolicyDocument(basePath),
+    readPolicyDocument(contentScopePath),
+  ]);
+  if (!base.ok) return base;
+  if (!contentScope.ok) return contentScope;
+  return resolveCapabilityPolicyDocuments({
+    base: base.value,
+    contentScope: contentScope.value,
+  });
+}
+
+export type CapabilityPolicyDocument = Readonly<{
+  readonly body: string;
+  readonly path: string;
+}>;
+
+export type CapabilityPolicyDocuments = Readonly<{
+  readonly base: CapabilityPolicyDocument | null;
+  readonly contentScope: CapabilityPolicyDocument | null;
+}>;
+
+/**
+ * Resolve the complete capability policy from its two versioned source
+ * documents. The base config owns every setting except the optional managed
+ * content-scope overlay. An overlay can only fill a missing inline scope; if
+ * both documents carry a scope they must be canonically equal.
+ */
+export function resolveCapabilityPolicyDocuments(
+  documents: CapabilityPolicyDocuments,
+): Result<CapabilityPolicy, string> {
+  if (documents.base === null) {
+    if (documents.contentScope !== null) {
+      return err(
+        `${documents.contentScope.path} is orphaned because .dome/config.yaml is absent`,
+      );
     }
-    return err(`failed to read ${path}: ${messageFor(e)}`);
+    return ok(emptyPolicy(false));
   }
-  return parseCapabilityPolicy(body, path);
+  const parsed = parseBaseCapabilityPolicy(
+    documents.base.body,
+    documents.base.path,
+  );
+  if (!parsed.ok || documents.contentScope === null) return parsed;
+  const overlay = parseContentScopeDocument(documents.contentScope);
+  if (!overlay.ok) return overlay;
+  if (
+    parsed.value.contentScope !== null &&
+    stableJsonStringify(parsed.value.contentScope) !==
+      stableJsonStringify(overlay.value)
+  ) {
+    return err(
+      `${documents.base.path} and ${documents.contentScope.path} define conflicting content_scope values`,
+    );
+  }
+  return ok(Object.freeze({
+    ...parsed.value,
+    contentScope: parsed.value.contentScope ?? overlay.value,
+  }));
 }
 
 /**
@@ -176,6 +226,16 @@ export async function loadCapabilityPolicy(
 export function parseCapabilityPolicy(
   body: string,
   path = ".dome/config.yaml",
+): Result<CapabilityPolicy, string> {
+  return resolveCapabilityPolicyDocuments({
+    base: { body, path },
+    contentScope: null,
+  });
+}
+
+function parseBaseCapabilityPolicy(
+  body: string,
+  path: string,
 ): Result<CapabilityPolicy, string> {
   let parsed: unknown;
   try {
@@ -320,6 +380,42 @@ export function parseCapabilityPolicy(
         Object.freeze([]),
     }),
   );
+}
+
+async function readPolicyDocument(
+  path: string,
+): Promise<Result<CapabilityPolicyDocument | null, string>> {
+  try {
+    return ok(Object.freeze({ body: await readFile(path, "utf8"), path }));
+  } catch (error) {
+    if (isMissingFile(error)) return ok(null);
+    return err(`failed to read ${path}: ${messageFor(error)}`);
+  }
+}
+
+function parseContentScopeDocument(
+  document: CapabilityPolicyDocument,
+): Result<ContentScopeConfig, string> {
+  let parsed: unknown;
+  try {
+    parsed = parseYaml(document.body);
+  } catch (error) {
+    return err(`failed to parse ${document.path}: ${messageFor(error)}`);
+  }
+  const root = asRecord(parsed);
+  if (root === null) return err(`${document.path} must be a YAML mapping`);
+  for (const key of Object.keys(root)) {
+    if (key !== "content_scope") {
+      return err(`${document.path} ${key} is not a known content-scope field`);
+    }
+  }
+  if (!hasOwn(root, "content_scope")) {
+    return err(`${document.path} must define content_scope`);
+  }
+  const scope = parseContentScope(root.content_scope, document.path);
+  if (!scope.ok) return scope;
+  if (scope.value === null) return err(`${document.path} must define content_scope`);
+  return ok(scope.value);
 }
 
 function emptyPolicy(foundConfig: boolean): CapabilityPolicy {

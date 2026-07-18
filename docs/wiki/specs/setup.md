@@ -227,24 +227,24 @@ budget counts objects, arrays, primitive elements, and holes. Zod sees only
 that inert snapshot. Successful values are recursively frozen, so renderers
 and the applier consume one immutable canonical contract.
 
-Write actions bind their exact path, create-or-merge operation, bytes, hash,
+Write actions bind their exact path, create-only operation, bytes, hash,
 mode, and missing-file behavior. `ContentScopeConfig.version` is the literal
 `1`, so a future matching-language change cannot silently reinterpret an
 accepted setup payload. The shape and matching semantics are owned by
 [[wiki/specs/content-scope]]; setup embeds that canonical contract rather than
 defining a second glob language. Both the in-memory proposal and the
-`content_scope` decoded from the exact rendered YAML pass through
+`content_scope` decoded from each exact rendered YAML document pass through
 `canonicalContentScopeSchema`; unsorted, duplicate, unsupported, or malformed
 policies fail closed. The same runtime capability-policy parser validates the
 entire generated fresh config—not only its `content_scope` subtree—and the
-managed migration fragment must itself be standalone valid runtime config.
-Both parsed policies must carry the exact proposed scope. Content scope also
+managed scope document must itself be a strict standalone policy document.
+Both resolved policies must carry the exact proposed scope. Content scope also
 participates in the capability-policy hash. A fresh vault gets one complete
 create-file config action. An existing Dome vault with no scope gets one
-explicit `merge-managed-config` action carrying the exact managed fragment
+explicit create-file action for `.dome/content-scope.yaml` carrying the exact managed scope
 plus a `content-scope-migration` warning; setup never treats that migration as
 already accepted. Malformed existing scope blocks as incompatible. A plan
-cannot express a second config write or two writes to the same path.
+cannot express a second policy write or two writes to the same path.
 
 Home identity and selector evidence remain part of the assessment so a change
 invalidates consent. An `owned` installed Home must select the assessed vault;
@@ -315,20 +315,25 @@ The ordered mutation is deliberately small:
    bytes and `100644`/`100755` modes.
 3. Create only missing `.dome/`, `.dome/state/`, `AGENTS.md`, and `.gitignore`
    scaffold.
-4. Create the exact config or merge only the managed `content_scope`, then
+4. Create the exact fresh config or the separate managed scope document, then
    create one exact configuration commit on the admitted parent.
 
 Every setup file publication goes through one kernel-relative filesystem
 Module. It opens every vault and destination-parent component with
 `O_NOFOLLOW`, holds and revalidates their directory identities, and performs
-`openat` / `linkat` / `renameat` / `unlinkat` relative to the held parent.
-Replacing an ancestor name with a symlink therefore cannot redirect a create
-or managed merge outside the admitted vault. Publication uses a
+`openat` / `linkat` / `unlinkat` relative to the held parent. Replacing an
+ancestor name with a symlink therefore cannot redirect a create outside the
+admitted vault. Publication uses a
 same-directory exclusive temp, exact mode, file sync, and destination-parent
-sync; a retry after a returned link/rename but before parent sync repeats that
-parent sync. Existing config comments and filesystem permissions are
-preserved. Prepared, published, ref-advanced, and committed transitions are
+sync; a retry after a returned link but before parent sync repeats that parent
+sync. Existing config bytes, inode, and mode are never mutated. Prepared,
+published, ref-advanced, and committed transitions are
 fault-injection boundaries.
+
+The native publication adapter is preflighted before discovery or mutation and
+supports macOS plus glibc Linux. Directory creation and repair fsync the exact
+managed leaf and its parent; ancestor directory modes remain owner state.
+Unsupported hosts return a blocked result without beginning discovery.
 
 Recovery has no mutable workflow database, but it does retain minimal
 plan-owned publication witnesses under
@@ -344,11 +349,17 @@ partial or foreign temp/witness bytes block instead of being folded into a Dome
 commit.
 
 Commit publication binds symbolic `HEAD`, the approved branch name, and the
-old branch OID in one Git-lock transition. An exact expected parent disables
-CAS rebasing. If a crash lands an admitted setup commit before index repair,
-recovery resets selected entries only when their complete staged OID/mode/stage
-snapshot still equals the exact parent; already-recovered entries are a no-op,
-and conflicting owner staging is preserved byte-for-byte and blocks recovery.
+old branch OID in one Git-lock transition. It also owns Git's real
+`index.lock` before advancing the ref, copies the complete index, and changes
+only the admitted setup paths; unrelated staged entries survive exactly. An
+exact expected parent disables CAS rebasing. Ref and index files plus their
+parent directories are fsynced after publication. Recovery replays those
+durability steps, including a branch that Git has moved into `packed-refs`.
+If a crash lands an admitted setup commit before index publication, recovery
+resets selected entries only when their complete staged OID/mode/stage
+snapshot still equals the exact parent; already-recovered entries replay
+durability, and conflicting owner staging is preserved byte-for-byte and
+blocks recovery.
 
 ## Read and mutation boundaries
 

@@ -129,7 +129,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       {
         "kind": "set-content-scope",
-        "id": "vault-config",
+        "id": "content-scope",
         "scope": {
           "version": 1,
           "include": [
@@ -292,7 +292,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       {
         "kind": "set-content-scope",
-        "id": "vault-config",
+        "id": "content-scope",
         "scope": {
           "version": 1,
           "include": [
@@ -479,7 +479,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       {
         "kind": "set-content-scope",
-        "id": "vault-config",
+        "id": "content-scope",
         "scope": {
           "version": 1,
           "include": [
@@ -655,7 +655,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       {
         "kind": "set-content-scope",
-        "id": "vault-config",
+        "id": "content-scope",
         "scope": {
           "version": 1,
           "include": [

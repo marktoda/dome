@@ -3,11 +3,6 @@ import { lstat, mkdir, readFile, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import {
-  configRoot,
-  parseConfigDocument,
-  stringifyConfigDocument,
-} from "../config-document";
-import {
   commitFilesOnHead,
   commitInitialFiles,
   currentBranch,
@@ -18,6 +13,7 @@ import {
   readBlobBytes,
   readCommitRecord,
   recoverIndexAfterExactCommit,
+  replayBranchRefDurability,
   statusMatrix,
 } from "../git";
 import { compileSetupPlan, type SetupCompilerInput, type SetupScaffoldEvidence } from "./compiler";
@@ -34,6 +30,7 @@ import {
 import { setupPlanSha256 } from "./consent";
 import { AnchoredVaultFiles, type AnchoredRegularFile } from "./anchored-files";
 import { canonicalSetupDiscoveryDeps } from "./defaults";
+import { assertSupportedSetupHost } from "./platform";
 import {
   discoverSetupCompilerInput,
   type SetupDiscoveryDeps,
@@ -50,9 +47,9 @@ export const SETUP_DURABLE_BOUNDARIES = [
   "gitignore-prepared",
   "gitignore-published",
   "scaffold-files-written",
-  "vault-config-prepared",
-  "vault-config-published",
-  "vault-config-written",
+  "content-scope-prepared",
+  "content-scope-published",
+  "content-scope-written",
   "configuration-ref-advanced",
   "configuration-committed",
 ] as const;
@@ -62,6 +59,7 @@ type SetupApplyDeps = Readonly<{
   discovery?: SetupDiscoveryDeps | undefined;
   discover?: ((targetPath: string, deps: SetupDiscoveryDeps) => Promise<SetupCompilerInput>) | undefined;
   afterBoundary?: ((boundary: SetupDurableBoundary) => Promise<void>) | undefined;
+  preflightPlatform?: (() => void | Promise<void>) | undefined;
 }>;
 
 type ApplyContext = Readonly<{
@@ -99,6 +97,15 @@ export function createSetupPlanApplier(deps: SetupApplyDeps = {}) {
     }
     if (plan.status === "blocked") {
       return blocked(digest, "plan-blocked", "The approved setup plan is blocked and cannot be applied.", plan.recoveryCommands);
+    }
+    try { await (deps.preflightPlatform ?? assertSupportedSetupHost)(); }
+    catch (error) {
+      return blocked(
+        digest,
+        "mutation-conflict",
+        error instanceof Error ? error.message : String(error),
+        plan.recoveryCommands,
+      );
     }
 
     const target = resolve(plan.assessment.target.path);
@@ -219,7 +226,7 @@ async function execute(
   if (prefix === "scaffold-dirty") await verifyPlannedWritePrefix(context);
   for (const directory of plan.actions.filter((row): row is Extract<AdaptationAction, { kind: "ensure-scaffold-directory" }> =>
     row.kind === "ensure-scaffold-directory")) {
-    await anchored(context).ensureDirectory(directory.path, Number.parseInt(directory.mode, 8));
+    await anchored(context).ensureDirectory(directory.path, Number.parseInt(directory.mode, 8), true);
   }
   if (plan.actions.some((row) => row.kind === "ensure-scaffold-directory")) {
     await context.afterBoundary("scaffold-directories-created");
@@ -238,12 +245,15 @@ async function execute(
 
   const config = action(plan, "set-content-scope");
   if (config !== undefined) {
-    const body = config.write.operation === "create-file"
-      ? context.scaffold.vaultConfig
-      : context.scaffold.contentScopeConfig;
+    const body = contentScopeWriteBody(config, context.scaffold);
     assertWriteEvidence(config.write, body);
-    if (await applyConfigWrite(context, config, body)) context.actualWrites.add(config.write.path);
-    await context.afterBoundary("vault-config-written");
+    if (await publishScaffoldIfAbsent(
+      context,
+      config.write.path,
+      body,
+      "content-scope-prepared",
+    )) context.actualWrites.add(config.write.path);
+    await context.afterBoundary("content-scope-written");
   }
 
   if (commits.configuration === null && hasConfigurationWork(plan)) {
@@ -346,7 +356,15 @@ async function restoreAdmittedIndex(
   plan: SetupPlan,
   commits: { baseline: string | null; configuration: string | null },
 ): Promise<void> {
+  const branch = action(plan, "initialize-git") === undefined
+    ? plan.assessment.git.branch!
+    : "main";
   if (commits.configuration !== null) {
+    await replayBranchRefDurability({
+      path: plan.assessment.target.path,
+      branch,
+      value: commits.configuration,
+    });
     const record = await readCommitRecord(plan.assessment.target.path, commits.configuration);
     await recoverIndexAfterExactCommit({
       path: plan.assessment.target.path,
@@ -355,6 +373,11 @@ async function restoreAdmittedIndex(
       files: expectedConfigurationPaths(plan),
     });
   } else if (commits.baseline !== null) {
+    await replayBranchRefDurability({
+      path: plan.assessment.target.path,
+      branch,
+      value: commits.baseline,
+    });
     await recoverIndexAfterExactCommit({
       path: plan.assessment.target.path,
       commit: commits.baseline,
@@ -376,63 +399,28 @@ async function publishScaffoldIfAbsent(
   context: ApplyContext,
   path: string,
   body: string,
-  preparedBoundary: "agents-orientation-prepared" | "gitignore-prepared" | "vault-config-prepared",
+  preparedBoundary: "agents-orientation-prepared" | "gitignore-prepared" | "content-scope-prepared",
 ): Promise<boolean> {
   const existing = await anchored(context).readRegular(path);
   if (existing !== null) {
     if (wasPresentAtAssessment(context.plan, path)) return false;
     if (existing.body !== body || existing.mode !== 0o644 ||
-      !await hasPublishedWitness(context, path, "create", body, 0o644)) {
+      !await hasPublishedWitness(context, path, body, 0o644)) {
       throw new Error(`setup refused to replace unexpected ${path}`);
     }
     await replayPublicationDurability(context, path, body, 0o644);
     return true;
   }
-  await publishAtomic(context, path, body, 0o644, "create", preparedBoundary);
+  await publishAtomic(context, path, body, 0o644, preparedBoundary);
   return true;
 }
-
-async function applyConfigWrite(
-  context: ApplyContext,
-  action: Extract<AdaptationAction, { kind: "set-content-scope" }>,
-  evidenceBody: string,
-): Promise<boolean> {
-  if (action.write.operation === "create-file") {
-    return publishScaffoldIfAbsent(context, action.write.path, evidenceBody, "vault-config-prepared");
-  }
-  const opened = await requireRegular(context, action.write.path);
-  if (opened.nlink !== 1n) throw new Error("setup managed config must have one direct filesystem link");
-  const existing = opened.body;
-  const merged = mergeContentScope(existing, evidenceBody);
-  if (merged === existing) {
-    if (!await hasPublishedWitness(context, action.write.path, "replace", existing, opened.mode)) {
-      throw new Error(`setup found exact owner config without a plan-owned publication witness`);
-    }
-    await replayPublicationDurability(context, action.write.path, existing, opened.mode);
-    return true;
-  }
-  await publishAtomic(
-    context,
-    action.write.path,
-    merged,
-    opened.mode,
-    "replace",
-    "vault-config-prepared",
-    opened,
-  );
-  return true;
-}
-
-type OpenedFile = AnchoredRegularFile;
 
 async function publishAtomic(
   context: ApplyContext,
   relativePath: string,
   body: string,
   mode: number,
-  operation: "create" | "replace",
-  preparedBoundary: "agents-orientation-prepared" | "gitignore-prepared" | "vault-config-prepared",
-  old?: OpenedFile,
+  preparedBoundary: "agents-orientation-prepared" | "gitignore-prepared" | "content-scope-prepared",
 ): Promise<void> {
   const files = anchored(context);
   const temp = transactionTempPath(relativePath, context.digest);
@@ -442,31 +430,19 @@ async function publishAtomic(
   } else if (priorTemp.body !== body || priorTemp.mode !== mode) {
     throw new Error(`setup temporary publication collision for ${relativePath}`);
   }
-  await ensureWitness(context, relativePath, operation, body, mode, "prepared");
+  await ensureWitness(context, relativePath, body, mode, "prepared");
   await context.afterBoundary(preparedBoundary);
 
-  if (operation === "create") {
-    // The destination was admitted absent before preparation. Even an
-    // identical concurrent publication is not attributable to this call and
-    // must not be folded into Dome's configuration commit. Crash recovery
-    // admits an already-published exact destination before reaching here.
-    await files.linkExclusive(temp, relativePath);
-  } else {
-    if (old === undefined) throw new Error("replace publication requires admitted old bytes");
-    const current = await requireRegular(context, relativePath);
-    if (!sameOpenedFile(old, current)) throw new Error(`setup detected concurrent replacement of ${relativePath}`);
-    await files.rename(temp, relativePath);
-  }
-  await ensureWitness(context, relativePath, operation, body, mode, "published");
+  // The destination was admitted absent before preparation. Even an
+  // identical concurrent publication is not attributable to this call and
+  // must not be folded into Dome's configuration commit. Crash recovery
+  // admits an already-published exact destination before reaching here.
+  await files.linkExclusive(temp, relativePath);
+  await ensureWitness(context, relativePath, body, mode, "published");
   await context.afterBoundary(publishedBoundary(preparedBoundary));
   await files.syncParent(relativePath);
-  if (operation === "create") await files.unlink(temp);
+  await files.unlink(temp);
   await files.syncParent(temp);
-}
-
-function sameOpenedFile(left: OpenedFile, right: OpenedFile): boolean {
-  return left.body === right.body && left.mode === right.mode && left.dev === right.dev && left.ino === right.ino &&
-    left.nlink === right.nlink && left.size === right.size && left.mtimeNs === right.mtimeNs && left.ctimeNs === right.ctimeNs;
 }
 
 async function removeExactTempIfPresent(
@@ -491,7 +467,6 @@ function transactionTempPath(path: string, digest: string): string {
   return `${parent === "" ? "" : `${parent}/`}.${name}.dome-setup-${digest.slice(0, 16)}.tmp`;
 }
 
-type PublicationOperation = "create" | "replace";
 type PublicationPhase = "prepared" | "published";
 
 function anchored(context: ApplyContext): AnchoredVaultFiles {
@@ -500,18 +475,18 @@ function anchored(context: ApplyContext): AnchoredVaultFiles {
   return files;
 }
 
-async function requireRegular(context: ApplyContext, path: string): Promise<OpenedFile> {
+async function requireRegular(context: ApplyContext, path: string): Promise<AnchoredRegularFile> {
   const opened = await anchored(context).readRegular(path);
   if (opened === null) throw new Error(`setup requires a direct regular file at ${path}`);
   return opened;
 }
 
 function publishedBoundary(
-  prepared: "agents-orientation-prepared" | "gitignore-prepared" | "vault-config-prepared",
-): "agents-orientation-published" | "gitignore-published" | "vault-config-published" {
+  prepared: "agents-orientation-prepared" | "gitignore-prepared" | "content-scope-prepared",
+): "agents-orientation-published" | "gitignore-published" | "content-scope-published" {
   if (prepared === "agents-orientation-prepared") return "agents-orientation-published";
   if (prepared === "gitignore-prepared") return "gitignore-published";
-  return "vault-config-published";
+  return "content-scope-published";
 }
 
 function witnessPath(
@@ -525,18 +500,16 @@ function witnessPath(
 function witnessBody(
   context: ApplyContext,
   path: string,
-  operation: PublicationOperation,
   body: string,
   mode: number,
   phase: PublicationPhase,
 ): string {
-  return publicationWitnessBody(context.digest, path, operation, body, mode, phase);
+  return publicationWitnessBody(context.digest, path, body, mode, phase);
 }
 
 function publicationWitnessBody(
   digest: string,
   path: string,
-  operation: PublicationOperation,
   body: string,
   mode: number,
   phase: PublicationPhase,
@@ -545,7 +518,7 @@ function publicationWitnessBody(
     schema: "dome.setup.publication-witness/v1",
     planSha256: digest,
     path,
-    operation,
+    operation: "create",
     contentSha256: sha256(body),
     mode: mode.toString(8).padStart(4, "0"),
     phase,
@@ -555,18 +528,17 @@ function publicationWitnessBody(
 async function ensureWitness(
   context: ApplyContext,
   path: string,
-  operation: PublicationOperation,
   body: string,
   mode: number,
   phase: PublicationPhase,
 ): Promise<void> {
   const files = anchored(context);
   await files.ensureDirectory(".dome", 0o755);
-  await files.ensureDirectory(".dome/state", 0o700);
-  await files.ensureDirectory(".dome/state/setup", 0o700);
-  await files.ensureDirectory(`.dome/state/setup/${context.digest}`, 0o700);
+  await files.ensureDirectory(".dome/state", 0o700, true);
+  await files.ensureDirectory(".dome/state/setup", 0o700, true);
+  await files.ensureDirectory(`.dome/state/setup/${context.digest}`, 0o700, true);
   const relative = witnessPath(context, path, phase);
-  const expected = witnessBody(context, path, operation, body, mode, phase);
+  const expected = witnessBody(context, path, body, mode, phase);
   const existing = await files.readRegular(relative);
   if (existing === null) await files.createExclusive(relative, expected, 0o600);
   else if (existing.body !== expected || existing.mode !== 0o600) {
@@ -578,11 +550,10 @@ async function ensureWitness(
 async function hasPublishedWitness(
   context: ApplyContext,
   path: string,
-  operation: PublicationOperation,
   body: string,
   mode: number,
 ): Promise<boolean> {
-  const expected = witnessBody(context, path, operation, body, mode, "published");
+  const expected = witnessBody(context, path, body, mode, "published");
   const witness = await anchored(context).readRegular(witnessPath(context, path, "published"));
   return witness?.body === expected && witness.mode === 0o600;
 }
@@ -597,25 +568,10 @@ async function replayPublicationDurability(
   if (final.body !== body || final.mode !== mode) {
     throw new Error(`setup publication changed before durability replay: ${path}`);
   }
-  // A retry after link/rename but before the directory fsync must perform the
+  // A retry after link but before the directory fsync must perform the
   // fsync again. Exact final bytes alone are never treated as evidence.
   await anchored(context).syncParent(path);
   await removeExactTempIfPresent(context, path, body, mode);
-}
-
-function mergeContentScope(existing: string, fragment: string): string {
-  const doc = parseConfigDocument(existing);
-  const root = configRoot(doc);
-  const fragmentDoc = parseConfigDocument(fragment);
-  const scope = configRoot(fragmentDoc).get("content_scope");
-  if (root.has("content_scope")) {
-    const current = JSON.stringify(root.get("content_scope"));
-    const proposed = JSON.stringify(scope);
-    if (current !== proposed) throw new Error("setup refused to replace owner-authored content_scope");
-    return existing;
-  }
-  root.set(doc.createNode("content_scope"), doc.createNode(scope));
-  return stringifyConfigDocument(doc);
 }
 
 async function verifyPlannedWritePrefix(context: ApplyContext): Promise<void> {
@@ -660,7 +616,7 @@ async function inspectPlannedWritePrefixAnchored(
     if (actual !== null) {
       observed = true;
       if (actual.body !== expected || actual.mode !== 0o644 ||
-        !await recoveryWitnessMatches(files, digest, write.path, "create", expected, 0o644, "published")) {
+        !await recoveryWitnessMatches(files, digest, write.path, expected, 0o644, "published")) {
         return { valid: false, observed };
       }
     }
@@ -668,51 +624,32 @@ async function inspectPlannedWritePrefixAnchored(
     if (temp !== null) {
       observed = true;
       if (temp.body !== expected || temp.mode !== 0o644 ||
-        !await recoveryWitnessMatches(files, digest, write.path, "create", expected, 0o644, "prepared")) {
+        !await recoveryWitnessMatches(files, digest, write.path, expected, 0o644, "prepared")) {
         return { valid: false, observed };
       }
     }
   }
   const config = action(plan, "set-content-scope");
   if (config !== undefined) {
+    const expected = contentScopeWriteBody(config, scaffold);
     const actual = await readOptionalRegular(files, config.write.path);
     const temp = await readOptionalRegular(files, transactionTempPath(config.write.path, digest));
     if (actual === null) {
       if (temp !== null) {
         observed = true;
-        if (config.write.operation !== "create-file" || temp.body !== scaffold.vaultConfig || temp.mode !== 0o644 ||
-          !await recoveryWitnessMatches(files, digest, config.write.path, "create", scaffold.vaultConfig, 0o644, "prepared")) {
+        if (temp.body !== expected || temp.mode !== 0o644 ||
+          !await recoveryWitnessMatches(files, digest, config.write.path, expected, 0o644, "prepared")) {
           return { valid: false, observed };
         }
       }
       return { valid: true, observed };
     }
-    if (config.write.operation === "create-file") {
-      observed = true;
-      if (actual.body !== scaffold.vaultConfig || actual.mode !== 0o644 ||
-        !await recoveryWitnessMatches(files, digest, config.write.path, "create", scaffold.vaultConfig, 0o644, "published")) {
-        return { valid: false, observed };
-      }
-      if (temp !== null && (temp.body !== scaffold.vaultConfig || temp.mode !== 0o644)) return { valid: false, observed };
+    observed = true;
+    if (actual.body !== expected || actual.mode !== 0o644 ||
+      !await recoveryWitnessMatches(files, digest, config.write.path, expected, 0o644, "published")) {
+      return { valid: false, observed };
     }
-    if (config.write.operation === "merge-managed-config") {
-      try {
-        const merged = mergeContentScope(actual.body, scaffold.contentScopeConfig);
-        if (merged === actual.body) {
-          observed = true;
-          if (!await recoveryWitnessMatches(
-            files, digest, config.write.path, "replace", actual.body, actual.mode, "published",
-          )) return { valid: false, observed };
-        }
-        if (temp !== null) {
-          observed = true;
-          if (temp.body !== merged || temp.mode !== actual.mode ||
-            !await recoveryWitnessMatches(
-              files, digest, config.write.path, "replace", merged, temp.mode, "prepared",
-            )) return { valid: false, observed };
-        }
-      } catch { return { valid: false, observed: true }; }
-    }
+    if (temp !== null && (temp.body !== expected || temp.mode !== 0o644)) return { valid: false, observed };
   }
   return { valid: true, observed };
 }
@@ -721,7 +658,6 @@ async function recoveryWitnessMatches(
   files: AnchoredVaultFiles,
   digest: string,
   path: string,
-  operation: PublicationOperation,
   body: string,
   mode: number,
   phase: PublicationPhase,
@@ -730,7 +666,7 @@ async function recoveryWitnessMatches(
   try {
     const witness = await files.readRegular(relative);
     return witness?.mode === 0o600 &&
-      witness.body === publicationWitnessBody(digest, path, operation, body, mode, phase);
+      witness.body === publicationWitnessBody(digest, path, body, mode, phase);
   } catch {
     return false;
   }
@@ -766,7 +702,7 @@ function sameExternalEvidence(original: SetupPlan, fresh: SetupPlan): boolean {
 async function sameOwnerEvidence(
   original: SetupPlan,
   fresh: SetupPlan,
-  scaffold: SetupScaffoldEvidence,
+  _scaffold: SetupScaffoldEvidence,
 ): Promise<boolean> {
   const setupPaths = new Set(original.actions.flatMap((row) => {
     if (row.kind === "ensure-scaffold-directory") return [row.path];
@@ -796,13 +732,7 @@ async function sameOwnerEvidence(
     if (current === undefined) return false;
     if (current.kind === row.kind && current.bytes === row.bytes && current.proofSha256 === row.proofSha256) continue;
     if (row.kind === "directory" && [...setupPaths].some((owned) => owned.startsWith(`${path}/`))) continue;
-    const config = action(original, "set-content-scope");
-    if (config?.write.operation !== "merge-managed-config" || path !== config.write.path) return false;
-    const actual = await readTextIfRegular(join(original.assessment.target.path, path));
-    if (actual === null) return false;
-    try {
-      if (mergeContentScope(actual, scaffold.contentScopeConfig) !== actual) return false;
-    } catch { return false; }
+    return false;
   }
   return [...freshByPath.keys()].every((path) => originalByPath.has(path) || setupPaths.has(path));
 }
@@ -829,9 +759,7 @@ async function exactActualWrites(context: ApplyContext): Promise<Array<{
   content: string;
   mode: "100644" | "100755";
 }>> {
-  const expected = expectedConfigurationBodies(context.plan, context.scaffold, async (path) =>
-    readBlob({ path: context.target, commit: (await currentSha(context.target))!, filepath: path }));
-  const bodies = await expected;
+  const bodies = expectedConfigurationBodies(context.plan, context.scaffold);
   const expectedPaths = [...bodies.keys()].sort();
   if (JSON.stringify([...context.actualWrites].sort()) !== JSON.stringify(expectedPaths)) {
     throw new Error("actual Dome write set does not match the admitted configuration delta");
@@ -940,8 +868,7 @@ async function admitConfigurationCommit(
   const [before, after, expected] = await Promise.all([
     parent === null ? Promise.resolve([]) : listTreeEntriesAtCommit(plan.assessment.target.path, parent),
     listTreeEntriesAtCommit(plan.assessment.target.path, record.oid),
-    expectedConfigurationBodies(plan, scaffold, async (path) =>
-      parent === null ? Promise.resolve(null) : readBlob({ path: plan.assessment.target.path, commit: parent, filepath: path })),
+    Promise.resolve(expectedConfigurationBodies(plan, scaffold)),
   ]);
   const beforeByPath = new Map(before.map((row) => [row.path, row]));
   const afterByPath = new Map(after.map((row) => [row.path, row]));
@@ -962,11 +889,10 @@ async function admitConfigurationCommit(
   }
 }
 
-async function expectedConfigurationBodies(
+function expectedConfigurationBodies(
   plan: SetupPlan,
   scaffold: SetupScaffoldEvidence,
-  parentBody: (path: string) => Promise<string | null>,
-): Promise<Map<string, string>> {
+): Map<string, string> {
   const expected = new Map<string, string>();
   for (const write of plan.actions.filter((row): row is Extract<AdaptationAction, { kind: "write-scaffold-file" }> =>
     row.kind === "write-scaffold-file")) {
@@ -976,14 +902,18 @@ async function expectedConfigurationBodies(
   }
   const config = action(plan, "set-content-scope");
   if (config !== undefined) {
-    if (config.write.operation === "create-file") expected.set(config.write.path, scaffold.vaultConfig);
-    else {
-      const parent = await parentBody(config.write.path);
-      if (parent === null) throw new Error("managed config merge parent is unavailable");
-      expected.set(config.write.path, mergeContentScope(parent, scaffold.contentScopeConfig));
-    }
+    expected.set(config.write.path, contentScopeWriteBody(config, scaffold));
   }
   return expected;
+}
+
+function contentScopeWriteBody(
+  config: Extract<AdaptationAction, { kind: "set-content-scope" }>,
+  scaffold: SetupScaffoldEvidence,
+): string {
+  return config.write.path === ".dome/config.yaml"
+    ? scaffold.vaultConfig
+    : scaffold.contentScopeConfig;
 }
 
 function phaseMessage(subject: string, digest: string, phase: "baseline" | "configuration"): string {
@@ -1018,12 +948,6 @@ async function safeLstat(path: string): Promise<Awaited<ReturnType<typeof lstat>
     if (hasCode(error, "ENOENT")) return null;
     throw error;
   }
-}
-
-async function readTextIfRegular(path: string): Promise<string | null> {
-  const stat = await safeLstat(path);
-  if (stat === null || !stat.isFile() || stat.isSymbolicLink()) return null;
-  return readFile(path, "utf8");
 }
 
 async function directoryIsEmpty(path: string): Promise<boolean> {

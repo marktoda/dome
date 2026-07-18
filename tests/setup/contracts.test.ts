@@ -80,7 +80,7 @@ function plan(): SetupPlan {
       },
       {
         kind: "set-content-scope",
-        id: "vault-config",
+        id: "content-scope",
         scope: assessed.markdown.proposedScope,
         write: {
           path: ".dome/config.yaml", operation: "create-file", bytes: 100,
@@ -293,7 +293,7 @@ describe("SetupPlan contract", () => {
     expect(() => validateSetupPlan({ ...value, actions: writes })).toThrow();
   });
 
-  test("binds scope migration operation to assessed config presence", () => {
+  test("binds the create-only scope document path to assessed config presence", () => {
     const value = plan();
     const existing = {
       ...value,
@@ -303,18 +303,18 @@ describe("SetupPlan contract", () => {
         action.kind !== "ensure-scaffold-directory" && action.kind !== "write-scaffold-file"
       ).map((action) => action.kind === "set-content-scope" ? {
         ...action,
-        write: { ...action.write, operation: "merge-managed-config" as const, ifMissing: false },
+        write: { ...action.write, path: ".dome/content-scope.yaml" as const },
       } : action),
     };
-    expect(validateSetupPlan(existing).actions.find((action) => action.kind === "set-content-scope")?.write.operation)
-      .toBe("merge-managed-config");
+    expect(validateSetupPlan(existing).actions.find((action) => action.kind === "set-content-scope")?.write.path)
+      .toBe(".dome/content-scope.yaml");
     expect(() => validateSetupPlan({
       ...existing,
       actions: existing.actions.map((action) => action.kind === "set-content-scope" ? {
         ...action,
-        write: { ...action.write, operation: "create-file" as const, ifMissing: true },
+        write: { ...action.write, path: ".dome/config.yaml" as const },
       } : action),
-    })).toThrow("write operation must match config presence");
+    })).toThrow("write path must match config presence");
   });
 
   test("validates immutable consent and closed apply results", () => {

@@ -273,6 +273,24 @@ describe("performSettleBatch", () => {
     expect(await currentSha(path)).toBe(before);
   });
 
+  test("rejects a reviewed revision whose managed scope conflicts with inline scope", async () => {
+    const path = await vault();
+    await commitFile(path, ".dome/content-scope.yaml", `content_scope:\n  version: 1\n  include: ["notes/**/*.md"]\n  exclude: [".dome/**", ".git/**"]\n`);
+    await commitFile(path, "wiki/a.md", "# A\n\n- [ ] #task keep A ^tscopeconflict\n");
+    const revision = await adoptHead(path);
+
+    const result = await performSettleBatch(path, {
+      schema: SETTLE_BATCH_SCHEMA,
+      revision,
+      decisions: [decision(revision, "wiki/a.md", 3, "tscopeconflict", "keep")],
+    }, { now });
+    expect(result).toMatchObject({
+      status: "error",
+      error: "conflict",
+      recoveryRequired: false,
+    });
+  });
+
   test("follows one unchanged eligible task relocation by its move-stable anchor", async () => {
     const path = await vault();
     const content = "# A\n\n- [ ] #task movable task ^tmove\n";

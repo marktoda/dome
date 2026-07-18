@@ -191,7 +191,7 @@ describe("setup compiler", () => {
     expect(exact.actions).toEqual([]);
   });
 
-  test("plans one explicit managed scope migration for a configured pre-scope vault", () => {
+  test("plans one explicit create-only scope overlay for a configured pre-scope vault", () => {
     const base = input("existing-dome-vault");
     const plan = compileSetupPlan({
       ...base,
@@ -200,9 +200,9 @@ describe("setup compiler", () => {
     const scopeActions = plan.actions.filter((action) => action.kind === "set-content-scope");
     expect(scopeActions).toHaveLength(1);
     expect(scopeActions[0]?.write).toMatchObject({
-      path: ".dome/config.yaml",
-      operation: "merge-managed-config",
-      ifMissing: false,
+      path: ".dome/content-scope.yaml",
+      operation: "create-file",
+      ifMissing: true,
     });
     expect(plan.warnings.map((warning) => warning.code)).toEqual([
       "content-scope-migration",
@@ -239,7 +239,7 @@ describe("setup compiler", () => {
     expect(() => compileSetupPlan({
       ...base,
       scaffold: { ...base.scaffold, contentScopeConfig: `${base.scaffold.contentScopeConfig}extensions: []\n` },
-    })).toThrow("content-scope merge scaffold is not valid runtime config");
+    })).toThrow("content-scope overlay scaffold is not valid runtime config");
     const existing = input("existing-git-vault");
     expect(() => compileSetupPlan({
       ...existing,

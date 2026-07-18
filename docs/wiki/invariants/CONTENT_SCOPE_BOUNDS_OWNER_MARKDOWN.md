@@ -40,6 +40,12 @@ corpus tests pin version-1 Bun.Glob semantics, malformed input, canonical
 ordering, duplicate elimination, bounded hostile-input handling, literal
 metacharacters, and deterministic selection.
 
+Policy persistence is resolved through one document seam. A fresh vault may
+carry `content_scope` inline in `.dome/config.yaml`; adaptation of an older
+valid config may carry it in the create-only `.dome/content-scope.yaml`
+overlay. Orphaned overlays and unequal dual definitions fail closed, so the
+two storage shapes cannot produce two content universes.
+
 **Counter-example:** A processor enumerates `wiki/**/*.md` directly even
 though the vault scope excludes `wiki/private/**`, or treats an include of
 `.dome/**/*.md` as authority to read operational state. Both violate the upper

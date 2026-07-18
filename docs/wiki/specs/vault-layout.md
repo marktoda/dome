@@ -438,7 +438,8 @@ render tick rather than through `dome rebuild`. A one-shot migration script
 
 ```
 <vault>/.dome/
-  config.yaml             # vault config — invariant enable/disable, bundle grants, engine knobs
+  config.yaml             # base config — bundle grants, engine knobs, fresh-vault content scope
+  content-scope.yaml      # optional create-only scope overlay for adapted older configs
   model-provider.ts       # OPTIONAL — vault-local command model provider scaffold
   page-types.yaml         # default + extension page types declared for this vault
   extensions/             # OPTIONAL — vault-local third-party bundles

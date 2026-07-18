@@ -8,6 +8,7 @@ import {
   DEFAULT_RUNTIME_CONFIG,
   loadCapabilityPolicy,
   parseCapabilityPolicy,
+  resolveCapabilityPolicyDocuments,
 } from "../../src/engine/core/capability-policy";
 
 const roots: string[] = [];
@@ -20,6 +21,81 @@ afterEach(() => {
 });
 
 describe("loadCapabilityPolicy", () => {
+  test("resolves the optional scope document without changing base-config identity", () => {
+    const base = { body: "grants: standard\n", path: ".dome/config.yaml" };
+    const overlay = {
+      body: `content_scope:\n  version: 1\n  include: ["notes/**/*.md"]\n  exclude: [".dome/**", ".git/**"]\n`,
+      path: ".dome/content-scope.yaml",
+    };
+    const resolved = resolveCapabilityPolicyDocuments({ base, contentScope: overlay });
+    expect(resolved.ok).toBe(true);
+    if (!resolved.ok) return;
+    expect(resolved.value.foundConfig).toBe(true);
+    expect(resolved.value.contentScope).toEqual({
+      version: 1,
+      include: ["notes/**/*.md"],
+      exclude: [".dome/**", ".git/**"],
+    });
+  });
+
+  test("rejects orphan, non-scope, and conflicting scope documents", () => {
+    const overlay = {
+      body: `content_scope:\n  version: 1\n  include: ["notes/**/*.md"]\n  exclude: [".dome/**", ".git/**"]\n`,
+      path: ".dome/content-scope.yaml",
+    };
+    expect(resolveCapabilityPolicyDocuments({ base: null, contentScope: overlay })).toEqual({
+      ok: false,
+      error: ".dome/content-scope.yaml is orphaned because .dome/config.yaml is absent",
+    });
+    expect(resolveCapabilityPolicyDocuments({
+      base: { body: "grants: standard\n", path: ".dome/config.yaml" },
+      contentScope: { ...overlay, body: `${overlay.body}extensions: {}\n` },
+    })).toEqual({
+      ok: false,
+      error: ".dome/content-scope.yaml extensions is not a known content-scope field",
+    });
+    expect(resolveCapabilityPolicyDocuments({
+      base: {
+        body: `content_scope:\n  version: 1\n  include: ["**/*.md"]\n  exclude: [".dome/**", ".git/**"]\n`,
+        path: ".dome/config.yaml",
+      },
+      contentScope: overlay,
+    })).toEqual({
+      ok: false,
+      error: ".dome/config.yaml and .dome/content-scope.yaml define conflicting content_scope values",
+    });
+  });
+
+  test("accepts canonically equal inline and overlay scopes", () => {
+    const body = `content_scope:\n  version: 1\n  include: ["notes/**/*.md"]\n  exclude: [".dome/**", ".git/**"]\n`;
+    const resolved = resolveCapabilityPolicyDocuments({
+      base: { body, path: ".dome/config.yaml" },
+      contentScope: { body, path: ".dome/content-scope.yaml" },
+    });
+    expect(resolved.ok && resolved.value.contentScope).toEqual({
+      version: 1,
+      include: ["notes/**/*.md"],
+      exclude: [".dome/**", ".git/**"],
+    });
+  });
+
+  test("loads and reloads the scope document while foundConfig derives from the base", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(join(root, ".dome", "config.yaml"), "grants: standard\n");
+    writeFileSync(join(root, ".dome", "content-scope.yaml"), `content_scope:\n  version: 1\n  include: ["notes/**/*.md"]\n  exclude: [".dome/**", ".git/**"]\n`);
+    const first = await loadCapabilityPolicy(root);
+    expect(first.ok && first.value.contentScope?.include).toEqual(["notes/**/*.md"]);
+    writeFileSync(join(root, ".dome", "content-scope.yaml"), `content_scope:\n  version: 1\n  include: ["wiki/**/*.md"]\n  exclude: [".dome/**", ".git/**"]\n`);
+    const reloaded = await loadCapabilityPolicy(root);
+    expect(reloaded.ok && reloaded.value.contentScope?.include).toEqual(["wiki/**/*.md"]);
+
+    rmSync(join(root, ".dome", "config.yaml"));
+    const orphan = await loadCapabilityPolicy(root);
+    expect(orphan.ok).toBe(false);
+  });
+
   test("parses canonical content scope and includes it in the policy hash", () => {
     const broad = parseCapabilityPolicy(`
 content_scope:

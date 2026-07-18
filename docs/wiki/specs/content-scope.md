@@ -31,6 +31,19 @@ content_scope:
     - "private/**"
 ```
 
+Fresh vaults persist this mapping inline in `.dome/config.yaml`. For an
+existing valid config that predates content scope, setup creates the separate
+versioned `.dome/content-scope.yaml` document instead of rewriting owner
+configuration. That overlay is deliberately narrow: it must be a YAML mapping
+with exactly `content_scope`. It is invalid without a base config. When both
+documents carry a scope, their canonical values must be equal or the policy
+fails closed.
+
+`resolveCapabilityPolicyDocuments` is the single resolution seam for live
+filesystem loads, revision-bound reads, setup inspection, and scaffold
+validation. `foundConfig` derives only from the base config, and the resolved
+scope—not its storage location—participates in the capability-policy hash.
+
 `version` is the literal `1`. `include` contains at least one glob; `include`
 and `exclude` each contain at most 64 globs. Persisted and revision-bound
 contracts are lexically sorted and duplicate-free. The ergonomic constructor
@@ -116,8 +129,9 @@ checkpoint. The read-only setup compiler validates both its in-memory proposal
 and exact rendered YAML `content_scope` through the canonical schema. The
 runtime capability-policy parser consumes the same config seam, and content
 scope participates in its deterministic policy hash. Existing Dome vaults
-without a scope receive an explicit reviewed merge action; malformed scope
-blocks setup. The inspector inventories only lowercase-`.md` candidates.
+without a scope receive an explicit reviewed create-only scope document;
+malformed, orphaned, or conflicting documents block setup. The inspector
+inventories only lowercase-`.md` candidates.
 Processor enumeration, scope inference for arbitrary layouts, explicit apply
 consent, and projection rebuild behavior remain later M4 checkpoints. Until
 those land, this contract does not claim that existing processors already

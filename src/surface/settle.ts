@@ -69,7 +69,7 @@ import {
   statusMatrix,
 } from "../git";
 import { getAdoptedRef } from "../adopted-ref";
-import { parseCapabilityPolicy } from "../engine/core/capability-policy";
+import { resolveCapabilityPolicyDocuments } from "../engine/core/capability-policy";
 import {
   applyControlledMutation,
   type ControlledMutationResult,
@@ -348,21 +348,26 @@ async function planSettleBatch(
     );
   }
 
-  const reviewedConfig = await readBlob({
-    path: vaultPath,
-    commit: revision,
-    filepath: ".dome/config.yaml",
-  });
+  const [reviewedConfig, reviewedContentScope] = await Promise.all([
+    readBlob({ path: vaultPath, commit: revision, filepath: ".dome/config.yaml" }),
+    readBlob({ path: vaultPath, commit: revision, filepath: ".dome/content-scope.yaml" }),
+  ]);
   if (reviewedConfig === null) {
     return rejectedPlan(
       "configuration-conflict",
       "the reviewed revision has no .dome/config.yaml",
     );
   }
-  const policy = parseCapabilityPolicy(
-    reviewedConfig,
-    `${revision}:.dome/config.yaml`,
-  );
+  const policy = resolveCapabilityPolicyDocuments({
+    base: {
+      body: reviewedConfig,
+      path: `${revision}:.dome/config.yaml`,
+    },
+    contentScope: reviewedContentScope === null ? null : {
+      body: reviewedContentScope,
+      path: `${revision}:.dome/content-scope.yaml`,
+    },
+  });
   if (!policy.ok) {
     return rejectedPlan("configuration-conflict", policy.error);
   }

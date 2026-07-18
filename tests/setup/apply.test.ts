@@ -142,6 +142,22 @@ describe("applySetupPlan", () => {
     expect(await Bun.file(join(target, ".dome/config.yaml")).exists()).toBe(false);
   });
 
+  test("preflights the native host before discovery or mutation", async () => {
+    const target = await fixture("git");
+    const plan = await planFor(target);
+    let discoveries = 0;
+    const apply = createSetupPlanApplier({
+      discovery: { contentScope: scope, scaffold },
+      discover: async () => { discoveries += 1; return evidence(target); },
+      preflightPlatform: () => { throw new Error("unsupported setup host"); },
+    });
+
+    const result = await apply(plan, createSetupConsent(plan));
+    expect(result).toMatchObject({ status: "blocked", recovery: { code: "mutation-conflict" } });
+    expect(discoveries).toBe(0);
+    expect(await Bun.file(join(target, ".dome/config.yaml")).exists()).toBeFalse();
+  });
+
   test("blocks a retry when ignored owner evidence changes inside a partial transaction", async () => {
     const target = await fixture("git");
     await writeFile(join(target, ".gitignore"), "secret.txt\n");
@@ -202,7 +218,7 @@ describe("applySetupPlan", () => {
     const approvedHead = await currentSha(target);
     const plan = await planFor(target);
     const result = await applier(async (boundary) => {
-      if (boundary === "vault-config-written") {
+      if (boundary === "content-scope-written") {
         await writeFile(join(target, ".dome/config.yaml"), `${scaffold.vaultConfig}# raced\n`);
       }
     })(plan, createSetupConsent(plan));
@@ -215,7 +231,7 @@ describe("applySetupPlan", () => {
     const approvedHead = await currentSha(target);
     const plan = await planFor(target);
     const result = await applier(async (boundary) => {
-      if (boundary === "vault-config-written") {
+      if (boundary === "content-scope-written") {
         const process = Bun.spawn(["git", "-C", target, "switch", "-c", "raced"], { stderr: "pipe" });
         expect(await process.exited).toBe(0);
       }
@@ -225,33 +241,25 @@ describe("applySetupPlan", () => {
     expect(await currentSha(target)).toBe(approvedHead);
   });
 
-  test("preserves conflicting owner staging after an admitted setup ref advance", async () => {
+  test("holds the real index lock through ref advance and releases it on refusal", async () => {
     const target = await fixture("git");
     const plan = await planFor(target);
     const consent = createSetupConsent(plan);
-    let staged = "";
+    let addExit = 0;
     const first = await applier(async (boundary) => {
       if (boundary !== "configuration-ref-advanced") return;
-      await writeFile(join(target, ".dome/config.yaml"), `${scaffold.vaultConfig}# owner staged\n`);
-      const add = Bun.spawn(["git", "-C", target, "add", "--", ".dome/config.yaml"], { stderr: "pipe" });
-      expect(await add.exited).toBe(0);
-      const inspect = Bun.spawn(["git", "-C", target, "ls-files", "--stage", "--", ".dome/config.yaml"], {
-        stdout: "pipe",
-      });
-      staged = await new Response(inspect.stdout).text();
-      expect(await inspect.exited).toBe(0);
+      await writeFile(join(target, "Owner.md"), "# owner staging attempt\n");
+      const add = Bun.spawn(["git", "-C", target, "add", "--", "Owner.md"], { stderr: "pipe" });
+      addExit = await add.exited;
+      await writeFile(join(target, "Owner.md"), "# Owner\n");
+      throw new Error("injected after ref advance");
     })(plan, consent);
     expect(first.status).toBe("blocked");
-    expect(staged).toContain(".dome/config.yaml");
+    expect(addExit).not.toBe(0);
 
     const retry = await applier()(plan, consent);
     expect(retry.status).toBe("blocked");
-    const inspect = Bun.spawn(["git", "-C", target, "ls-files", "--stage", "--", ".dome/config.yaml"], {
-      stdout: "pipe",
-    });
-    expect(await new Response(inspect.stdout).text()).toBe(staged);
-    expect(await inspect.exited).toBe(0);
-    expect(await readFile(join(target, ".dome/config.yaml"), "utf8")).toContain("owner staged");
+    expect(await Bun.file(join(target, ".git/index.lock")).exists()).toBeFalse();
   });
 
   test("refuses an identical concurrent create after preparing Dome's config", async () => {
@@ -259,7 +267,7 @@ describe("applySetupPlan", () => {
     const approvedHead = await currentSha(target);
     const plan = await planFor(target);
     const result = await applier(async (boundary) => {
-      if (boundary === "vault-config-prepared") {
+      if (boundary === "content-scope-prepared") {
         await writeFile(join(target, ".dome/config.yaml"), scaffold.vaultConfig);
       }
     })(plan, createSetupConsent(plan));
@@ -267,7 +275,7 @@ describe("applySetupPlan", () => {
     expect(await currentSha(target)).toBe(approvedHead);
   });
 
-  test("refuses concurrent owner config replacement after preparing the managed merge", async () => {
+  test("refuses owner config drift after preparing the scope overlay", async () => {
     const target = await fixture("git");
     await mkdir(join(target, ".dome"));
     const configPath = join(target, ".dome/config.yaml");
@@ -276,7 +284,7 @@ describe("applySetupPlan", () => {
     const approvedHead = await currentSha(target);
     const plan = await planFor(target);
     const result = await applier(async (boundary) => {
-      if (boundary === "vault-config-prepared") {
+      if (boundary === "content-scope-prepared") {
         await writeFile(configPath, "# raced owner config\ngrants: standard\n");
       }
     })(plan, createSetupConsent(plan));
@@ -350,7 +358,7 @@ describe("applySetupPlan", () => {
     expect((await stat(join(target, "AGENTS.md"))).mode & 0o777).toBe(0o600);
   });
 
-  test("rejects an exact owner-managed merge without a published witness", async () => {
+  test("rejects exact scope-overlay bytes without a published witness", async () => {
     const target = await fixture("git");
     await mkdir(join(target, ".dome"));
     const configPath = join(target, ".dome/config.yaml");
@@ -358,11 +366,11 @@ describe("applySetupPlan", () => {
     await commit({ path: target, files: [".dome/config.yaml"], message: "Owner config" });
     const plan = await planFor(target);
     const consent = createSetupConsent(plan);
-    await expect(applier(failSetupAfter("vault-config-prepared"))(plan, consent)).rejects.toThrow();
-    const temp = join(target, `.dome/.config.yaml.dome-setup-${consent.planSha256.slice(0, 16)}.tmp`);
-    const exactMerged = await readFile(temp, "utf8");
+    await expect(applier(failSetupAfter("content-scope-prepared"))(plan, consent)).rejects.toThrow();
+    const temp = join(target, `.dome/.content-scope.yaml.dome-setup-${consent.planSha256.slice(0, 16)}.tmp`);
+    const exactOverlay = await readFile(temp, "utf8");
     await unlink(temp);
-    await writeFile(configPath, exactMerged);
+    await writeFile(join(target, ".dome/content-scope.yaml"), exactOverlay);
     const result = await applier()(plan, consent);
     expect(result.status).toBe("blocked");
     expect(await currentSha(target)).toBe(plan.assessment.revision.head);
@@ -378,7 +386,7 @@ describe("applySetupPlan", () => {
     expect(result.status, JSON.stringify(result)).toBe("completed");
   });
 
-  test("replays destination durability after a post-rename pre-fsync failure", async () => {
+  test("replays scope-overlay durability after a post-link pre-fsync failure", async () => {
     const target = await fixture("git");
     await mkdir(join(target, ".dome"));
     const configPath = join(target, ".dome/config.yaml");
@@ -387,45 +395,54 @@ describe("applySetupPlan", () => {
     await commit({ path: target, files: [".dome/config.yaml"], message: "Owner config" });
     const plan = await planFor(target);
     const consent = createSetupConsent(plan);
-    await expect(applier(failSetupAfter("vault-config-published"))(plan, consent)).rejects.toThrow();
-    expect(await readFile(configPath, "utf8")).toContain("content_scope");
+    await expect(applier(failSetupAfter("content-scope-published"))(plan, consent)).rejects.toThrow();
+    expect(await readFile(join(target, ".dome/content-scope.yaml"), "utf8")).toBe(scaffold.contentScopeConfig);
     const result = await applier()(plan, consent);
     expect(result.status, JSON.stringify(result)).toBe("completed");
     expect((await stat(configPath)).mode & 0o777).toBe(0o600);
   });
 
-  test("preserves owner config comments and mode through atomic managed merge", async () => {
+  test("keeps existing config bytes, inode, and mode identical while adding the scope overlay", async () => {
     const target = await fixture("git");
     await mkdir(join(target, ".dome"));
     const configPath = join(target, ".dome/config.yaml");
     await writeFile(configPath, "# owner comment\ngrants: standard\n");
     await chmod(configPath, 0o600);
     await commit({ path: target, files: [".dome/config.yaml"], message: "Owner config" });
+    const before = await stat(configPath);
+    const ownerBytes = await readFile(configPath, "utf8");
     const plan = await planFor(target);
     const result = await applier()(plan, createSetupConsent(plan));
     expect(result.status, JSON.stringify(result)).toBe("completed");
-    expect(await readFile(configPath, "utf8")).toContain("# owner comment");
-    expect((await stat(configPath)).mode & 0o777).toBe(0o600);
+    const after = await stat(configPath);
+    expect(await readFile(configPath, "utf8")).toBe(ownerBytes);
+    expect(after.ino).toBe(before.ino);
+    expect(after.mode & 0o777).toBe(before.mode & 0o777);
+    expect(await readFile(join(target, ".dome/content-scope.yaml"), "utf8")).toBe(scaffold.contentScopeConfig);
   });
 
-  test("recovers an interrupted atomic config replacement without losing owner bytes or mode", async () => {
+  test("recovers an interrupted scope-overlay publication without touching owner config", async () => {
     const target = await fixture("git");
     await mkdir(join(target, ".dome"));
     const configPath = join(target, ".dome/config.yaml");
     await writeFile(configPath, "# owner comment\ngrants: standard\n");
     await chmod(configPath, 0o600);
     await commit({ path: target, files: [".dome/config.yaml"], message: "Owner config" });
+    const before = await stat(configPath);
     const plan = await planFor(target);
     const consent = createSetupConsent(plan);
 
-    await expect(applier(failSetupAfter("vault-config-prepared"))(plan, consent)).rejects.toThrow();
+    await expect(applier(failSetupAfter("content-scope-prepared"))(plan, consent)).rejects.toThrow();
     expect(await readFile(configPath, "utf8")).toBe("# owner comment\ngrants: standard\n");
     expect((await stat(configPath)).mode & 0o777).toBe(0o600);
 
     const result = await applier()(plan, consent);
     expect(result.status, JSON.stringify(result)).toBe("completed");
-    expect(await readFile(configPath, "utf8")).toContain("# owner comment");
-    expect((await stat(configPath)).mode & 0o777).toBe(0o600);
+    const after = await stat(configPath);
+    expect(await readFile(configPath, "utf8")).toBe("# owner comment\ngrants: standard\n");
+    expect(after.ino).toBe(before.ino);
+    expect(after.mode & 0o777).toBe(0o600);
+    expect(await readFile(join(target, ".dome/content-scope.yaml"), "utf8")).toBe(scaffold.contentScopeConfig);
   });
 
   test("preserves binary bytes and executable modes in the exact owner baseline", async () => {

@@ -7,7 +7,7 @@ import {
   type ContentScopeConfig,
 } from "../core/content-scope";
 import { compareStrings } from "../core/compare";
-import { parseCapabilityPolicy } from "../engine/core/capability-policy";
+import { resolveCapabilityPolicyDocuments } from "../engine/core/capability-policy";
 import {
   SETUP_PLAN_SCHEMA,
   SETUP_CONTRACT_CAPS,
@@ -152,7 +152,7 @@ export function compileSetupPlan(input: SetupCompilerInput): SetupPlan {
   const warnings: SetupPlan["warnings"] = [];
   if (assessment.dome.state === "configured" && assessment.dome.contentScope === "absent") warnings.push({
     code: "content-scope-migration",
-    message: "This existing Dome config has no content scope; review the explicit managed config merge before applying.",
+    message: "This existing Dome config has no content scope; review the separate managed scope document before applying.",
   });
   if (existingContent) warnings.push({
     code: "review-content-scope",
@@ -216,17 +216,17 @@ function adaptationActions(input: SetupCompilerInput): AdaptationAction[] {
       scaffoldAction("gitignore", ".gitignore", input.scaffold.gitignore),
       {
         kind: "set-content-scope",
-        id: "vault-config",
+        id: "content-scope",
         scope: cloneContentScope(input.contentScope),
-        write: fileWrite(".dome/config.yaml", input.scaffold.vaultConfig, "create-file"),
+        write: fileWrite(".dome/config.yaml", input.scaffold.vaultConfig),
       },
     );
   } else if (input.source.dome.contentScope === "absent") {
     actions.push({
       kind: "set-content-scope",
-      id: "vault-config",
+      id: "content-scope",
       scope: cloneContentScope(input.contentScope),
-      write: fileWrite(".dome/config.yaml", input.scaffold.contentScopeConfig, "merge-managed-config"),
+      write: fileWrite(".dome/content-scope.yaml", input.scaffold.contentScopeConfig),
     });
   }
   return actions;
@@ -237,23 +237,22 @@ function scaffoldAction(
   path: "AGENTS.md" | ".gitignore",
   body: string,
 ): Extract<AdaptationAction, { kind: "write-scaffold-file" }> {
-  const write = fileWrite(path, body, "create-file");
+  const write = fileWrite(path, body);
   return { kind: "write-scaffold-file", id, path, ...withoutPath(write) };
 }
 
-function fileWrite<Path extends ".dome/config.yaml" | "AGENTS.md" | ".gitignore">(
+function fileWrite<Path extends ".dome/config.yaml" | ".dome/content-scope.yaml" | "AGENTS.md" | ".gitignore">(
   path: Path,
   body: string,
-  operation: "create-file" | "merge-managed-config",
 ) {
   const bytes = Buffer.byteLength(body);
   return Object.freeze({
     path,
-    operation,
+    operation: "create-file" as const,
     bytes,
     sha256: sha256(body),
     mode: "0644" as const,
-    ifMissing: operation === "create-file",
+    ifMissing: true as const,
   });
 }
 
@@ -280,11 +279,17 @@ function assertScaffoldBindsScope(scaffold: SetupScaffoldEvidence, scope: Conten
       throw new Error(`setup ${name} scaffold exceeds the write budget`);
     }
   }
-  for (const [name, body] of [
-    ["vault config", scaffold.vaultConfig],
-    ["content-scope merge", scaffold.contentScopeConfig],
+  for (const [name, documents] of [
+    ["vault config", {
+      base: { body: scaffold.vaultConfig, path: "setup vault config" },
+      contentScope: null,
+    }],
+    ["content-scope overlay", {
+      base: { body: "grants: standard\n", path: "setup overlay base" },
+      contentScope: { body: scaffold.contentScopeConfig, path: "setup content-scope overlay" },
+    }],
   ] as const) {
-    const parsed = parseCapabilityPolicy(body, `setup ${name}`);
+    const parsed = resolveCapabilityPolicyDocuments(documents);
     if (!parsed.ok) throw new Error(`setup ${name} scaffold is not valid runtime config: ${parsed.error}`);
     if (parsed.value.contentScope === null || stableJson(parsed.value.contentScope) !== stableJson(scope)) {
       throw new Error(`setup ${name} scaffold does not encode the proposed content scope`);

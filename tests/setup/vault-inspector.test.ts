@@ -155,6 +155,47 @@ content_scope:
     expect(inspected.blockers.map((blocker) => blocker.code)).toEqual(["ambiguous-state"]);
   });
 
+  test("accepts a strict managed scope document when the base config has no inline scope", async () => {
+    const root = await gitFixture();
+    await mkdir(join(root, ".dome"));
+    await writeFile(join(root, ".dome", "config.yaml"), "grants: standard\n");
+    await writeFile(join(root, ".dome", "content-scope.yaml"), `content_scope:\n  version: 1\n  include: ["notes/**/*.md"]\n  exclude: [".dome/**", ".git/**"]\n`);
+    await git(root, "add", ".dome/config.yaml", ".dome/content-scope.yaml");
+    await git(root, "commit", "-m", "Configure Dome policy documents");
+
+    const inspected = await inspectSetupVaultSource(root);
+    expect(inspected.dome).toEqual({ state: "configured", contentScope: "configured" });
+    expect(inspected.blockers).toEqual([]);
+  });
+
+  test("fails closed on orphan, malformed, and conflicting managed scope documents", async () => {
+    for (const fixture of [
+      {
+        base: null,
+        overlay: `content_scope:\n  version: 1\n  include: ["notes/**/*.md"]\n  exclude: [".dome/**", ".git/**"]\n`,
+      },
+      {
+        base: "grants: standard\n",
+        overlay: `content_scope:\n  version: 1\n  include: ["notes/**/*.md"]\n  exclude: []\nextensions: {}\n`,
+      },
+      {
+        base: defaultConfigYaml(),
+        overlay: `content_scope:\n  version: 1\n  include: ["notes/**/*.md"]\n  exclude: [".dome/**", ".git/**"]\n`,
+      },
+    ]) {
+      const root = await gitFixture();
+      await mkdir(join(root, ".dome"));
+      if (fixture.base !== null) await writeFile(join(root, ".dome", "config.yaml"), fixture.base);
+      await writeFile(join(root, ".dome", "content-scope.yaml"), fixture.overlay);
+      await git(root, "add", ".dome");
+      await git(root, "commit", "-m", "Add incompatible policy documents");
+
+      const inspected = await inspectSetupVaultSource(root);
+      expect(inspected.dome).toEqual({ state: "incompatible", contentScope: "incompatible" });
+      expect(inspected.blockers.map((blocker) => blocker.code)).toEqual(["ambiguous-state"]);
+    }
+  });
+
   test("accepts a direct linked worktree without adopting its owner repository", async () => {
     const owner = await gitFixture();
     const linked = `${owner}-linked`;

@@ -1,7 +1,18 @@
 import { constants, type BigIntStats } from "node:fs";
 import { open } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
-import { dlopen, FFIType, ptr } from "bun:ffi";
+import { dlopen, FFIType, ptr, read } from "bun:ffi";
+import { assertSupportedSetupHost } from "./platform";
+
+export type AnchoredFilesystemMutation =
+  | "create-exclusive"
+  | "link-exclusive"
+  | "unlink"
+  | "directory-created";
+export type AnchoredFilesystemMutationHook = (
+  operation: AnchoredFilesystemMutation,
+  relativePath: string,
+) => Promise<void>;
 
 export type AnchoredRegularFile = Readonly<{
   body: string;
@@ -31,33 +42,40 @@ type NativeOps = ReturnType<typeof nativeOps>;
  * operation through a replacement symlink.
  */
 export class AnchoredVaultFiles {
+  private closed = false;
+
   private constructor(
     private readonly native: NativeOps,
     private readonly vaultChain: ReadonlyArray<HeldDirectory>,
     private readonly filesystemRoot: Awaited<ReturnType<typeof open>>,
-    private readonly beforeFinalMutation?: (() => Promise<void>) | undefined,
+    private readonly beforeFinalMutation?: AnchoredFilesystemMutationHook | undefined,
   ) {}
 
   static async open(
     root: string,
-    options: Readonly<{ beforeFinalMutation?: (() => Promise<void>) | undefined }> = {},
+    options: Readonly<{ beforeFinalMutation?: AnchoredFilesystemMutationHook | undefined }> = {},
   ): Promise<AnchoredVaultFiles> {
     const absolute = resolve(root);
     if (!isAbsolute(absolute)) throw new Error("anchored vault root must be absolute");
+    assertSupportedSetupHost();
     const native = nativeOps();
-    const filesystemRoot = await open("/", constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
-    const firstProof = await filesystemRoot.stat({ bigint: true });
-    const chain: HeldDirectory[] = [{
-      fd: filesystemRoot.fd,
-      parentFd: null,
-      name: null,
-      proof: firstProof,
-    }];
+    let filesystemRoot: Awaited<ReturnType<typeof open>>;
     try {
+      filesystemRoot = await open("/", constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+    } catch (error) {
+      native.dispose();
+      throw error;
+    }
+    const chain: HeldDirectory[] = [];
+    const opened: number[] = [];
+    try {
+      const firstProof = await filesystemRoot.stat({ bigint: true });
+      chain.push({ fd: filesystemRoot.fd, parentFd: null, name: null, proof: firstProof });
       for (const name of segments(absolute)) {
         const parent = chain.at(-1)!;
         const fd = native.openDirectory(parent.fd, name);
         if (fd === null) throw new Error(`setup cannot bind direct directory ${name} in ${absolute}`);
+        opened.push(fd);
         chain.push({
           fd,
           parentFd: parent.fd,
@@ -69,26 +87,38 @@ export class AnchoredVaultFiles {
       await files.revalidate(chain);
       return files;
     } catch (error) {
-      for (const held of chain.slice(1).reverse()) native.close(held.fd);
-      await filesystemRoot.close();
-      native.dispose();
+      for (const fd of opened.reverse()) native.close(fd);
+      try { await filesystemRoot.close(); }
+      catch { /* Preserve admission failure while still disposing FFI. */ }
+      finally { native.dispose(); }
       throw error;
     }
   }
 
   async close(): Promise<void> {
-    for (const held of this.vaultChain.slice(1).reverse()) this.native.close(held.fd);
-    await this.filesystemRoot.close();
-    this.native.dispose();
+    if (this.closed) return;
+    this.closed = true;
+    let failure: unknown;
+    try {
+      for (const held of this.vaultChain.slice(1).reverse()) {
+        try { this.native.close(held.fd); } catch (error) { failure ??= error; }
+      }
+      try { await this.filesystemRoot.close(); } catch (error) { failure ??= error; }
+    } finally {
+      this.native.dispose();
+    }
+    if (failure !== undefined) throw failure;
   }
 
-  async ensureDirectory(relativePath: string, mode: number): Promise<void> {
+  async ensureDirectory(relativePath: string, mode: number, exactLeaf = false): Promise<void> {
     const names = relativeSegments(relativePath);
     let chain = [...this.vaultChain];
+    const opened: number[] = [];
     try {
-      for (const name of names) {
+      for (const [index, name] of names.entries()) {
         const parent = chain.at(-1)!;
         let fd = this.native.openDirectory(parent.fd, name);
+        let created = false;
         if (fd === null) {
           if (!this.native.mkdir(parent.fd, name, mode)) {
             fd = this.native.openDirectory(parent.fd, name);
@@ -96,16 +126,23 @@ export class AnchoredVaultFiles {
           } else {
             fd = this.native.openDirectory(parent.fd, name);
             if (fd === null) throw new Error(`setup could not bind created directory ${relativePath}`);
-            this.native.chmod(fd, mode);
-            this.native.sync(fd);
-            this.native.sync(parent.fd);
+            created = true;
           }
         }
+        opened.push(fd);
+        if (created && this.beforeFinalMutation !== undefined) {
+          await this.beforeFinalMutation("directory-created", relativePath);
+        }
+        if (created || (exactLeaf && index === names.length - 1)) {
+          this.native.chmod(fd, mode);
+        }
+        this.native.sync(fd);
+        this.native.sync(parent.fd);
         chain.push({ fd, parentFd: parent.fd, name, proof: await statFd(fd) });
       }
       await this.revalidate(chain);
     } finally {
-      for (const held of chain.slice(this.vaultChain.length).reverse()) this.native.close(held.fd);
+      for (const fd of opened.reverse()) this.native.close(fd);
     }
   }
 
@@ -139,7 +176,9 @@ export class AnchoredVaultFiles {
 
   async createExclusive(relativePath: string, body: string, mode: number): Promise<void> {
     await this.withParent(relativePath, async (parent, name, chain) => {
-      if (this.beforeFinalMutation !== undefined) await this.beforeFinalMutation();
+      if (this.beforeFinalMutation !== undefined) {
+        await this.beforeFinalMutation("create-exclusive", relativePath);
+      }
       const fd = this.native.openFile(
         parent.fd,
         name,
@@ -158,7 +197,9 @@ export class AnchoredVaultFiles {
 
   async linkExclusive(source: string, destination: string): Promise<void> {
     await this.withSameParent(source, destination, async (parent, sourceName, destinationName, chain) => {
-      if (this.beforeFinalMutation !== undefined) await this.beforeFinalMutation();
+      if (this.beforeFinalMutation !== undefined) {
+        await this.beforeFinalMutation("link-exclusive", destination);
+      }
       if (!this.native.link(parent.fd, sourceName, parent.fd, destinationName)) {
         throw new Error(`setup refused concurrent publication of ${destination}`);
       }
@@ -166,24 +207,14 @@ export class AnchoredVaultFiles {
     });
   }
 
-  async rename(source: string, destination: string): Promise<void> {
-    await this.withSameParent(source, destination, async (parent, sourceName, destinationName, chain) => {
-      if (this.beforeFinalMutation !== undefined) await this.beforeFinalMutation();
-      if (!this.native.rename(parent.fd, sourceName, parent.fd, destinationName)) {
-        throw new Error(`setup could not publish ${destination}`);
-      }
-      await this.revalidate(chain);
-    });
-  }
-
   async unlink(relativePath: string): Promise<void> {
     await this.withParent(relativePath, async (parent, name, chain) => {
-      if (!this.native.unlink(parent.fd, name)) {
-        const existing = this.native.openFile(parent.fd, name, constants.O_RDONLY | constants.O_NOFOLLOW, 0);
-        if (existing !== null) {
-          this.native.close(existing);
-          throw new Error(`setup could not remove ${relativePath}`);
-        }
+      if (this.beforeFinalMutation !== undefined) {
+        await this.beforeFinalMutation("unlink", relativePath);
+      }
+      const removed = this.native.unlink(parent.fd, name);
+      if (!removed.ok && removed.errno !== ERRNO_ENOENT) {
+        throw new Error(`setup could not remove ${relativePath} (errno ${removed.errno})`);
       }
       await this.revalidate(chain);
     });
@@ -250,64 +281,80 @@ export class AnchoredVaultFiles {
 }
 
 function nativeOps() {
-  if (process.platform !== "darwin" && process.platform !== "linux") {
-    throw new Error(`anchored setup publication is unsupported on ${process.platform}`);
-  }
-  const library = dlopen(process.platform === "darwin" ? "/usr/lib/libSystem.B.dylib" : "libc.so.6", {
+  assertSupportedSetupHost();
+  const darwin = process.platform === "darwin";
+  const commonSymbols = {
     openat: { args: [FFIType.int32_t, FFIType.cstring, FFIType.int32_t, FFIType.uint32_t], returns: FFIType.int32_t },
     mkdirat: { args: [FFIType.int32_t, FFIType.cstring, FFIType.uint32_t], returns: FFIType.int32_t },
     linkat: { args: [FFIType.int32_t, FFIType.cstring, FFIType.int32_t, FFIType.cstring, FFIType.int32_t], returns: FFIType.int32_t },
-    renameat: { args: [FFIType.int32_t, FFIType.cstring, FFIType.int32_t, FFIType.cstring], returns: FFIType.int32_t },
     unlinkat: { args: [FFIType.int32_t, FFIType.cstring, FFIType.int32_t], returns: FFIType.int32_t },
     write: { args: [FFIType.int32_t, FFIType.ptr, FFIType.uint64_t], returns: FFIType.int64_t },
     fchmod: { args: [FFIType.int32_t, FFIType.uint32_t], returns: FFIType.int32_t },
     fsync: { args: [FFIType.int32_t], returns: FFIType.int32_t },
     close: { args: [FFIType.int32_t], returns: FFIType.int32_t },
-  });
+  } as const;
+  const library = darwin
+    ? dlopen("/usr/lib/libSystem.B.dylib", {
+      ...commonSymbols,
+      __error: { args: [], returns: FFIType.ptr },
+    })
+    : dlopen("libc.so.6", {
+      ...commonSymbols,
+      __errno_location: { args: [], returns: FFIType.ptr },
+    });
+  const symbols = library.symbols as unknown as Record<string, (...args: unknown[]) => unknown>;
   const c = (value: string) => Buffer.from(`${value}\0`);
+  const errno = (): number => read.i32(
+    (darwin ? symbols["__error"]!() : symbols["__errno_location"]!()) as never,
+  );
   return {
     openDirectory: (parent: number, name: string): number | null => {
-      const fd = Number(library.symbols.openat(parent, c(name), constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW, 0));
+      const fd = Number(symbols["openat"]!(parent, c(name), constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW, 0));
       return fd < 0 ? null : fd;
     },
     openFile: (parent: number, name: string, flags: number, mode: number): number | null => {
-      const fd = Number(library.symbols.openat(parent, c(name), flags, mode));
+      const fd = Number(symbols["openat"]!(parent, c(name), flags, mode));
       return fd < 0 ? null : fd;
     },
-    mkdir: (parent: number, name: string, mode: number) => Number(library.symbols.mkdirat(parent, c(name), mode)) === 0,
+    mkdir: (parent: number, name: string, mode: number) => Number(symbols["mkdirat"]!(parent, c(name), mode)) === 0,
     link: (from: number, fromName: string, to: number, toName: string) =>
-      Number(library.symbols.linkat(from, c(fromName), to, c(toName), 0)) === 0,
-    rename: (from: number, fromName: string, to: number, toName: string) =>
-      Number(library.symbols.renameat(from, c(fromName), to, c(toName))) === 0,
-    unlink: (parent: number, name: string) => Number(library.symbols.unlinkat(parent, c(name), 0)) === 0,
+      Number(symbols["linkat"]!(from, c(fromName), to, c(toName), 0)) === 0,
+    unlink: (parent: number, name: string): NativeResult => {
+      const result = Number(symbols["unlinkat"]!(parent, c(name), 0));
+      return result === 0 ? { ok: true } : { ok: false, errno: errno() };
+    },
     write: (fd: number, bytes: Uint8Array) => {
       let offset = 0;
-      let interruptedRetries = 0;
       while (offset < bytes.byteLength) {
-        const count = Number(library.symbols.write(fd, ptr(bytes, offset), bytes.byteLength - offset));
-        // Bun FFI does not expose errno on this supported runtime. A negative
-        // result may be EINTR, so retry it within a small closed budget; hard
-        // errors deterministically exhaust the same budget. A zero write can
-        // never make progress and fails immediately.
-        if (count < 0 && interruptedRetries < 8) {
-          interruptedRetries += 1;
-          continue;
+        const count = Number(symbols["write"]!(fd, ptr(bytes, offset), bytes.byteLength - offset));
+        const writeErrno = count < 0 ? errno() : null;
+        if (writeErrno === ERRNO_EINTR) continue;
+        if (count <= 0) {
+          throw new Error(
+            `setup could not write exclusive publication bytes${writeErrno === null ? "" : ` (errno ${writeErrno})`}`,
+          );
         }
-        if (count <= 0) throw new Error("setup could not write exclusive publication bytes");
         offset += count;
-        interruptedRetries = 0;
       }
     },
     chmod: (fd: number, mode: number) => {
-      if (Number(library.symbols.fchmod(fd, mode)) !== 0) throw new Error("setup could not set publication mode");
+      if (Number(symbols["fchmod"]!(fd, mode)) !== 0) {
+        throw new Error(`setup could not set publication mode (errno ${errno()})`);
+      }
     },
     sync: (fd: number) => {
-      if (Number(library.symbols.fsync(fd)) !== 0) throw new Error("setup could not sync publication");
+      if (Number(symbols["fsync"]!(fd)) !== 0) {
+        throw new Error(`setup could not sync publication (errno ${errno()})`);
+      }
     },
-    close: (fd: number) => { library.symbols.close(fd); },
+    close: (fd: number) => { symbols["close"]!(fd); },
     dispose: () => library.close(),
   };
 }
+
+type NativeResult = Readonly<{ ok: true }> | Readonly<{ ok: false; errno: number }>;
+const ERRNO_ENOENT = 2;
+const ERRNO_EINTR = 4;
 
 function segments(path: string): string[] {
   return path.split("/").filter((part) => part.length > 0);
