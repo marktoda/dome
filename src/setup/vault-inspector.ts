@@ -115,6 +115,7 @@ type FileEvidence = Readonly<{
   sha256: string | null;
   gitBlobId: string | null;
   filesystemIdentitySha256: string;
+  ignoreCase?: boolean;
   linkTarget: string | null;
   tracking: "tracked" | "untracked" | "ignored" | "other";
   safetyReason: SetupRepositoryCandidate["reason"];
@@ -177,8 +178,12 @@ export async function inspectSetupVaultSource(
   const initialTarget = await inspectTarget(targetPath, addFirstBlocker);
   await options.proofCheckpoint?.("target-1");
   const runGit = options.runGit ?? runGitReadOnly;
+  const initialControlAliases = await inspectRootControlAliases(
+    targetPath, initialTarget.inspectable && initialTarget.isDirectory, addFirstBlocker,
+  );
   const initialRawGit = await inspectGit(
-    targetPath, initialTarget.exists, initialTarget.inspectable, caps, runGit, addFirstBlocker,
+    targetPath, initialTarget.exists, initialTarget.inspectable, initialControlAliases.length > 0,
+    caps, runGit, addFirstBlocker,
   );
   await options.proofCheckpoint?.("git-1");
   const initialTree = initialTarget.inspectable && initialTarget.isDirectory
@@ -186,8 +191,12 @@ export async function inspectSetupVaultSource(
     : Object.freeze([] as FileEvidence[]);
   await options.proofCheckpoint?.("tree-1");
   const initialGit = finalizeGitDirtyState(initialRawGit, initialTree, addFirstBlocker);
+  const middleControlAliases = await inspectRootControlAliases(
+    targetPath, initialTarget.inspectable && initialTarget.isDirectory, addSecondBlocker,
+  );
   const middleRawGit = await inspectGit(
-    targetPath, initialTarget.exists, initialTarget.inspectable, caps, runGit, addSecondBlocker,
+    targetPath, initialTarget.exists, initialTarget.inspectable, middleControlAliases.length > 0,
+    caps, runGit, addSecondBlocker,
   );
   await options.proofCheckpoint?.("git-2");
   const tree = initialTarget.inspectable && initialTarget.isDirectory
@@ -195,14 +204,20 @@ export async function inspectSetupVaultSource(
     : Object.freeze([] as FileEvidence[]);
   await options.proofCheckpoint?.("tree-2");
   const middleGit = finalizeGitDirtyState(middleRawGit, tree, addSecondBlocker);
+  const finalControlAliases = await inspectRootControlAliases(
+    targetPath, initialTarget.inspectable && initialTarget.isDirectory, addBlocker,
+  );
   const finalRawGit = await inspectGit(
-    targetPath, initialTarget.exists, initialTarget.inspectable, caps, runGit, addBlocker,
+    targetPath, initialTarget.exists, initialTarget.inspectable, finalControlAliases.length > 0,
+    caps, runGit, addBlocker,
   );
   await options.proofCheckpoint?.("git-3");
   let git = finalizeGitDirtyState(finalRawGit, tree, addBlocker);
   const target = await inspectTarget(targetPath, addBlocker);
   const stable = JSON.stringify(gitProof(initialGit)) === JSON.stringify(gitProof(middleGit)) &&
     JSON.stringify(gitProof(middleGit)) === JSON.stringify(gitProof(git)) &&
+    JSON.stringify(initialControlAliases) === JSON.stringify(middleControlAliases) &&
+    JSON.stringify(middleControlAliases) === JSON.stringify(finalControlAliases) &&
     JSON.stringify(initialTree) === JSON.stringify(tree) &&
     initialTarget.proofSha256 === target.proofSha256;
   if (stable) mergeBlockers(secondBlockers, blockers);
@@ -549,10 +564,34 @@ function targetInspection(
   return Object.freeze({ ...value, proofSha256: hashJson({ componentEvidence, ...value }) });
 }
 
+async function inspectRootControlAliases(
+  targetPath: string,
+  inspectableDirectory: boolean,
+  addBlocker: (code: BlockerCode, message: string, nextAction: string) => void,
+): Promise<ReadonlyArray<string>> {
+  if (!inspectableDirectory) return Object.freeze([]);
+  try {
+    const aliases = (await readdir(targetPath)).filter((name) => {
+      const lower = name.toLowerCase();
+      return (lower === ".git" || lower === ".dome") && name !== lower;
+    }).sort(compareStrings);
+    for (const alias of aliases) {
+      addBlocker("unsafe-path", `The vault contains a case-variant private path at ${alias}.`,
+        "Rename or remove the case-variant .dome/.git path, then reassess.");
+    }
+    return Object.freeze(aliases);
+  } catch (error) {
+    addBlocker("ambiguous-state", `The vault root cannot be checked for private aliases: ${message(error)}`,
+      "Wait for concurrent changes or repair the vault root, then reassess.");
+    return Object.freeze(["<unreadable>"]);
+  }
+}
+
 async function inspectGit(
   targetPath: string,
   targetExists: boolean,
   targetInspectable: boolean,
+  privateControlAlias: boolean,
   caps: SetupVaultInspectionCaps,
   runGit: SetupGitRunner,
   addBlocker: (code: BlockerCode, message: string, nextAction: string) => void,
@@ -566,6 +605,7 @@ async function inspectGit(
     infoExcludeSha256: null,
   });
   if (!targetInspectable) return empty();
+  if (privateControlAlias) return empty();
   if (!targetExists) {
     const ancestor = await findAncestorGitRoot(dirname(targetPath), addBlocker);
     if (ancestor !== null) addAncestorBlocker(ancestor, addBlocker);
@@ -847,19 +887,8 @@ async function inspectTree(
           entries.push(Object.freeze({ path, kind: "file", mode, bytes: info.size,
             sha256: ownIgnore.sha256, gitBlobId: gitBlobId(ownIgnore.bytes),
             filesystemIdentitySha256: filesystemIdentityHash(info), linkTarget: null, tracking,
+            ignoreCase: ownIgnore.ignoreCase,
             safetyReason: tracking === "ignored" ? "ignored-by-owner" : "safe-owner-file" }));
-          continue;
-        }
-        if (tracking === "ignored") {
-          const kind = info.isSymbolicLink() ? "symlink" : info.isDirectory() ? "directory" :
-            info.isFile() ? "file" : "special";
-          entries.push(Object.freeze({ path, kind, mode, bytes: kind === "directory" ? 0 : info.size,
-            sha256: null, gitBlobId: null, filesystemIdentitySha256: filesystemIdentityHash(info),
-            linkTarget: null, tracking, safetyReason: "ignored-by-owner" }));
-          if (kind === "symlink") addBlocker("symlink-ambiguity", `The vault contains a symbolic link at ${path}.`,
-            "Remove or explicitly replace the link, then reassess.");
-          if (kind === "special") addBlocker("unsafe-path", `The vault contains a special file at ${path}.`,
-            "Remove the special file from the vault boundary, then reassess.");
           continue;
         }
         if (info.isSymbolicLink()) {
@@ -875,12 +904,14 @@ async function inspectTree(
         if (info.isDirectory()) {
           entries.push(Object.freeze({ path, kind: "directory", mode, bytes: 0, sha256: null,
             gitBlobId: null, filesystemIdentitySha256: filesystemIdentityHash(info), linkTarget: null, tracking,
-            safetyReason: name === ".git" ? "nested-repository" : "directory-not-tracked" }));
+            safetyReason: name === ".git" ? "nested-repository" :
+              tracking === "ignored" ? "ignored-by-owner" : "directory-not-tracked" }));
           if (name === ".git") {
             addBlocker("unsafe-path", `The vault contains a nested repository at ${path}.`,
               "Choose one repository boundary, then reassess.");
             continue;
           }
+          if (tracking === "ignored") continue;
           await visit(absolute, path, info, ignoreStack);
           continue;
         }
@@ -898,6 +929,12 @@ async function inspectTree(
             safetyReason: "hard-linked-file" }));
           addBlocker("unsafe-path", `The vault contains a hard-linked file at ${path}.`,
             "Replace the hard link with a direct file, then reassess.");
+          continue;
+        }
+        if (tracking === "ignored") {
+          entries.push(Object.freeze({ path, kind: "file", mode, bytes: info.size, sha256: null,
+            gitBlobId: null, filesystemIdentitySha256: filesystemIdentityHash(info), linkTarget: null, tracking,
+            safetyReason: "ignored-by-owner" }));
           continue;
         }
         if (sensitiveRepositoryPath(path)) {
@@ -1011,6 +1048,7 @@ type NonGitIgnorePolicy = Readonly<{
   bytes: Buffer;
   sha256: string;
   filesystemIdentitySha256: string;
+  ignoreCase: boolean;
 }>;
 
 async function loadNonGitIgnorePolicy(
@@ -1029,17 +1067,34 @@ async function loadNonGitIgnorePolicy(
         "Repair or remove .gitignore, then reassess.");
       return null;
     }
+    const ignoreCase = await detectIgnoreCase(path, info);
     const bytes = await readDirectFile(path, info);
     const body = bytes.toString("utf8");
     if (body.includes("\uFFFD") || body.includes("\0")) throw new Error(".gitignore is not valid bounded UTF-8 text");
-    const rules = ignore({ ignorecase: false }).add(body);
+    const rules = ignore({ ignorecase: ignoreCase }).add(body);
     return Object.freeze({ prefix, rules, bytes, sha256: sha256(bytes),
-      filesystemIdentitySha256: filesystemIdentityHash(info) });
+      filesystemIdentitySha256: filesystemIdentityHash(info), ignoreCase });
   } catch (error) {
     if (hasCode(error, "ENOENT")) return null;
     addBlocker("ambiguous-state", `The owner .gitignore cannot be evaluated safely: ${message(error)}`,
       "Repair .gitignore, then reassess.");
     return null;
+  }
+}
+
+async function detectIgnoreCase(
+  gitignorePath: string,
+  canonical: Awaited<ReturnType<typeof lstat>>,
+): Promise<boolean> {
+  try {
+    const alias = await lstat(join(dirname(gitignorePath), ".GITIGNORE"));
+    if (unsigned32(alias.dev) === unsigned32(canonical.dev) && unsigned32(alias.ino) === unsigned32(canonical.ino)) {
+      return true;
+    }
+    throw new Error(".gitignore has a distinct case-variant collision");
+  } catch (error) {
+    if (hasCode(error, "ENOENT")) return false;
+    throw error;
   }
 }
 

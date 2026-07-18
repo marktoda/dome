@@ -345,6 +345,21 @@ content_scope:
     expect(inspected.blockers.map((blocker) => blocker.code)).toEqual(["unsafe-path"]);
   });
 
+  test("structural hard-link safety dominates owner ignore classification", async () => {
+    const root = await temporary();
+    const outside = await temporary();
+    await writeFile(join(root, ".gitignore"), "*.bin\n");
+    await writeFile(join(outside, "owner.bin"), "external owner\n");
+    await link(join(outside, "owner.bin"), join(root, "ignored.bin"));
+
+    const inspected = await inspectSetupVaultSource(root);
+    expect(inspected.blockers.map((blocker) => blocker.code)).toEqual(["unsafe-path"]);
+    expect(inspected.repository.candidates.find(({ path }) => path === "ignored.bin")).toEqual({
+      path: "ignored.bin", kind: "file", bytes: 15, tracking: "ignored",
+      disposition: "blocked", reason: "hard-linked-file",
+    });
+  });
+
   test("fails closed for active Git operations", async () => {
     const root = await gitFixture();
     await mkdir(join(root, ".git", "rebase-merge"));
@@ -514,12 +529,33 @@ content_scope:
     expect(inspected.markdown.untracked).toEqual(["nested/local-keep.md"]);
   });
 
+  test("matches the ignore-case behavior of the repository Git will initialize", async () => {
+    const root = await temporary();
+    await writeFile(join(root, ".gitignore"), "cache/\n");
+    await mkdir(join(root, "Cache"));
+    await writeFile(join(root, "Cache", "owner.md"), "owner\n");
+
+    const preview = await inspectSetupVaultSource(root);
+    const previewIgnored = preview.repository.candidates.find(({ path }) => path === "Cache")?.tracking === "ignored";
+    await git(root, "init", "-b", "main");
+    const gitIgnored = await gitExitCode(root, "check-ignore", "--quiet", "Cache/owner.md") === 0;
+    expect(previewIgnored).toBe(gitIgnored);
+  });
+
   test("blocks case-variant private roots before reading or traversing them", async () => {
     for (const alias of [".DOME", ".Git", ".dome/STATE"]) {
       const root = await temporary();
       await mkdir(join(root, alias, "state"), { recursive: true });
       await writeFile(join(root, alias, "state", "opaque.bin"), "must-not-be-read\n");
-      const inspected = await inspectSetupVaultSource(root, { caps: { fileBytes: 1 } });
+      let gitCommands = 0;
+      const inspected = await inspectSetupVaultSource(root, {
+        caps: { fileBytes: 1 },
+        runGit: async (args, cwd, caps) => {
+          gitCommands += 1;
+          return await nativeGitRunner(args, cwd, caps);
+        },
+      });
+      expect(gitCommands).toBe(0);
       expect(inspected.blockers.map((blocker) => blocker.code)).toContain("unsafe-path");
       expect(inspected.repository.candidates).toEqual(alias === ".dome/STATE" ? [{
         path: ".dome", kind: "directory", bytes: 0, tracking: "other",
@@ -721,6 +757,16 @@ async function git(cwd: string, ...args: string[]): Promise<string> {
   ]);
   if (exitCode !== 0) throw new Error(`git ${args.join(" ")} failed: ${stderr}`);
   return stdout.trim();
+}
+
+async function gitExitCode(cwd: string, ...args: string[]): Promise<number> {
+  const process = Bun.spawn(["git", ...args], {
+    cwd,
+    env: { ...globalThis.process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_TERMINAL_PROMPT: "0" },
+    stdout: "ignore",
+    stderr: "ignore",
+  });
+  return await process.exited;
 }
 
 function validateInspectionAssessment(

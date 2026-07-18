@@ -35,6 +35,12 @@ describe("setup repository policy", () => {
     expect(candidate({ path: ".DOME", kind: "directory", observedReason: "directory-not-tracked" })).toMatchObject({
       disposition: "blocked", reason: "private-case-alias",
     });
+    expect(candidate({
+      path: "ignored.bin", tracking: "ignored", observedReason: "hard-linked-file",
+    })).toMatchObject({ disposition: "blocked", reason: "hard-linked-file" });
+    expect(candidate({
+      path: "shortcut", kind: "symlink", tracking: "ignored", observedReason: "symlink-internal",
+    })).toMatchObject({ disposition: "blocked", reason: "symlink-internal" });
   });
 
   test("rejects forged sensitive baselines and every inconsistent public tuple", () => {

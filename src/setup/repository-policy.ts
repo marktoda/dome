@@ -120,6 +120,9 @@ function canonicalReason(observation: SetupRepositoryObservation): SetupReposito
   if (privateCaseAliasPath(observation.path)) return "private-case-alias";
   if (nestedGitControlPath(observation.path)) return "nested-repository";
   if (domePrivateRepositoryPath(observation.path)) return "dome-private";
+  if (["symlink-internal", "symlink-external", "special-file", "hard-linked-file"].includes(
+    observation.observedReason,
+  )) return observation.observedReason;
   if (sensitiveRepositoryPath(observation.path)) return "sensitive-name";
   if (observation.tracking === "ignored") return "ignored-by-owner";
   return observation.observedReason;

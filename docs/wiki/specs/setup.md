@@ -120,7 +120,9 @@ Any component that case-folds to `.dome` or `.git` without being that exact
 lowercase spelling, or to `state` directly beneath `.dome`, is blocked before
 it is opened, read, or traversed. This fail-closed rule prevents
 case-insensitive filesystem aliases such as `.DOME` or `.dome/STATE` from
-bypassing the private floor.
+bypassing the private floor. Root control-name aliases are preflighted before
+Git inspection, so `.Git` cannot cause even a read-only Git command to parse
+aliased control metadata.
 It hashes bounded tracked and untracked regular-file bytes and modes, exact
 symlink targets, Git index/HEAD and derived dirty evidence, ignore results,
 direct `info/exclude` bytes, the linked-worktree gitfile, Dome configuration, and
@@ -271,14 +273,19 @@ a broader tracked set.
 For a non-Git owner vault, setup loads a bounded direct `.gitignore` in every
 directory it traverses before inspecting that directory's remaining children.
 It evaluates the hierarchical rule stack with the mature `ignore` library's
-Git-compatible, case-sensitive semantics: patterns are relative to the
-directory containing their file, rule order and negation are preserved, and a
-deeper `.gitignore` takes precedence according to Git's normal matching rules.
+Git-compatible semantics: patterns are relative to the directory containing
+their file, rule order and negation are preserved, and a deeper `.gitignore`
+takes precedence according to Git's normal matching rules. Setup passively
+probes whether each directory resolves `.gitignore` and a case variant to the
+same inode, then configures `ignore` with the same case behavior Git will infer
+when it initializes the repository; a distinct case-variant collision blocks.
 An ignored directory is pruned before any descendant is `lstat`ed, read, or
 hashed; the pruned subtree consumes neither the content nor entry budget.
 Other ignored entries are classified without reading their content bytes. All
 bounded policy bytes and resulting classifications remain revision-bound.
 Setup does not maintain a second partial ignore-language implementation.
+Structural unsafety dominates ignore status: ignored symlinks and special files
+retain their structural reason, and an ignored hard link is still blocked.
 
 A later apply implementation must first recompute and validate the complete
 assessment and then stage exactly `baselineTracked`. Every
