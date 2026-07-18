@@ -56,7 +56,6 @@ export function scenario(spec: ScenarioSpec, body: ScenarioBody): void {
   const handler = async (): Promise<void> => {
     let h: HarnessImpl | null = null;
     const cancelDeadlineDiagnostic = scheduleScenarioDeadlineDiagnostic({
-      scenarioName: spec.name,
       timeoutMs,
       activity: () => h === null
         ? Object.freeze({

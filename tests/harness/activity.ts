@@ -3,6 +3,30 @@ export type HarnessActivitySnapshot = Readonly<{
   phase: string;
 }>;
 
+const HARNESS_ACTIVITY_PHASES = Object.freeze({
+  "harness creation": Object.freeze(["initialize fixture"]),
+  "harness cleanup": Object.freeze(["close runtime", "remove temporary vault"]),
+  userCommit: Object.freeze([
+    "snapshot vault",
+    "write owner files",
+    "publish Git commit",
+    "check always-true invariants",
+  ]),
+  tick: Object.freeze([
+    "snapshot vault",
+    "detect Git drift",
+    "run compiler host",
+    "check always-true invariants",
+  ]),
+  runCli: Object.freeze([
+    "snapshot vault",
+    "close harness runtime",
+    "dispatch CLI command",
+    "reopen harness runtime",
+    "check always-true invariants",
+  ]),
+} satisfies Readonly<Record<string, ReadonlyArray<string>>>);
+
 type ActivityToken = Readonly<{ id: symbol }>;
 
 /**
@@ -39,6 +63,19 @@ export class HarnessActivity {
     if (this.current?.token === token) this.current = null;
   }
 
+  async track<T>(
+    operation: string,
+    initialPhase: string,
+    work: (advance: (phase: string) => void) => Promise<T>,
+  ): Promise<T> {
+    const token = this.begin(operation, initialPhase);
+    try {
+      return await work((phase) => this.advance(token, phase));
+    } finally {
+      this.end(token);
+    }
+  }
+
   snapshot(): HarnessActivitySnapshot | null {
     return this.current?.snapshot ?? null;
   }
@@ -47,7 +84,6 @@ export class HarnessActivity {
 export type ScenarioDeadlineTimer = ReturnType<typeof setTimeout>;
 
 export function scheduleScenarioDeadlineDiagnostic(input: Readonly<{
-  scenarioName: string;
   timeoutMs: number;
   activity: () => HarnessActivitySnapshot | null;
   write?: (message: string) => void;
@@ -69,12 +105,25 @@ export function scheduleScenarioDeadlineDiagnostic(input: Readonly<{
   const timer = schedule(() => {
     const active = input.activity();
     const owner = active === null
-      ? "scenario body (no Harness operation active)"
-      : `${active.operation} / ${active.phase}`;
+      ? "scenario body (no instrumented Harness operation active)"
+      : renderSafeOwner(active);
     write(
-      `[scenario deadline] ${input.scenarioName} is still running at `
+      "[scenario deadline] scenario is still running at "
       + `${diagnosticAtMs}ms of ${input.timeoutMs}ms; active owner: ${owner}`,
     );
   }, diagnosticAtMs);
   return () => cancel(timer);
+}
+
+function renderSafeOwner(active: HarnessActivitySnapshot): string {
+  if (!Object.hasOwn(HARNESS_ACTIVITY_PHASES, active.operation)) {
+    return "unrecognized instrumented Harness operation";
+  }
+  const phases = HARNESS_ACTIVITY_PHASES[
+    active.operation as keyof typeof HARNESS_ACTIVITY_PHASES
+  ];
+  if (!phases.includes(active.phase)) {
+    return "unrecognized instrumented Harness operation";
+  }
+  return `${active.operation} / ${active.phase}`;
 }
