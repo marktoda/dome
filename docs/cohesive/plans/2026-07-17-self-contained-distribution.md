@@ -139,8 +139,9 @@ surface, but it must not be required to make an earlier checkpoint truthful.
 | Mission | Status | Release evidence |
 | --- | --- | --- |
 | M0 — Restore trustworthy CI | **Complete** | Validated implementation SHA `d9efcf53`; GitHub Actions run `29624132748`, attempts 1 and 2 both succeeded. |
-| M1 — Public package and legal identity | Next | Begins from the green M0 release-truth checkpoint. |
-| M2–M12 | Planned | Intent and gates remain as specified below. |
+| M1 — Public package and legal identity | **Complete** | Main implementation commit `286b872c` (parent `c44ff0d3`); packed-package and fresh-consumer rehearsal passed without publication. |
+| M2 — Complete packed product input | **In progress** | Extend the now-truthful package with the install-ready Home payload. |
+| M3–M12 | Planned | Intent and gates remain as specified below. |
 
 ### M0 — Restore trustworthy CI
 
@@ -249,6 +250,19 @@ must open unchanged.
 
 Approval boundary: registry reservation, publication, tags, and GitHub release
 creation remain external actions requiring explicit owner approval.
+
+Completion evidence (main implementation commit `286b872c`, parent
+`c44ff0d3`):
+
+- `@marktoda/dome` `0.3.9` carries the MIT license, root/`./cli`/`./mcp`
+  exports, one `dome` executable, and a Bun range of `>=1.2.13 <2`.
+- The 11 focused tests and all TypeScript checks passed. Run independently,
+  the PWA gate passed 173 tests and its production build.
+- Release rehearsal packed `marktoda-dome-0.3.9.tgz` with 436 entries,
+  1,172,321 packed bytes, and 4,496,533 unpacked bytes. A fresh consumer
+  passed root, CLI, and MCP imports, CLI help, scaffold, and reopen checks.
+- Registry inspection returned E404/unpublished and npm was unauthenticated.
+  No package publication, tag, or GitHub release was performed.
 
 ### M2 — Make the packed tarball a complete product input
 
