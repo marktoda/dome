@@ -1895,7 +1895,7 @@ describe("runStatus", () => {
     expect(cache?.command).toEqual(["/nonexistent/dome-test-provider"]);
   });
 
-  // ----- Task 7: relative time, dimmed zeros, humanized next-action ----------
+  // ----- Task 7: relative time and dimmed zeros ------------------------------
 
   test("last_sync renders as relative time and hides the raw ISO in text mode", async () => {
     const f = await makeFixture();
@@ -1946,21 +1946,6 @@ describe("runStatus", () => {
     expect(out).not.toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
   });
 
-  test("next-action command is humanized (--json stripped) in text mode", async () => {
-    const f = await makeFixture();
-    fixtures.push(f);
-
-    // Fresh vault has sync_needed attention, which generates a next action with
-    // command "dome sync --json". In text mode it should be stripped to "dome sync".
-    expect(await runStatus({ vault: f.vaultPath })).toBe(0);
-
-    const out = captured.out.join("\n");
-    // Humanized command present
-    expect(out).toContain("dome sync");
-    // Raw --json form must not appear in the text output
-    expect(out).not.toContain("dome sync --json");
-  });
-
   test("runs and outbox rows dim zero terms in text mode", async () => {
     const f = await makeFixture();
     fixtures.push(f);
@@ -2007,6 +1992,11 @@ describe("runStatus", () => {
     // Headline present with attention verdict
     expect(out).toContain("dome status");
     expect(out).toContain("attention");
+
+    // The snapshot's machine command is `dome sync --json`; default text
+    // rendering keeps the action but removes the transport-only JSON flag.
+    expect(out).toContain("dome sync");
+    expect(out).not.toContain("dome sync --json");
 
     // sync signal line present
     expect(out).toContain("sync");
