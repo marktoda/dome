@@ -77,6 +77,82 @@ describe("Product Host fixture ownership", () => {
     await expect(starting).resolves.toEqual({ ok: false });
   });
 
+  test("cleanup closes a pending start exactly once before removing its root", async () => {
+    let settleStart!: (result: { ok: true; owner: { close: () => Promise<void> } }) => void;
+    let closes = 0;
+    const owner = { close: async () => { closes += 1; } };
+    const started = new Promise<{ ok: true; owner: typeof owner }>((resolve) => {
+      settleStart = resolve;
+    });
+    const hosts: Array<{ close: () => Promise<void> }> = [];
+    const roots = ["vault"];
+    const removed: string[] = [];
+    const starting = startOwnedProductFixture(
+      hosts,
+      () => started,
+      (result) => result.owner,
+    );
+    expect(hosts).toHaveLength(1);
+
+    const cleaning = cleanupOwnedProductFixtures(hosts, roots, {
+      removeRoot: async (root) => { removed.push(root); },
+      timeoutMs: 25,
+    });
+    expect(hosts).toEqual([]);
+    expect(roots).toEqual([]);
+
+    settleStart({ ok: true, owner });
+    await expect(starting).resolves.toEqual({ ok: true, owner });
+    await expect(cleaning).resolves.toBeUndefined();
+
+    expect(closes).toBe(1);
+    expect(removed).toEqual(["vault"]);
+  });
+
+  test("cleanup permanently retains a timed-out root but closes a later owner once", async () => {
+    let settleStart!: (result: { ok: true; owner: { close: () => Promise<void> } }) => void;
+    let acknowledgeClose!: () => void;
+    let closes = 0;
+    const closed = new Promise<void>((resolve) => { acknowledgeClose = resolve; });
+    const owner = {
+      close: async () => {
+        closes += 1;
+        acknowledgeClose();
+      },
+    };
+    const started = new Promise<{ ok: true; owner: typeof owner }>((resolve) => {
+      settleStart = resolve;
+    });
+    const hosts: Array<{ close: () => Promise<void> }> = [];
+    const roots = ["vault"];
+    const removed: string[] = [];
+    const starting = startOwnedProductFixture(
+      hosts,
+      () => started,
+      (result) => result.owner,
+    );
+    expect(hosts).toHaveLength(1);
+
+    await expect(cleanupOwnedProductFixtures(hosts, roots, {
+      removeRoot: async (root) => { removed.push(root); },
+      timeoutMs: 5,
+    })).rejects.toThrow(
+      "product fixture cleanup retained 1 root(s) after 1 host close failure(s): "
+        + "host 1 close exceeded 5ms",
+    );
+    expect(hosts).toEqual([]);
+    expect(roots).toEqual([]);
+    expect(removed).toEqual([]);
+
+    settleStart({ ok: true, owner });
+    await expect(starting).resolves.toEqual({ ok: true, owner });
+    await closed;
+    await Promise.resolve();
+
+    expect(closes).toBe(1);
+    expect(removed).toEqual([]);
+  });
+
   test("a successful start atomically replaces its pending owner", async () => {
     let closes = 0;
     const owner = { close: async () => { closes += 1; } };
