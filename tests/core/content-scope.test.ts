@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   canonicalContentScopeSchema,
+  CONTENT_SCOPE_MAX_ERRORS,
   CONTENT_SCOPE_MAX_GLOBS,
   contentScopeContains,
   defineContentScope,
@@ -70,11 +71,8 @@ describe("ContentScope contract", () => {
       "wiki//*.md",
       "./*.md",
       "../*.md",
-      "wiki/{draft,final/*.md",
-      "wiki/draft}/*.md",
-      "wiki/[ab.md",
-      "wiki/[]/*.md",
       "wiki/\0.md",
+      "x".repeat(8_193),
     ];
 
     for (const pattern of malformed) {
@@ -102,6 +100,62 @@ describe("ContentScope contract", () => {
     expect(defineContentScope({ version: 1, include: ["**/*.md"], exclude: tooMany }))
       .toMatchObject({ ok: false, errors: [{ code: "too-many-globs" }] });
   });
+
+  test("preflights hostile arrays before element validation and bounds all returned errors", () => {
+    let elementReads = 0;
+    const malformed = new Proxy(
+      Array.from({ length: 1_000 }, (_, index) => `bad\\${index}`),
+      {
+        get(target, property, receiver) {
+          if (property !== "length") elementReads += 1;
+          return Reflect.get(target, property, receiver);
+        },
+      },
+    );
+    const result = defineContentScope({ version: 1, include: malformed, exclude: malformed });
+    expect(result).toMatchObject({
+      ok: false,
+      errors: [
+        { code: "too-many-globs", path: "include" },
+        { code: "too-many-globs", path: "exclude" },
+      ],
+    });
+    expect(elementReads).toBe(0);
+    expect(canonicalContentScopeSchema.safeParse({
+      version: 1,
+      include: malformed,
+      exclude: malformed,
+    }).error?.issues).toHaveLength(2);
+    expect(elementReads).toBe(0);
+
+    const boundedMalformed = Array.from(
+      { length: CONTENT_SCOPE_MAX_GLOBS },
+      (_, index) => `bad\\${index}`,
+    );
+    const bounded = defineContentScope({
+      version: 1,
+      include: boundedMalformed,
+      exclude: boundedMalformed,
+    });
+    expect(bounded.ok).toBe(false);
+    if (!bounded.ok) expect(bounded.errors).toHaveLength(CONTENT_SCOPE_MAX_ERRORS);
+
+    let getterCalls = 0;
+    const activeShape = Object.defineProperty(
+      { version: 1, exclude: [] },
+      "include",
+      {
+        enumerable: true,
+        get() {
+          getterCalls += 1;
+          return ["**/*.md"];
+        },
+      },
+    );
+    expect(defineContentScope(activeShape))
+      .toMatchObject({ ok: false, errors: [{ code: "invalid-shape" }] });
+    expect(getterCalls).toBe(0);
+  });
 });
 
 describe("ContentScope matching", () => {
@@ -123,6 +177,37 @@ describe("ContentScope matching", () => {
     expect(contentScopeContains(language, "notes/nested/zebra.md")).toBe(true);
     expect(contentScopeContains(language, "wiki/A.md")).toBe(false);
     expect(contentScopeContains(language, "other/a.md")).toBe(false);
+  });
+
+  test("pins Bun.Glob literal metacharacter character-class semantics", () => {
+    const literals = scope({
+      version: 1,
+      include: [
+        "notes/[?]draft.md",
+        "notes/[*]draft.md",
+        "notes/[[]draft].md",
+        "notes/[[]draft[]].md",
+        "notes/[{]draft[}].md",
+      ],
+      exclude: [],
+    });
+    for (const path of [
+      "notes/?draft.md",
+      "notes/*draft.md",
+      "notes/[draft].md",
+      "notes/{draft}.md",
+    ]) {
+      expect(contentScopeContains(literals, path), path).toBe(true);
+    }
+    expect(contentScopeContains(literals, "notes/draft.md")).toBe(false);
+
+    // Bun.Glob accepts unmatched opening metacharacters as valid patterns;
+    // version 1 delegates syntax acceptance rather than inventing a parser.
+    expect(defineContentScope({
+      version: 1,
+      include: ["notes/{draft.md", "notes/[draft.md"],
+      exclude: [],
+    }).ok).toBe(true);
   });
 
   test("exclusion wins and the private floor cannot be overridden", () => {

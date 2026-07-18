@@ -37,7 +37,8 @@ compatibility re-export.
 The invariant test proves the non-overridable floors and structurally fences
 the policy Module from engine, capability, filesystem, and Git imports. The
 corpus tests pin version-1 Bun.Glob semantics, malformed input, canonical
-ordering, duplicate elimination, and deterministic selection.
+ordering, duplicate elimination, bounded hostile-input handling, literal
+metacharacters, and deterministic selection.
 
 **Counter-example:** A processor enumerates `wiki/**/*.md` directly even
 though the vault scope excludes `wiki/private/**`, or treats an include of
@@ -50,6 +51,8 @@ Runtime config loading and first-party processor adoption are subsequent M4
 checkpoints tracked in the distribution plan. Until that migration completes,
 the invariant applies to consumers of the ContentScope Module; the plan's
 acceptance gate separately removes every independent first-party universe.
+The temporary engine matcher re-export is removed at the final M4 checkpoint
+after all imports move to the neutral seam.
 
 **Related:**
 - [[wiki/specs/content-scope]]

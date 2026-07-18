@@ -36,15 +36,20 @@ and `exclude` each contain at most 64 globs. Persisted and revision-bound
 contracts are lexically sorted and duplicate-free. The ergonomic constructor
 accepts unordered duplicates and returns the canonical sorted, de-duplicated,
 recursively frozen value. Invalid input returns structured validation errors;
-it does not throw.
+it does not throw. Raw array lengths are checked before any element is
+validated, and at most 16 validation errors are returned, so hostile payloads
+cannot amplify validation work or diagnostics beyond the contract budgets.
 
-Globs are non-empty, vault-relative POSIX patterns interpreted by `Bun.Glob`.
-Absolute patterns, backslashes, empty or dot path segments, trailing slashes,
-control characters, and unbalanced brace/character-class syntax are invalid.
-Matching is case-sensitive. Tests pin the version-1 behavior of `**`, root and
-nested matches, dot paths, braces, and character classes so a Bun behavior
-change cannot silently reinterpret stored policy. A deliberate matching
-language change requires a new content-scope version and migration.
+Globs are non-empty, vault-relative POSIX patterns of at most **8,192
+characters per glob**, interpreted by `Bun.Glob`. Absolute patterns,
+backslashes, empty or dot path segments, trailing slashes, and control
+characters are invalid. Bun owns metacharacter syntax acceptance; Dome does
+not place a narrower hand-written parser in front of it. Matching is
+case-sensitive. Tests pin the version-1 behavior of `**`, root and nested
+matches, dot paths, braces, character classes, and literal metacharacters such
+as `[[]`, `[*]`, and `[?]` so a Bun behavior change cannot silently
+reinterpret stored policy. A deliberate matching-language change requires a
+new content-scope version and migration.
 
 ## Membership order
 
@@ -99,6 +104,17 @@ checkpoint. Vault-config parsing, runtime enumeration, processor migration,
 scope inference during setup, explicit migration consent, and projection
 rebuild behavior are later M4 checkpoints. Until those land, this contract
 does not claim that existing processors already consume ContentScope.
+
+Checkpoint 2 must add an exact setup fixture containing both `lowercase.md`
+and `case-variant.MD`. The assessment, proposal, and preview tests must prove
+that the lowercase file is a member and the uppercase variant is visibly
+excluded; setup must not inventory `.MD` as scoped owner Markdown merely
+because the earlier inspector used a case-insensitive suffix check.
+
+The engine-local `glob-cache` compatibility re-export is temporary. The final
+M4 checkpoint must migrate every source and test import to
+`src/core/glob-match.ts`, delete the compatibility file and its engine-module
+matrix row, and add a structural test proving no old import remains.
 
 ## Related
 
