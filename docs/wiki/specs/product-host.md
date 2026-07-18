@@ -431,11 +431,14 @@ environment, and limits are synchronously snapshotted; each Unix command owns a
 private process group; timeout, abort, or output overflow kills and drains the
 direct child and descendants. A direct wrapper exit, whether zero or nonzero,
 also retires any surviving descendants before inherited output is drained and
-the direct exit is classified. Caller-owned abort signals are brand-checked and
-observed only through captured platform intrinsics, so accessors or mutation
-cannot change command truth or mask cleanup. Home build and installed-upgrade commands have a
-five-minute command bound, while installed loopback HTTP requests retain a
-30-second deadline through response-body consumption. A hosted failure must
+the direct exit is classified. Command success requires natural EOF and complete
+bounded collection on both output pipes; forced reader cancellation is cleanup
+only and fails closed as incomplete output ownership. Caller-owned abort signals
+are brand-checked and observed only through captured platform intrinsics, so
+accessors or mutation cannot change command truth or mask cleanup. Home build
+and installed-upgrade commands have a five-minute command bound, while installed
+loopback HTTP requests retain a 30-second deadline through response-body
+consumption. A hosted failure must
 therefore name its last phase instead of remaining silent until the CI job cap.
 Progress reporting is best-effort: synchronous throws and asynchronous
 rejections are observed but never awaited and cannot change or mask the release

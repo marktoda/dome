@@ -402,6 +402,47 @@ describe("complete product package assembler", () => {
     }
   });
 
+  test("escaped inherited-pipe ownership fails closed after direct exit", async () => {
+    const fixture = await repositoryFixture();
+    const pidPath = join(fixture.temporary, "escaped-pids.json");
+    let ownedPids: number[] = [];
+    const program = [
+      `const child = Bun.spawn([process.execPath, "-e", ${JSON.stringify("setInterval(() => {}, 1_000)")}], { detached: true, stdout: "inherit", stderr: "inherit" });`,
+      `await Bun.write(${JSON.stringify(pidPath)}, JSON.stringify([process.pid, child.pid]));`,
+      `process.stdout.write("partial\\n");`,
+      "process.exit(0);",
+    ].join("\n");
+    try {
+      const startedAt = Date.now();
+      let failure: unknown;
+      try {
+        await runBoundedProductCommand([process.execPath, "-e", program], fixture.repo, {
+          timeoutMs: 5_000,
+          maxStdoutBytes: 1_024,
+          maxStderrBytes: 1_024,
+        });
+      } catch (error) {
+        failure = error;
+      }
+      ownedPids = JSON.parse(await readFile(pidPath, "utf8")) as number[];
+      expect(Date.now() - startedAt).toBeLessThan(4_000);
+      expect(failure).toBeInstanceOf(Error);
+      expect((failure as Error).message).toBe("release command output ownership is incomplete after direct exit");
+      expect(ownedPids).toHaveLength(2);
+      expect(isProcessAlive(ownedPids[0]!)).toBeFalse();
+      expect(isProcessAlive(ownedPids[1]!)).toBeTrue();
+    } finally {
+      if (ownedPids.length === 0 && existsSync(pidPath)) {
+        try { ownedPids = JSON.parse(await readFile(pidPath, "utf8")) as number[]; } catch {}
+      }
+      for (const pid of ownedPids) try { process.kill(pid, "SIGKILL"); } catch {}
+      for (let attempt = 0; attempt < 40 && ownedPids.some(isProcessAlive); attempt += 1) {
+        await Bun.sleep(25);
+      }
+      await fixture.cleanup();
+    }
+  });
+
   test("proxied abort signals are rejected without executing traps", async () => {
     const fixture = await repositoryFixture();
     let traps = 0;
@@ -857,6 +898,11 @@ async function command(argv: string[], cwd: string): Promise<string> {
   ]);
   if (exitCode !== 0) throw new Error(`${argv[0]} failed: ${stderr}`);
   return stdout;
+}
+
+function isProcessAlive(pid: number): boolean {
+  try { process.kill(pid, 0); return true; }
+  catch { return false; }
 }
 
 function sha256(bytes: Uint8Array): string {

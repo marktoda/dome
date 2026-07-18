@@ -121,16 +121,24 @@ export async function runBoundedReleaseCommand(
       if (deadline !== undefined) clearTimeout(deadline);
     }
   };
-  const drainOwnedProcess = async (): Promise<Awaited<typeof drained> | null> => {
+  type DrainOutcome =
+    | Readonly<{ kind: "natural"; results: Awaited<typeof drained> }>
+    | Readonly<{ kind: "forced"; results: Awaited<typeof drained> | null }>;
+  const drainOwnedProcess = async (): Promise<DrainOutcome> => {
     const prompt = await waitWithin(drained, 2_000);
-    if (prompt.kind === "settled") return prompt.value;
+    if (prompt.kind === "settled") {
+      return Object.freeze({ kind: "natural" as const, results: prompt.value });
+    }
     const cancelReader = async (reader: typeof stdoutReader): Promise<void> => {
       try { await reader.cancel("release command cleanup timed out"); } catch {}
     };
     await Promise.allSettled([cancelReader(stdoutReader), cancelReader(stderrReader)]);
     child.unref();
     const cancelled = await waitWithin(drained, 100);
-    return cancelled.kind === "settled" ? cancelled.value : null;
+    return Object.freeze({
+      kind: "forced" as const,
+      results: cancelled.kind === "settled" ? cancelled.value : null,
+    });
   };
   const directExit = exited.then((exitCode) => Object.freeze({ exitCode }));
   // A stream failure must interrupt a still-running command. Successful EOF
@@ -172,18 +180,26 @@ export async function runBoundedReleaseCommand(
   // can orphan descendants just as a failed wrapper can, so retire the whole
   // private group before waiting for inherited output pipes to reach EOF.
   killOwnedProcessGroup();
-  const results = await drainOwnedProcess();
-  let stdoutBytes: Buffer<ArrayBufferLike> = Buffer.alloc(0);
-  let stderrBytes: Buffer<ArrayBufferLike> = Buffer.alloc(0);
-  if (results !== null) {
-    const [stdoutResult, stderrResult] = results;
-    for (const result of [stdoutResult, stderrResult]) {
-      if (result.status === "rejected" && result.reason instanceof Error &&
-        result.reason.message.includes("exceeded its byte budget")) throw result.reason;
-    }
-    if (stdoutResult.status === "fulfilled") stdoutBytes = stdoutResult.value;
-    if (stderrResult.status === "fulfilled") stderrBytes = stderrResult.value;
+  const drain = await drainOwnedProcess();
+  const outputResults = drain.results?.slice(0, 2) ?? [];
+  const budgetFailure = outputResults.find((result) =>
+    result.status === "rejected" && result.reason instanceof Error &&
+    result.reason.message.includes("exceeded its byte budget"));
+  if (budgetFailure?.status === "rejected") throw budgetFailure.reason;
+  if (drain.kind !== "natural") {
+    throw new Error("release command output ownership is incomplete after direct exit");
   }
+  const [stdoutResult, stderrResult] = drain.results;
+  const collectionFailure = [stdoutResult, stderrResult].find((result) => result.status === "rejected");
+  if (collectionFailure?.status === "rejected") {
+    if (collectionFailure.reason instanceof Error) throw collectionFailure.reason;
+    throw new Error("release command output collection failed after direct exit");
+  }
+  if (stdoutResult.status !== "fulfilled" || stderrResult.status !== "fulfilled") {
+    throw new Error("release command output collection failed after direct exit");
+  }
+  const stdoutBytes = stdoutResult.value;
+  const stderrBytes = stderrResult.value;
   if (outcome.exitCode === 0 || snapshot.allowFailure) {
     return Object.freeze({ stdout: stdoutBytes, stderr: stderrBytes, exitCode: outcome.exitCode });
   }
