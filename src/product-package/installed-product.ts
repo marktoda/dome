@@ -41,7 +41,11 @@ export type InstalledProductVerifierDependencies = Readonly<{
   materializeHome(input: Parameters<typeof materializeHomeArtifactArchive>[0]): Promise<MaterializedHomeArtifact>;
 }>;
 
-/** Verify one globally installed complete product without trusting its package manager. */
+const INSTALLED_PRODUCT_TREE_POLICY = Object.freeze({
+  packageManagerOwnedRoot: "node_modules" as const,
+});
+
+/** Verify one globally installed complete product without trusting npm for package-owned evidence. */
 export async function verifyInstalledProduct(input: Readonly<{
   packageRoot: string;
   temporaryParent?: string;
@@ -125,7 +129,11 @@ async function verifyInstalledProductPackageRoot(packageRootInput: string): Prom
   if (manifestRead.mode !== 0o644) throw new Error("installed product manifest mode is not 0644");
   const manifestBytes = manifestRead.bytes;
   const manifest = validateProductPackageManifest(JSON.parse(manifestBytes.toString("utf8")));
-  await verifyClosedTree(packageRoot, [...manifest.files.map((entry) => entry.path), "product/manifest.json"]);
+  await verifyClosedTree(
+    packageRoot,
+    [...manifest.files.map((entry) => entry.path), "product/manifest.json"],
+    INSTALLED_PRODUCT_TREE_POLICY,
+  );
   for (const evidence of manifest.files) {
     await verifyFile(packageRoot, evidence);
   }
@@ -157,7 +165,15 @@ async function verifyFile(root: string, evidence: ProductPackageFile): Promise<v
   }
 }
 
-async function verifyClosedTree(root: string, expectedFiles: ReadonlyArray<string>): Promise<void> {
+async function verifyClosedTree(
+  root: string,
+  expectedFiles: ReadonlyArray<string>,
+  policy: typeof INSTALLED_PRODUCT_TREE_POLICY,
+): Promise<void> {
+  if (expectedFiles.some((path) =>
+    path === policy.packageManagerOwnedRoot || path.startsWith(`${policy.packageManagerOwnedRoot}/`))) {
+    throw new Error("installed product manifest crosses the package-manager ownership boundary");
+  }
   const files = new Set(expectedFiles);
   const directories = new Set<string>();
   for (const path of expectedFiles) {
@@ -168,6 +184,16 @@ async function verifyClosedTree(root: string, expectedFiles: ReadonlyArray<strin
     for (const entry of await readdir(directory, { withFileTypes: true })) {
       const absolute = join(directory, entry.name);
       const path = relative(root, absolute).split(sep).join("/");
+      if (directory === root && path === policy.packageManagerOwnedRoot) {
+        const info = await lstat(absolute);
+        if (!info.isDirectory() || info.isSymbolicLink()) {
+          throw new Error(`installed product package-manager root is not a direct directory: ${path}`);
+        }
+        if (!isSafeInstalledDirectoryMode(info.mode)) {
+          throw new Error(`installed product package-manager directory mode is unsafe: ${path}`);
+        }
+        continue;
+      }
       if (entry.isSymbolicLink()) throw new Error(`installed product contains a symlink: ${path}`);
       if (entry.isDirectory()) {
         if (!directories.has(path)) throw new Error(`installed product contains an unexpected directory: ${path}`);

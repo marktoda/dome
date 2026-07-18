@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -61,6 +61,61 @@ describe("installed complete-product verifier", () => {
         expect(fixture.materializations()).toBe(0);
       } finally { await fixture.cleanup(); }
     }
+  });
+
+  test("admits exactly one npm-owned root dependency subtree without treating it as package evidence", async () => {
+    const fixture = await installedFixture();
+    try {
+      const dependencyRoot = join(fixture.root, "node_modules");
+      await mkdir(join(dependencyRoot, "commander"), { recursive: true });
+      await writeFile(join(dependencyRoot, "commander", "package.json"), "{\"name\":\"commander\"}\n");
+      await chmod(dependencyRoot, 0o755);
+      const evidence = await verifyInstalledProduct({ packageRoot: fixture.root }, fixture.dependencies());
+      expect(evidence.filesVerified).toBe(fixture.manifest.files.length);
+      expect(fixture.materializations()).toBe(1);
+    } finally { await fixture.cleanup(); }
+  });
+
+  test("rejects unsafe or aliased npm ownership roots and every similarly named root extra", async () => {
+    for (const mutation of ["unsafe-node-modules", "linked-node-modules", "lookalike"] as const) {
+      const fixture = await installedFixture();
+      try {
+        if (mutation === "unsafe-node-modules") {
+          await mkdir(join(fixture.root, "node_modules"));
+          await chmod(join(fixture.root, "node_modules"), 0o777);
+        } else if (mutation === "linked-node-modules") {
+          const target = join(fixture.temporary, "dependencies");
+          await mkdir(target);
+          await symlink(target, join(fixture.root, "node_modules"));
+        } else {
+          await mkdir(join(fixture.root, "node_modules-copy"));
+        }
+        const expected = mutation === "unsafe-node-modules" ? "package-manager directory mode is unsafe" :
+          mutation === "linked-node-modules" ? "package-manager root is not a direct directory" :
+            "unexpected directory: node_modules-copy";
+        await expect(verifyInstalledProduct({ packageRoot: fixture.root }, fixture.dependencies()))
+          .rejects.toThrow(expected);
+        expect(fixture.materializations()).toBe(0);
+      } finally { await fixture.cleanup(); }
+    }
+  });
+
+  test("rejects a product manifest that claims npm-owned dependency paths", async () => {
+    const fixture = await installedFixture();
+    try {
+      const dependency = join(fixture.root, "node_modules", "commander", "package.json");
+      const body = Buffer.from("{\"name\":\"commander\"}\n");
+      await mkdir(join(dependency, ".."), { recursive: true });
+      await writeFile(dependency, body);
+      const manifestPath = join(fixture.root, "product", "manifest.json");
+      const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as { files: ProductPackageFile[] };
+      manifest.files.push({ path: "node_modules/commander/package.json", bytes: body.byteLength, sha256: sha256(body), mode: "0644" });
+      manifest.files.sort((left, right) => left.path < right.path ? -1 : 1);
+      await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+      await expect(verifyInstalledProduct({ packageRoot: fixture.root }, fixture.dependencies()))
+        .rejects.toThrow("product package contains development or secret path");
+      expect(fixture.materializations()).toBe(0);
+    } finally { await fixture.cleanup(); }
   });
 
   test("rejects root aliases, extras, symlinks, byte drift, and mode drift before Home admission", async () => {

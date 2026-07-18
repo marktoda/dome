@@ -325,11 +325,18 @@ to `0777` on macOS and Linux, and the installed-product verifier correctly
 rejects group/world-writable shipped files. The producer clone, package output,
 tarball, install cache, and producer HOME/XDG state are then removed and proved
 absent before declared imports, the direct global CLI, the closed installed PWA
-inventory, and strict Home
-materialization run under a neutral working directory and dead-proxy execution
-environment. The real rehearsal is wired once as a pinned Apple-Silicon CI
-job; the progress ledger remains in progress until that hosted evidence
-succeeds on the implementation commit.
+inventory, and strict Home materialization run under a neutral working
+directory and dead-proxy execution environment. The real rehearsal is wired
+once as a pinned Apple-Silicon CI job; the progress ledger remains in progress
+until that hosted evidence succeeds on the implementation commit.
+
+Installed-tree ownership stays explicit: the product manifest closes every
+package-owned path, while npm alone may own one optional root-level
+`node_modules/` subtree. Its root must be a direct, non-symlink, non-group/world-
+writable directory; its dependency contents are not promoted to product
+evidence. No other unexpected root entry is ignored, manifest ownership may not
+cross into that subtree, and the rehearsal still proves the entire prefix and
+all global links remain contained.
 
 Acceptance gate:
 

@@ -421,12 +421,19 @@ v2 report named Bun-specific backend behavior and is not accepted as v3
 evidence.
 
 `src/product-package/installed-product.ts` rejects an aliased package root and
-recursively closes the installed file and directory inventory, including
+recursively closes every package-owned manifest file and directory, including
 manifest mode, unexpected entries, symlinks, special files, and same-handle
-bounded size/hash/mode evidence. It then re-admits the Home archive through the
-ordinary strict Home archive module and binds Home artifact, raw manifest, and
-build commit to the package manifest. The v3 rehearsal runs once in its own
-Apple-Silicon CI job with Bun 1.2.13 and a private HOME/XDG environment. Its
+bounded size/hash/mode evidence. One explicit ownership boundary admits an
+optional root-level `node_modules/` subtree whose contents belong to npm rather
+than to the product manifest. That exact root must be a direct non-symlink
+directory with no group/world write; it is not product evidence, no similarly
+named or additional root entry is ignored, and manifest paths may not cross
+into it. The rehearsal separately proves the whole global prefix and every
+package-manager link remain contained. The verifier then re-admits the Home
+archive through the ordinary strict Home archive module and binds Home
+artifact, raw manifest, and build commit to the package manifest. The v3
+rehearsal runs once in its own Apple-Silicon CI job with Bun 1.2.13 and a
+private HOME/XDG environment. Its
 portable orchestration seam can return only `evidence: false`; only the
 hardwired real clone/build/global-install verifier promotes complete-product
 evidence. npm publication, tags, and a GitHub release remain outside this gate.
