@@ -363,8 +363,22 @@ old branch OID in one Git-lock transition. It also owns Git's real
 `index.lock` before advancing the ref, copies the complete index, and changes
 only the admitted setup paths; unrelated staged entries survive exactly. An
 exact expected parent disables CAS rebasing. Ref and index files plus their
-parent directories are fsynced after publication. Recovery replays those
-durability steps, including a branch that Git has moved into `packed-refs`.
+parent directories are fsynced after publication. Each setup Git lock is an
+exclusive hard link from a fsynced random candidate whose bounded canonical
+witness binds the setup phase token, lock role, candidate device/inode, and
+owning process. Retry removes only the standard lock name that still shares
+that witnessed inode, only after the recorded owner is no longer live; active,
+wrong-token, foreign, and exact-name replacement locks are preserved and
+block. Candidate ownership directories are durable before a standard Git lock
+can become visible. A pre-witness exit can leave inert candidate residue, which
+is never inferred to own a lock.
+
+Recovery replays those durability steps, including a branch that Git has moved
+into `packed-refs`. Replay fsyncs the exact opened loose-ref or packed-ref inode,
+then requires the live storage name, symbolic worktree `HEAD`, and branch value
+to retain the same proof. Linked worktrees keep `index.lock`, `HEAD.lock`, and
+their ownership evidence in the per-worktree gitdir while branch-ref
+publication remains in the common gitdir.
 If a crash lands an admitted setup commit before index publication, recovery
 resets selected entries only when their complete staged OID/mode/stage
 snapshot still equals the exact parent; already-recovered entries replay

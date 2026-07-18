@@ -228,6 +228,7 @@ async function execute(
       files,
       message: phaseMessage(baseline.message, digest, "baseline"),
       expectedBranch: "main",
+      lockOwnerToken: setupGitLockOwner(digest, "baseline"),
       afterRefAdvance: async () => context.afterBoundary("owner-baseline-ref-advanced"),
     });
     commits = await admittedCommitIdsFor(plan, digest, context.scaffold);
@@ -285,6 +286,7 @@ async function execute(
           files: files.map((file) => ({ ...file, content: Buffer.from(file.content) })),
           message,
           expectedBranch,
+          lockOwnerToken: setupGitLockOwner(digest, "configuration"),
           afterRefAdvance: async () => context.afterBoundary("configuration-ref-advanced"),
         })
         : await commitFilesOnHead({
@@ -294,6 +296,7 @@ async function execute(
           expectedHead: parent,
           expectedBranch,
           retryOnCas: false,
+          lockOwnerToken: setupGitLockOwner(digest, "configuration"),
           afterRefAdvance: async () => context.afterBoundary("configuration-ref-advanced"),
         });
       commits = await admittedCommitIdsFor(plan, digest, context.scaffold);
@@ -385,6 +388,7 @@ async function restoreAdmittedIndex(
       path: plan.assessment.target.path,
       branch,
       value: commits.configuration,
+      lockOwnerToken: setupGitLockOwner(setupPlanSha256(plan), "configuration"),
     });
     const record = await readCommitRecord(plan.assessment.target.path, commits.configuration);
     await recoverIndexAfterExactCommit({
@@ -392,18 +396,21 @@ async function restoreAdmittedIndex(
       commit: commits.configuration,
       parent: record.parents[0] ?? null,
       files: expectedConfigurationPaths(plan),
+      lockOwnerToken: setupGitLockOwner(setupPlanSha256(plan), "configuration"),
     });
   } else if (commits.baseline !== null) {
     await replayBranchRefDurability({
       path: plan.assessment.target.path,
       branch,
       value: commits.baseline,
+      lockOwnerToken: setupGitLockOwner(setupPlanSha256(plan), "baseline"),
     });
     await recoverIndexAfterExactCommit({
       path: plan.assessment.target.path,
       commit: commits.baseline,
       parent: null,
       files: action(plan, "commit-owner-baseline")?.paths ?? [],
+      lockOwnerToken: setupGitLockOwner(setupPlanSha256(plan), "baseline"),
     });
   }
 }
@@ -1116,6 +1123,10 @@ function contentScopeWriteBody(
 
 function phaseMessage(subject: string, digest: string, phase: "baseline" | "configuration"): string {
   return `${subject}\n\nDome-Setup-Plan: ${digest}\nDome-Setup-Phase: ${phase}`;
+}
+
+function setupGitLockOwner(digest: string, phase: "baseline" | "configuration"): string {
+  return `dome.setup:${digest}:${phase}`;
 }
 
 function action<K extends AdaptationAction["kind"]>(plan: SetupPlan, kind: K): Extract<AdaptationAction, { kind: K }> | undefined {

@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync } from "node:fs";
-import { mkdir, readFile, rm, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import {
   commit,
@@ -23,6 +23,59 @@ import {
   statusMatrix,
   writeRef,
 } from "../src/git";
+
+type OwnedLockCrashStage = "candidate" | "index" | "head" | "ref" | "after-ref" | "active-index";
+
+async function spawnOwnedLockCrash(
+  path: string,
+  token: string,
+  stage: OwnedLockCrashStage,
+  rootCommit = false,
+): Promise<ReturnType<typeof Bun.spawn>> {
+  const carrier = mkdtempSync(join(tmpdir(), "dome-git-lock-crash-payload-"));
+  const payload = join(carrier, "payload.json");
+  await writeFile(payload, JSON.stringify({ path, token, stage, rootCommit }));
+  const child = Bun.spawn([
+    process.execPath,
+    join(import.meta.dir, "fixtures/git-owned-lock-crash.ts"),
+    payload,
+  ], { stdout: "pipe", stderr: "pipe" });
+  void child.exited.then(() => rm(carrier, { recursive: true, force: true }));
+  return child;
+}
+
+async function waitForPath(path: string): Promise<void> {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    if (await Bun.file(path).exists()) return;
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 10));
+  }
+  throw new Error(`timed out waiting for ${path}`);
+}
+
+async function gitPath(path: string, name: string): Promise<string> {
+  const child = Bun.spawn(["git", "-C", path, "rev-parse", "--path-format=absolute", "--git-path", name], {
+    stdout: "pipe",
+  });
+  const result = (await new Response(child.stdout).text()).trim();
+  expect(await child.exited).toBe(0);
+  return result;
+}
+
+async function ownedLockResidue(path: string): Promise<string[]> {
+  const directory = join(dirname(await gitPath(path, "index")), "dome-lock-owners");
+  try {
+    return (await readdir(directory, { recursive: true }))
+      .filter((name) => name.endsWith(".candidate") || name.endsWith(".json") || name.includes(".dome-work-"));
+  }
+  catch (error) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+async function childStderr(child: ReturnType<typeof Bun.spawn>): Promise<string> {
+  return new Response(child.stderr as ReadableStream<Uint8Array>).text();
+}
 
 describe("git boundary", () => {
   test("fileInfoAtCommit returns the commit that last changed a file", async () => {
@@ -414,6 +467,257 @@ describe("git boundary", () => {
     } finally { await rm(path, { recursive: true, force: true }); }
   });
 
+  for (const stage of ["candidate", "index", "head", "ref"] as const) {
+    test(`recovers only exact dead owned Git locks after a real ${stage} process exit`, async () => {
+      const path = mkdtempSync(join(tmpdir(), `dome-git-owned-${stage}-`));
+      try {
+        await initRepo(path);
+        await write(path, "base.md", "base\n");
+        const base = await commit({ path, message: "base", files: ["base.md"] });
+        const token = `test-owned-${stage}`;
+        const child = await spawnOwnedLockCrash(path, token, stage);
+        expect(await child.exited, await childStderr(child)).toBe(86);
+        const indexLock = await gitPath(path, "index.lock");
+        expect(await Bun.file(indexLock).exists()).toBe(stage !== "candidate");
+        const candidate = await commitFilesOnHead({
+          path,
+          files: [{ filepath: "Dome.md", content: "retry\n" }],
+          message: "retry",
+          expectedHead: base,
+          retryOnCas: false,
+          lockOwnerToken: token,
+        });
+        expect(await resolveRef({ path, ref: "refs/heads/main" })).toBe(candidate);
+        expect(await Bun.file(indexLock).exists()).toBeFalse();
+        const residue = await ownedLockResidue(path);
+        if (stage === "candidate") {
+          expect(residue.filter((name) => name.endsWith(".candidate"))).toHaveLength(1);
+          expect(residue.some((name) => name.endsWith(".json"))).toBeFalse();
+        } else {
+          expect(residue).toEqual([]);
+        }
+      } finally { await rm(path, { recursive: true, force: true }); }
+    });
+  }
+
+  test("recovers an exact dead index lock after ref advance and rebuilds admitted staging", async () => {
+    const path = mkdtempSync(join(tmpdir(), "dome-git-owned-after-ref-"));
+    try {
+      await initRepo(path);
+      await write(path, "Dome.md", "base\n");
+      const base = await commit({ path, message: "base", files: ["Dome.md"] });
+      const token = "test-owned-after-ref";
+      const child = await spawnOwnedLockCrash(path, token, "after-ref");
+      expect(await child.exited, await childStderr(child)).toBe(86);
+      const candidate = await resolveRef({ path, ref: "refs/heads/main" });
+      expect(candidate).not.toBe(base);
+      expect(await Bun.file(await gitPath(path, "index.lock")).exists()).toBeTrue();
+      await replayBranchRefDurability({ path, branch: "main", value: candidate, lockOwnerToken: token });
+      await recoverIndexAfterExactCommit({
+        path, commit: candidate, parent: base, files: ["Dome.md"], lockOwnerToken: token,
+      });
+      expect(await Bun.file(await gitPath(path, "index.lock")).exists()).toBeFalse();
+      expect(await ownedLockResidue(path)).toEqual([]);
+    } finally { await rm(path, { recursive: true, force: true }); }
+  });
+
+  test("recovers an unborn-root index lock after a real ref-advanced exit", async () => {
+    const path = mkdtempSync(join(tmpdir(), "dome-git-owned-root-after-ref-"));
+    try {
+      await initRepo(path);
+      const token = "test-owned-root-after-ref";
+      const child = await spawnOwnedLockCrash(path, token, "after-ref", true);
+      expect(await child.exited, await childStderr(child)).toBe(86);
+      const candidate = await resolveRef({ path, ref: "refs/heads/main" });
+      await replayBranchRefDurability({ path, branch: "main", value: candidate, lockOwnerToken: token });
+      await recoverIndexAfterExactCommit({
+        path, commit: candidate, parent: null, files: ["Dome.md"], lockOwnerToken: token,
+      });
+      expect(await Bun.file(await gitPath(path, "index.lock")).exists()).toBeFalse();
+      expect(await ownedLockResidue(path)).toEqual([]);
+    } finally { await rm(path, { recursive: true, force: true }); }
+  });
+
+  test("refuses and preserves an exact foreign replacement of a dead Dome index lock", async () => {
+    const path = mkdtempSync(join(tmpdir(), "dome-git-owned-replaced-"));
+    try {
+      await initRepo(path);
+      await write(path, "base.md", "base\n");
+      const base = await commit({ path, message: "base", files: ["base.md"] });
+      const token = "test-owned-replaced";
+      const child = await spawnOwnedLockCrash(path, token, "index");
+      expect(await child.exited, await childStderr(child)).toBe(86);
+      const indexLock = await gitPath(path, "index.lock");
+      await unlink(indexLock);
+      await writeFile(indexLock, "foreign owner lock\n");
+      await expect(commitFilesOnHead({
+        path,
+        files: [{ filepath: "Dome.md", content: "retry\n" }],
+        message: "retry",
+        expectedHead: base,
+        retryOnCas: false,
+        lockOwnerToken: token,
+      })).rejects.toThrow("could not lock index");
+      expect(await readFile(indexLock, "utf8")).toBe("foreign owner lock\n");
+      expect(await resolveRef({ path, ref: "refs/heads/main" })).toBe(base);
+    } finally { await rm(path, { recursive: true, force: true }); }
+  });
+
+  test("refuses to recover a same-token lock while its exact owner process is alive", async () => {
+    const path = mkdtempSync(join(tmpdir(), "dome-git-owned-active-"));
+    let child: ReturnType<typeof Bun.spawn> | null = null;
+    try {
+      await initRepo(path);
+      await write(path, "base.md", "base\n");
+      const base = await commit({ path, message: "base", files: ["base.md"] });
+      const token = "test-owned-active";
+      child = await spawnOwnedLockCrash(path, token, "active-index");
+      const indexLock = await gitPath(path, "index.lock");
+      await waitForPath(indexLock);
+      await expect(commitFilesOnHead({
+        path,
+        files: [{ filepath: "Dome.md", content: "retry\n" }],
+        message: "retry",
+        expectedHead: base,
+        retryOnCas: false,
+        lockOwnerToken: token,
+      })).rejects.toThrow("remains owned by active process");
+      expect(await Bun.file(indexLock).exists()).toBeTrue();
+      expect(await resolveRef({ path, ref: "refs/heads/main" })).toBe(base);
+    } finally {
+      child?.kill(9);
+      if (child !== null) await child.exited;
+      await rm(path, { recursive: true, force: true });
+    }
+  });
+
+  test("copies the complete live index after locking and preserves unrelated raced staging", async () => {
+    const path = mkdtempSync(join(tmpdir(), "dome-git-owned-unrelated-stage-"));
+    try {
+      await initRepo(path);
+      await write(path, "Dome.md", "base dome\n");
+      await write(path, "Owner.md", "base owner\n");
+      const base = await commit({ path, message: "base", files: ["Dome.md", "Owner.md"] });
+      await write(path, "Owner.md", "owner staged\n");
+      const candidate = await commitFilesOnHead({
+        path,
+        files: [{ filepath: "Dome.md", content: "dome committed\n" }],
+        message: "candidate",
+        expectedHead: base,
+        lockOwnerToken: "test-owned-unrelated-stage",
+        beforeRefAdvance: async () => {
+          const add = Bun.spawn(["git", "-C", path, "add", "--", "Owner.md"]);
+          expect(await add.exited).toBe(0);
+        },
+      });
+      expect(await resolveRef({ path, ref: "refs/heads/main" })).toBe(candidate);
+      const staged = Bun.spawn(["git", "-C", path, "show", ":Owner.md"], { stdout: "pipe" });
+      expect(await new Response(staged.stdout).text()).toBe("owner staged\n");
+      expect(await staged.exited).toBe(0);
+    } finally { await rm(path, { recursive: true, force: true }); }
+  });
+
+  test("a wrong recovery token preserves a dead Dome-owned lock exactly", async () => {
+    const path = mkdtempSync(join(tmpdir(), "dome-git-owned-wrong-token-"));
+    try {
+      await initRepo(path);
+      await write(path, "base.md", "base\n");
+      const base = await commit({ path, message: "base", files: ["base.md"] });
+      const child = await spawnOwnedLockCrash(path, "right-token", "index");
+      expect(await child.exited, await childStderr(child)).toBe(86);
+      const indexLock = await gitPath(path, "index.lock");
+      const before = await readFile(indexLock);
+      await expect(commitFilesOnHead({
+        path,
+        files: [{ filepath: "Dome.md", content: "wrong\n" }],
+        message: "wrong token",
+        expectedHead: base,
+        lockOwnerToken: "wrong-token",
+      })).rejects.toThrow("could not lock index");
+      expect(await readFile(indexLock)).toEqual(before);
+      expect(await resolveRef({ path, ref: "refs/heads/main" })).toBe(base);
+      await commitFilesOnHead({
+        path,
+        files: [{ filepath: "Dome.md", content: "right\n" }],
+        message: "right token",
+        expectedHead: base,
+        lockOwnerToken: "right-token",
+      });
+    } finally { await rm(path, { recursive: true, force: true }); }
+  });
+
+  test("refuses same-inode branch-lock byte substitution before publication", async () => {
+    const path = mkdtempSync(join(tmpdir(), "dome-git-owned-ref-bytes-"));
+    try {
+      await initRepo(path);
+      await write(path, "base.md", "base\n");
+      const base = await commit({ path, message: "base", files: ["base.md"] });
+      const refLock = `${await gitPath(path, "refs/heads/main")}.lock`;
+      await expect(commitFilesOnHead({
+        path,
+        files: [{ filepath: "Dome.md", content: "candidate\n" }],
+        message: "candidate",
+        expectedHead: base,
+        lockOwnerToken: "test-owned-ref-bytes",
+        afterRefLock: async () => { await writeFile(refLock, `${"0".repeat(40)}\n`); },
+      })).rejects.toThrow("refused replaced owned lock");
+      expect(await resolveRef({ path, ref: "refs/heads/main" })).toBe(base);
+      expect(await Bun.file(refLock).exists()).toBeFalse();
+      expect(await Bun.file(await gitPath(path, "index.lock")).exists()).toBeFalse();
+      expect(await ownedLockResidue(path)).toEqual([]);
+    } finally { await rm(path, { recursive: true, force: true }); }
+  });
+
+  test("recovers a linked-worktree after-ref exit using per-worktree locks and the common ref", async () => {
+    const main = mkdtempSync(join(tmpdir(), "dome-git-owned-linked-main-"));
+    const linked = mkdtempSync(join(tmpdir(), "dome-git-owned-linked-worktree-"));
+    await rm(linked, { recursive: true, force: true });
+    try {
+      await initRepo(main);
+      await write(main, "Dome.md", "base\n");
+      const base = await commit({ path: main, message: "base", files: ["Dome.md"] });
+      const added = Bun.spawn(["git", "-C", main, "worktree", "add", "-b", "linked", linked]);
+      expect(await added.exited).toBe(0);
+      const mainIndex = await readFile(await gitPath(main, "index"));
+      const linkedIndex = await gitPath(linked, "index");
+      const linkedHead = await gitPath(linked, "HEAD");
+      const commonRef = await gitPath(linked, "refs/heads/linked");
+      expect(linkedIndex).toContain("/.git/worktrees/");
+      expect(linkedHead).toContain("/.git/worktrees/");
+      expect(commonRef).toContain(`${basename(main)}/.git/refs/heads/linked`);
+
+      const token = "test-owned-linked-after-ref";
+      const child = await spawnOwnedLockCrash(linked, token, "after-ref");
+      expect(await child.exited, await childStderr(child)).toBe(86);
+      const candidate = await resolveRef({ path: linked, ref: "refs/heads/linked" });
+      expect(candidate).not.toBe(base);
+      expect(await Bun.file(`${linkedIndex}.lock`).exists()).toBeTrue();
+      expect(await Bun.file(`${await gitPath(main, "index")}.lock`).exists()).toBeFalse();
+      expect(await resolveRef({ path: main, ref: "refs/heads/main" })).toBe(base);
+      expect(await readFile(await gitPath(main, "index"))).toEqual(mainIndex);
+
+      await replayBranchRefDurability({
+        path: linked,
+        branch: "linked",
+        value: candidate,
+        lockOwnerToken: token,
+      });
+      await recoverIndexAfterExactCommit({
+        path: linked,
+        commit: candidate,
+        parent: base,
+        files: ["Dome.md"],
+        lockOwnerToken: token,
+      });
+      expect(await Bun.file(`${linkedIndex}.lock`).exists()).toBeFalse();
+      expect(await ownedLockResidue(linked)).toEqual([]);
+      expect(await readFile(await gitPath(main, "index"))).toEqual(mainIndex);
+    } finally {
+      await rm(linked, { recursive: true, force: true });
+      await rm(main, { recursive: true, force: true });
+    }
+  });
+
   test("replays ref-parent durability after the branch rename is visible", async () => {
     const path = mkdtempSync(join(tmpdir(), "dome-git-ref-durability-"));
     try {
@@ -445,6 +749,120 @@ describe("git boundary", () => {
       await replayBranchRefDurability({ path, branch: "main", value: head });
       expect(await resolveRef({ path, ref: "refs/heads/main" })).toBe(head);
     } finally { await rm(path, { recursive: true, force: true }); }
+  });
+
+  test("ref durability refuses a loose branch move after syncing its exact opened inode", async () => {
+    const path = mkdtempSync(join(tmpdir(), "dome-git-ref-replay-race-"));
+    try {
+      await initRepo(path);
+      await write(path, "base.md", "one\n");
+      const first = await commit({ path, message: "first", files: ["base.md"] });
+      await write(path, "base.md", "two\n");
+      const second = await commit({ path, message: "second", files: ["base.md"] });
+      await expect(replayBranchRefDurability({
+        path,
+        branch: "main",
+        value: second,
+        beforePostcheck: async () => {
+          const moved = Bun.spawn(["git", "-C", path, "update-ref", "refs/heads/main", first]);
+          expect(await moved.exited).toBe(0);
+        },
+      })).rejects.toThrow("ref durability");
+      expect(await resolveRef({ path, ref: "refs/heads/main" })).toBe(first);
+    } finally { await rm(path, { recursive: true, force: true }); }
+  });
+
+  test("ref durability refuses a packed branch override after syncing exact packed evidence", async () => {
+    const path = mkdtempSync(join(tmpdir(), "dome-git-packed-replay-race-"));
+    try {
+      await initRepo(path);
+      await write(path, "base.md", "one\n");
+      const first = await commit({ path, message: "first", files: ["base.md"] });
+      await write(path, "base.md", "two\n");
+      const second = await commit({ path, message: "second", files: ["base.md"] });
+      const packed = Bun.spawn(["git", "-C", path, "pack-refs", "--all", "--prune"]);
+      expect(await packed.exited).toBe(0);
+      await expect(replayBranchRefDurability({
+        path,
+        branch: "main",
+        value: second,
+        beforePostcheck: async () => {
+          const moved = Bun.spawn(["git", "-C", path, "update-ref", "refs/heads/main", first]);
+          expect(await moved.exited).toBe(0);
+        },
+      })).rejects.toThrow("ref durability");
+      expect(await resolveRef({ path, ref: "refs/heads/main" })).toBe(first);
+    } finally { await rm(path, { recursive: true, force: true }); }
+  });
+
+  test("ref durability refuses a same-OID loose-ref inode replacement after sync", async () => {
+    const path = mkdtempSync(join(tmpdir(), "dome-git-ref-same-value-race-"));
+    try {
+      await initRepo(path);
+      await write(path, "base.md", "base\n");
+      const head = await commit({ path, message: "base", files: ["base.md"] });
+      const refPath = join(path, ".git/refs/heads/main");
+      await expect(replayBranchRefDurability({
+        path,
+        branch: "main",
+        value: head,
+        beforePostcheck: async () => {
+          const replacement = `${refPath}.replacement`;
+          await writeFile(replacement, `${head}\n`);
+          await rename(replacement, refPath);
+        },
+      })).rejects.toThrow("storage identity changed");
+    } finally { await rm(path, { recursive: true, force: true }); }
+  });
+
+  test("ref durability refuses a same-content packed-refs inode replacement after sync", async () => {
+    const path = mkdtempSync(join(tmpdir(), "dome-git-packed-same-value-race-"));
+    try {
+      await initRepo(path);
+      await write(path, "base.md", "base\n");
+      const head = await commit({ path, message: "base", files: ["base.md"] });
+      const packed = Bun.spawn(["git", "-C", path, "pack-refs", "--all", "--prune"]);
+      expect(await packed.exited).toBe(0);
+      const packedPath = join(path, ".git/packed-refs");
+      await expect(replayBranchRefDurability({
+        path,
+        branch: "main",
+        value: head,
+        beforePostcheck: async () => {
+          const replacement = `${packedPath}.replacement`;
+          await writeFile(replacement, await readFile(packedPath));
+          await rename(replacement, packedPath);
+        },
+      })).rejects.toThrow("storage identity changed");
+    } finally { await rm(path, { recursive: true, force: true }); }
+  });
+
+  test("ref durability binds linked-worktree HEAD to its common branch ref", async () => {
+    const main = mkdtempSync(join(tmpdir(), "dome-git-linked-replay-main-"));
+    const linked = mkdtempSync(join(tmpdir(), "dome-git-linked-replay-worktree-"));
+    await rm(linked, { recursive: true, force: true });
+    try {
+      await initRepo(main);
+      await write(main, "base.md", "base\n");
+      const head = await commit({ path: main, message: "base", files: ["base.md"] });
+      const added = Bun.spawn(["git", "-C", main, "worktree", "add", "-b", "linked", linked]);
+      expect(await added.exited).toBe(0);
+      await replayBranchRefDurability({ path: linked, branch: "linked", value: head });
+      await expect(replayBranchRefDurability({
+        path: linked,
+        branch: "linked",
+        value: head,
+        beforePostcheck: async () => {
+          const switched = Bun.spawn(["git", "-C", linked, "switch", "-c", "raced"]);
+          expect(await switched.exited).toBe(0);
+        },
+      })).rejects.toThrow("ref durability refused changed branch");
+      expect(await Bun.file(join(linked, ".git")).text()).toStartWith("gitdir:");
+      expect(await resolveRef({ path: main, ref: "refs/heads/main" })).toBe(head);
+    } finally {
+      await rm(linked, { recursive: true, force: true });
+      await rm(main, { recursive: true, force: true });
+    }
   });
 
   test("recovery preserves owner staging and replays a published index rename", async () => {

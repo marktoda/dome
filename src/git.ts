@@ -7,11 +7,27 @@
 
 import git from "isomorphic-git";
 import fs from "node:fs";
+import { randomBytes } from "node:crypto";
 import { dirname, isAbsolute, join, posix, relative, resolve } from "node:path";
-import { existsSync, lstatSync, mkdtempSync, readFileSync, readlinkSync, rmSync, statSync } from "node:fs";
-import { open as openFile, readFile as readFileAsync, rename as renameFile, unlink as unlinkFile } from "node:fs/promises";
+import {
+  existsSync,
+  lstatSync,
+  mkdtempSync,
+  readFileSync,
+  readlinkSync,
+  rmSync,
+  statSync,
+  type BigIntStats,
+} from "node:fs";
+import {
+  open as openFile,
+  readFile as readFileAsync,
+  rename as renameFile,
+  unlink as unlinkFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { compareStrings } from "./core/compare";
+import { OwnedGitLock, recoverDeadOwnedGitLock } from "./git-owned-lock";
 
 /**
  * True iff `path` sits inside a git working tree. Walks up from `path` looking
@@ -599,6 +615,13 @@ export async function commitFilesOnHead(opts: {
   afterRefAdvance?: (commit: string) => Promise<void>;
   beforeIndexParentSync?: () => Promise<void>;
   beforeRefParentSync?: () => Promise<void>;
+  /** Stable setup-operation token used only to recover this operation's dead owned locks. */
+  lockOwnerToken?: string;
+  /** Test seams at exact durable lock-acquisition boundaries. */
+  afterIndexLock?: () => Promise<void>;
+  afterHeadLock?: () => Promise<void>;
+  afterRefLock?: () => Promise<void>;
+  afterLockCandidateDurable?: (role: string) => Promise<void>;
 }): Promise<string> {
   if (opts.files.length === 0) {
     throw new Error("commitFilesOnHead: no files to commit");
@@ -666,8 +689,14 @@ export async function commitFilesOnHead(opts: {
     if (opts.beforeRefAdvance !== undefined) {
       await opts.beforeRefAdvance(attempt);
     }
-    const indexTransition = await LockedIndexTransition.acquire(context, opts.beforeIndexParentSync);
+    const indexTransition = await LockedIndexTransition.acquire(
+      context,
+      opts.beforeIndexParentSync,
+      opts.lockOwnerToken,
+      opts.afterLockCandidateDurable,
+    );
     try {
+      await opts.afterIndexLock?.();
       const lockedIndex = await indexTransition.snapshot([...indexBefore.keys()]);
       if (!sameIndexSnapshot(lockedIndex, indexBefore)) {
         const current = await git.resolveRef({ fs, dir: root, ref: branch });
@@ -684,6 +713,10 @@ export async function commitFilesOnHead(opts: {
           expectedOld: head,
           value: commitOid,
           beforeParentSync: opts.beforeRefParentSync,
+          ownerToken: opts.lockOwnerToken,
+          afterHeadLock: opts.afterHeadLock,
+          afterRefLock: opts.afterRefLock,
+          afterLockCandidateDurable: opts.afterLockCandidateDurable,
         });
       } catch (error) {
         const current = await git.resolveRef({ fs, dir: root, ref: branch });
@@ -727,6 +760,11 @@ export async function commitInitialFiles(opts: {
   afterRefAdvance?: (commit: string) => Promise<void>;
   beforeIndexParentSync?: () => Promise<void>;
   beforeRefParentSync?: () => Promise<void>;
+  lockOwnerToken?: string;
+  afterIndexLock?: () => Promise<void>;
+  afterHeadLock?: () => Promise<void>;
+  afterRefLock?: () => Promise<void>;
+  afterLockCandidateDurable?: (role: string) => Promise<void>;
 }): Promise<string> {
   if (opts.files.length === 0) throw new Error("commitInitialFiles: no files to commit");
   const context = await resolveGitContext(opts.path);
@@ -761,8 +799,14 @@ export async function commitInitialFiles(opts: {
     fs, dir: root, message: opts.message, author, tree, parent: [], noUpdateBranch: true,
   });
   if (opts.beforeRefAdvance !== undefined) await opts.beforeRefAdvance();
-  const indexTransition = await LockedIndexTransition.acquire(context, opts.beforeIndexParentSync);
+  const indexTransition = await LockedIndexTransition.acquire(
+    context,
+    opts.beforeIndexParentSync,
+    opts.lockOwnerToken,
+    opts.afterLockCandidateDurable,
+  );
   try {
+    await opts.afterIndexLock?.();
     const lockedIndex = await indexTransition.snapshot([...indexBefore.keys()]);
     if (!sameIndexSnapshot(lockedIndex, indexBefore)) {
       throw new Error("commitInitialFiles: index changed before exact transition");
@@ -773,6 +817,10 @@ export async function commitInitialFiles(opts: {
       expectedOld: null,
       value: oid,
       beforeParentSync: opts.beforeRefParentSync,
+      ownerToken: opts.lockOwnerToken,
+      afterHeadLock: opts.afterHeadLock,
+      afterRefLock: opts.afterRefLock,
+      afterLockCandidateDurable: opts.afterLockCandidateDurable,
     });
     if (opts.afterRefAdvance !== undefined) await opts.afterRefAdvance(oid);
     await indexTransition.resetSelected(oid, fulls.map((file) => file.filepath));
@@ -835,13 +883,18 @@ export async function recoverIndexAfterExactCommit(opts: {
   parent: string | null;
   files: ReadonlyArray<string>;
   beforeIndexParentSync?: () => Promise<void>;
+  lockOwnerToken?: string;
 }): Promise<void> {
   if (opts.files.length === 0) return;
   const context = await resolveGitContext(opts.path);
   const fulls = opts.files.map((path) => fullVaultPath(context.prefix, path));
   const recovered = await readTreeSnapshot(context, opts.commit, fulls);
   const interrupted = await readTreeSnapshot(context, opts.parent, fulls);
-  const transition = await LockedIndexTransition.acquire(context, opts.beforeIndexParentSync);
+  const transition = await LockedIndexTransition.acquire(
+    context,
+    opts.beforeIndexParentSync,
+    opts.lockOwnerToken,
+  );
   try {
     const current = await transition.snapshot(fulls);
     if (sameIndexSnapshot(current, recovered)) {
@@ -1666,6 +1719,12 @@ async function readIndexSnapshot(
  * Unrelated staged entries remain byte-for-byte present because the whole
  * index is copied before selected paths are reset in the lock candidate.
  */
+async function ownedGitLockRoot(context: GitContext): Promise<string> {
+  const raw = (await runNativeGit(["-C", context.root, "rev-parse", "--git-path", "index"])).trim();
+  const indexPath = isAbsolute(raw) ? raw : resolve(context.root, raw);
+  return dirname(indexPath);
+}
+
 class LockedIndexTransition {
   private published = false;
 
@@ -1674,43 +1733,68 @@ class LockedIndexTransition {
     readonly indexPath: string,
     readonly lockPath: string,
     private readonly beforeParentSync?: (() => Promise<void>) | undefined,
+    private readonly owned?: OwnedGitLock | undefined,
   ) {}
 
   static async acquire(
     context: GitContext,
     beforeParentSync?: (() => Promise<void>) | undefined,
+    ownerToken?: string | undefined,
+    afterCandidateDurable?: ((role: string) => Promise<void>) | undefined,
   ): Promise<LockedIndexTransition> {
     const raw = (await runNativeGit(["-C", context.root, "rev-parse", "--git-path", "index"])).trim();
     const indexPath = isAbsolute(raw) ? raw : resolve(context.root, raw);
     const lockPath = `${indexPath}.lock`;
     await fs.promises.mkdir(dirname(indexPath), { recursive: true });
-    let lock: Awaited<ReturnType<typeof openFile>>;
-    try {
-      lock = await openFile(lockPath, "wx", 0o600);
-    } catch (error) {
-      throw new Error(
-        `commitFilesOnHead: could not lock index: ${error instanceof Error ? error.message : String(error)}`,
-      );
+    const owned = await OwnedGitLock.acquire(
+      await ownedGitLockRoot(context),
+      lockPath,
+      ownerToken,
+      "index",
+      new Uint8Array(),
+      afterCandidateDurable,
+    );
+    let lock: Awaited<ReturnType<typeof openFile>> | null = null;
+    if (owned === null) {
+      try { lock = await openFile(lockPath, "wx", 0o600); }
+      catch (error) {
+        throw new Error(
+          `commitFilesOnHead: could not lock index: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
     }
     try {
       let bytes: Buffer | null;
       try { bytes = await fs.promises.readFile(indexPath); }
-      catch (error) {
-        if (error instanceof Error && "code" in error && error.code === "ENOENT") bytes = null;
-        else throw error;
+      catch (error) { if (hasFsCode(error, "ENOENT")) bytes = null; else throw error; }
+      if (owned !== null) {
+        if (bytes !== null) await owned.rewrite(bytes);
+      } else {
+        const writable = lock!;
+        if (bytes !== null) await writable.writeFile(bytes);
+        await writable.sync();
+        await writable.close();
+        lock = null;
       }
-      if (bytes !== null) await lock.writeFile(bytes);
-      await lock.sync();
-      await lock.close();
+      const transition = new LockedIndexTransition(
+        context,
+        indexPath,
+        lockPath,
+        beforeParentSync,
+        owned ?? undefined,
+      );
       if (bytes === null) {
-        await runNativeGit(["-C", context.root, "read-tree", "--empty"], {
-          env: { GIT_INDEX_FILE: lockPath },
+        await transition.mutateLockIndex(async (workingIndex) => {
+          await runNativeGit(["-C", context.root, "read-tree", "--empty"], {
+            env: { GIT_INDEX_FILE: workingIndex },
+          });
         });
       }
-      return new LockedIndexTransition(context, indexPath, lockPath, beforeParentSync);
+      return transition;
     } catch (error) {
-      await lock.close().catch(() => {});
-      await unlinkFile(lockPath).catch(() => {});
+      await lock?.close().catch(() => {});
+      if (owned !== null) await owned.release().catch(() => {});
+      else await unlinkFile(lockPath).catch(() => {});
       throw error;
     }
   }
@@ -1721,18 +1805,51 @@ class LockedIndexTransition {
 
   async resetSelected(commit: string, paths: ReadonlyArray<string>): Promise<void> {
     if (paths.length === 0) return;
-    await runNativeGit([
-      "-C", this.context.root, "reset", commit, "--", ...paths.map(literalPathspec),
-    ], { env: { GIT_INDEX_FILE: this.lockPath } });
+    await this.mutateLockIndex(async (workingIndex) => {
+      await runNativeGit([
+        "-C", this.context.root, "reset", commit, "--", ...paths.map(literalPathspec),
+      ], { env: { GIT_INDEX_FILE: workingIndex } });
+    });
+  }
+
+  private async mutateLockIndex(operation: (workingIndex: string) => Promise<void>): Promise<void> {
+    const workingIndex = `${this.lockPath}.dome-work-${randomBytes(12).toString("hex")}`;
+    const seed = await fs.promises.readFile(this.lockPath);
+    const handle = await openFile(workingIndex, "wx", 0o600);
+    try {
+      if (seed.byteLength > 0) await handle.writeFile(seed);
+      await handle.sync();
+    } finally { await handle.close(); }
+    try {
+      await operation(workingIndex);
+      const result = await fs.promises.readFile(workingIndex);
+      if (this.owned !== undefined) await this.owned.rewrite(result);
+      else {
+        const lock = await openFile(this.lockPath, "r+");
+        try {
+          await lock.truncate(0);
+          await lock.writeFile(result);
+          await lock.sync();
+        } finally { await lock.close(); }
+      }
+    } finally {
+      await unlinkFile(workingIndex).catch(() => {});
+      await unlinkFile(`${workingIndex}.lock`).catch(() => {});
+    }
   }
 
   async publish(): Promise<void> {
     const candidate = await openFile(this.lockPath, "r+");
     try { await candidate.sync(); } finally { await candidate.close(); }
-    await renameFile(this.lockPath, this.indexPath);
-    this.published = true;
-    if (this.beforeParentSync !== undefined) await this.beforeParentSync();
-    await syncDirectory(dirname(this.indexPath));
+    if (this.owned !== undefined) {
+      await this.owned.publish(this.indexPath, this.beforeParentSync);
+      this.published = true;
+    } else {
+      await renameFile(this.lockPath, this.indexPath);
+      this.published = true;
+      if (this.beforeParentSync !== undefined) await this.beforeParentSync();
+      await syncDirectory(dirname(this.indexPath));
+    }
   }
 
   async replayPublishedDurability(): Promise<void> {
@@ -1742,7 +1859,10 @@ class LockedIndexTransition {
   }
 
   async abort(): Promise<void> {
-    if (!this.published) await unlinkFile(this.lockPath).catch(() => {});
+    if (!this.published) {
+      if (this.owned !== undefined) await this.owned.release();
+      else await unlinkFile(this.lockPath).catch(() => {});
+    }
   }
 }
 
@@ -1784,19 +1904,33 @@ async function advanceCurrentBranchRefExact(input: {
   readonly expectedOld: string | null;
   readonly value: string;
   readonly beforeParentSync?: (() => Promise<void>) | undefined;
+  readonly ownerToken?: string | undefined;
+  readonly afterHeadLock?: (() => Promise<void>) | undefined;
+  readonly afterRefLock?: (() => Promise<void>) | undefined;
+  readonly afterLockCandidateDurable?: ((role: string) => Promise<void>) | undefined;
 }): Promise<void> {
   const headPathRaw = (await runNativeGit([
     "-C", input.context.root, "rev-parse", "--git-path", "HEAD",
   ])).trim();
   const headPath = isAbsolute(headPathRaw) ? headPathRaw : resolve(input.context.root, headPathRaw);
   const lockPath = `${headPath}.lock`;
-  let lock: Awaited<ReturnType<typeof openFile>>;
-  try {
-    lock = await openFile(lockPath, "wx", 0o600);
-  } catch (error) {
-    throw new Error(`commitFilesOnHead: could not lock symbolic HEAD: ${error instanceof Error ? error.message : String(error)}`);
+  const owned = await OwnedGitLock.acquire(
+    await ownedGitLockRoot(input.context),
+    lockPath,
+    input.ownerToken,
+    "symbolic HEAD",
+    "Dome symbolic HEAD semaphore\n",
+    input.afterLockCandidateDurable,
+  );
+  let lock: Awaited<ReturnType<typeof openFile>> | null = null;
+  if (owned === null) {
+    try { lock = await openFile(lockPath, "wx", 0o600); }
+    catch (error) {
+      throw new Error(`commitFilesOnHead: could not lock symbolic HEAD: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
   try {
+    await input.afterHeadLock?.();
     const symbolic = (await readFileAsync(headPath, "utf8")).replace(/\r?\n$/, "");
     if (symbolic !== `ref: ${input.expectedBranch}`) {
       throw new Error(`commitFilesOnHead: symbolic HEAD changed from ${input.expectedBranch}`);
@@ -1807,10 +1941,14 @@ async function advanceCurrentBranchRefExact(input: {
       input.expectedOld,
       input.value,
       input.beforeParentSync,
+      input.ownerToken,
+      input.afterRefLock,
+      input.afterLockCandidateDurable,
     );
   } finally {
-    try { await lock.close(); }
-    finally { await unlinkFile(lockPath).catch(() => {}); }
+    await lock?.close().catch(() => {});
+    if (owned !== null) await owned.release();
+    else await unlinkFile(lockPath).catch(() => {});
   }
 }
 
@@ -1820,6 +1958,9 @@ async function replaceBranchRefExact(
   expectedOld: string | null,
   value: string,
   beforeParentSync?: (() => Promise<void>) | undefined,
+  ownerToken?: string | undefined,
+  afterRefLock?: (() => Promise<void>) | undefined,
+  afterLockCandidateDurable?: ((role: string) => Promise<void>) | undefined,
 ): Promise<void> {
   const refPathRaw = (await runNativeGit([
     "-C", context.root, "rev-parse", "--git-path", branch,
@@ -1827,8 +1968,18 @@ async function replaceBranchRefExact(
   const refPath = isAbsolute(refPathRaw) ? refPathRaw : resolve(context.root, refPathRaw);
   await fs.promises.mkdir(dirname(refPath), { recursive: true });
   const lockPath = `${refPath}.lock`;
-  const lock = await openFile(lockPath, "wx", 0o600);
+  const role = `branch ref ${branch}`;
+  const owned = await OwnedGitLock.acquire(
+    await ownedGitLockRoot(context),
+    lockPath,
+    ownerToken,
+    role,
+    `${value}\n`,
+    afterLockCandidateDurable,
+  );
+  const lock = owned === null ? await openFile(lockPath, "wx", 0o600) : null;
   try {
+    await afterRefLock?.();
     const symbolic = await runNativeGitResult(["-C", context.root, "symbolic-ref", "--quiet", branch]);
     if (symbolic.exitCode === 0) {
       throw new Error(`commitFilesOnHead: branch ref ${branch} is unexpectedly symbolic`);
@@ -1840,21 +1991,26 @@ async function replaceBranchRefExact(
         `commitFilesOnHead: ${branch} changed from expected ${expectedOld ?? "unborn"} to ${actual ?? "unborn"}`,
       );
     }
-    await lock.writeFile(`${value}\n`, "utf8");
-    await lock.sync();
-    await lock.close();
-    await renameFile(lockPath, refPath);
-    try {
-      if (beforeParentSync !== undefined) await beforeParentSync();
-      await syncDirectory(dirname(refPath));
-    } catch (error) {
-      const published = await runNativeGitResult(["-C", context.root, "rev-parse", "--verify", branch]);
-      if (published.exitCode !== 0 || published.stdout.trim() !== value) throw error;
-      await syncDirectory(dirname(refPath));
+    if (owned !== null) {
+      await owned.publish(refPath, beforeParentSync);
+    } else {
+      await lock!.writeFile(`${value}\n`, "utf8");
+      await lock!.sync();
+      await lock!.close();
+      await renameFile(lockPath, refPath);
+      try {
+        if (beforeParentSync !== undefined) await beforeParentSync();
+        await syncDirectory(dirname(refPath));
+      } catch (error) {
+        const published = await runNativeGitResult(["-C", context.root, "rev-parse", "--verify", branch]);
+        if (published.exitCode !== 0 || published.stdout.trim() !== value) throw error;
+        await syncDirectory(dirname(refPath));
+      }
     }
   } catch (error) {
-    await lock.close().catch(() => {});
-    await unlinkFile(lockPath).catch(() => {});
+    await lock?.close().catch(() => {});
+    if (owned !== null) await owned.release().catch(() => {});
+    else await unlinkFile(lockPath).catch(() => {});
     throw error;
   }
 }
@@ -1864,32 +2020,129 @@ export async function replayBranchRefDurability(opts: {
   path: string;
   branch: string;
   value: string;
+  /** Test seam: runs after exact-handle durability and before the live postcheck. */
+  beforePostcheck?: () => Promise<void>;
+  lockOwnerToken?: string;
 }): Promise<void> {
   const context = await resolveGitContext(opts.path);
   const ref = `refs/heads/${opts.branch}`;
-  const actual = await runNativeGitResult(["-C", context.root, "rev-parse", "--verify", ref]);
-  if (actual.exitCode !== 0 || actual.stdout.trim() !== opts.value) {
-    throw new Error(`setup ref durability refused changed branch ${opts.branch}`);
+  if (opts.lockOwnerToken !== undefined) {
+    const headRaw = (await runNativeGit(["-C", context.root, "rev-parse", "--git-path", "HEAD"])).trim();
+    const headPath = isAbsolute(headRaw) ? headRaw : resolve(context.root, headRaw);
+    if (!await recoverDeadOwnedGitLock(
+      await ownedGitLockRoot(context),
+      `${headPath}.lock`,
+      opts.lockOwnerToken,
+      "symbolic HEAD",
+    )) throw new Error("setup ref durability refused foreign symbolic HEAD lock");
   }
   const raw = (await runNativeGit(["-C", context.root, "rev-parse", "--git-path", ref])).trim();
   const refPath = isAbsolute(raw) ? raw : resolve(context.root, raw);
+  if (opts.lockOwnerToken !== undefined) {
+    if (!await recoverDeadOwnedGitLock(
+      await ownedGitLockRoot(context),
+      `${refPath}.lock`,
+      opts.lockOwnerToken,
+      `branch ref ${ref}`,
+    )) throw new Error(`setup ref durability refused foreign branch lock ${opts.branch}`);
+  }
   try {
     const handle = await openFile(refPath, "r");
-    try { await handle.sync(); } finally { await handle.close(); }
+    let proof: BigIntStats;
+    try {
+      const before = await handle.stat({ bigint: true });
+      proof = before;
+      const body = await handle.readFile("utf8");
+      const afterRead = await handle.stat({ bigint: true });
+      if (!sameFileProof(before, afterRead) || body !== `${opts.value}\n`) {
+        throw new Error(`setup ref durability cannot prove loose branch ${opts.branch}`);
+      }
+      await handle.sync();
+      if (!sameFileProof(before, await handle.stat({ bigint: true }))) {
+        throw new Error(`setup ref durability detected changed loose branch ${opts.branch}`);
+      }
+    } finally { await handle.close(); }
     await syncDirectory(dirname(refPath));
+    await opts.beforePostcheck?.();
+    await verifyDurableStoragePath(refPath, proof, `${opts.value}\n`);
+    await verifyLiveBranchForDurability(context, ref, opts.branch, opts.value);
     return;
   } catch (error) {
     if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
   }
   const packedRaw = (await runNativeGit(["-C", context.root, "rev-parse", "--git-path", "packed-refs"])).trim();
   const packedPath = isAbsolute(packedRaw) ? packedRaw : resolve(context.root, packedRaw);
-  const packed = await readFileAsync(packedPath, "utf8");
-  if (!packed.split(/\r?\n/).includes(`${opts.value} ${ref}`)) {
-    throw new Error(`setup ref durability cannot prove packed branch ${opts.branch}`);
-  }
   const handle = await openFile(packedPath, "r");
-  try { await handle.sync(); } finally { await handle.close(); }
+  let packedProof: BigIntStats;
+  let packedBody: string;
+  try {
+    const before = await handle.stat({ bigint: true });
+    packedProof = before;
+    const packed = await handle.readFile("utf8");
+    packedBody = packed;
+    const afterRead = await handle.stat({ bigint: true });
+    if (!sameFileProof(before, afterRead) || !packed.split(/\r?\n/).includes(`${opts.value} ${ref}`)) {
+      throw new Error(`setup ref durability cannot prove packed branch ${opts.branch}`);
+    }
+    await handle.sync();
+    if (!sameFileProof(before, await handle.stat({ bigint: true }))) {
+      throw new Error(`setup ref durability detected changed packed branch ${opts.branch}`);
+    }
+  } finally { await handle.close(); }
   await syncDirectory(dirname(packedPath));
+  await opts.beforePostcheck?.();
+  if (await lstatOptional(refPath) !== null) {
+    throw new Error(`setup ref durability detected loose override for packed branch ${opts.branch}`);
+  }
+  await verifyDurableStoragePath(packedPath, packedProof, packedBody);
+  await verifyLiveBranchForDurability(context, ref, opts.branch, opts.value);
+}
+
+async function verifyDurableStoragePath(
+  path: string,
+  proof: BigIntStats,
+  body: string,
+): Promise<void> {
+  const handle = await openFile(path, "r");
+  try {
+    const current = await handle.stat({ bigint: true });
+    if (!sameFileProof(proof, current) || await handle.readFile("utf8") !== body ||
+      !sameFileProof(proof, await handle.stat({ bigint: true }))) {
+      throw new Error(`setup ref durability storage identity changed at ${path}`);
+    }
+  } finally { await handle.close(); }
+}
+
+async function verifyLiveBranchForDurability(
+  context: GitContext,
+  ref: string,
+  branch: string,
+  value: string,
+): Promise<void> {
+  const head = await runNativeGitResult(["-C", context.root, "symbolic-ref", "--quiet", "HEAD"]);
+  const actual = await runNativeGitResult(["-C", context.root, "rev-parse", "--verify", ref]);
+  if (head.exitCode !== 0 || head.stdout.trim() !== ref ||
+    actual.exitCode !== 0 || actual.stdout.trim() !== value) {
+    throw new Error(`setup ref durability refused changed branch ${branch}`);
+  }
+}
+
+function sameFileProof(
+  left: BigIntStats,
+  right: BigIntStats,
+): boolean {
+  return left.dev === right.dev && left.ino === right.ino && left.size === right.size &&
+    left.mtimeNs === right.mtimeNs && left.ctimeNs === right.ctimeNs;
+}
+
+async function lstatOptional(path: string): Promise<BigIntStats | null> {
+  try { return await fs.promises.lstat(path, { bigint: true }); }
+  catch (error) { if (hasFsCode(error, "ENOENT")) return null; throw error; }
+}
+
+function hasFsCode(error: unknown, code: string): boolean {
+  return typeof error === "object" && error !== null && "code" in error &&
+    (error as { code?: unknown }).code === code;
 }
 
 async function syncDirectory(path: string): Promise<void> {
@@ -2013,6 +2266,11 @@ async function nativeGitFileCommitFilesOnHead(opts: {
   readonly afterRefAdvance?: (commit: string) => Promise<void>;
   readonly beforeIndexParentSync?: () => Promise<void>;
   readonly beforeRefParentSync?: () => Promise<void>;
+  readonly lockOwnerToken?: string;
+  readonly afterIndexLock?: () => Promise<void>;
+  readonly afterHeadLock?: () => Promise<void>;
+  readonly afterRefLock?: () => Promise<void>;
+  readonly afterLockCandidateDurable?: (role: string) => Promise<void>;
   readonly root: string;
   readonly fulls: ReadonlyArray<{
     readonly full: string;
@@ -2074,8 +2332,14 @@ async function nativeGitFileCommitFilesOnHead(opts: {
         await opts.onCandidate({ attempt, branch, head, commit: candidate });
       }
       if (opts.beforeRefAdvance !== undefined) await opts.beforeRefAdvance(attempt);
-      const indexTransition = await LockedIndexTransition.acquire(attemptContext, opts.beforeIndexParentSync);
+      const indexTransition = await LockedIndexTransition.acquire(
+        attemptContext,
+        opts.beforeIndexParentSync,
+        opts.lockOwnerToken,
+        opts.afterLockCandidateDurable,
+      );
       try {
+        await opts.afterIndexLock?.();
         const lockedIndex = await indexTransition.snapshot([...indexBefore.keys()]);
         if (!sameIndexSnapshot(lockedIndex, indexBefore)) {
           const current = (await runNativeGit(["-C", opts.root, "rev-parse", branch])).trim();
@@ -2092,6 +2356,10 @@ async function nativeGitFileCommitFilesOnHead(opts: {
             expectedOld: head,
             value: candidate,
             beforeParentSync: opts.beforeRefParentSync,
+            ownerToken: opts.lockOwnerToken,
+            afterHeadLock: opts.afterHeadLock,
+            afterRefLock: opts.afterRefLock,
+            afterLockCandidateDurable: opts.afterLockCandidateDurable,
           });
         } catch (error) {
           const current = (await runNativeGit(["-C", opts.root, "rev-parse", branch])).trim();
