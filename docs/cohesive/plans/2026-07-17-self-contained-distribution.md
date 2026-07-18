@@ -140,8 +140,9 @@ surface, but it must not be required to make an earlier checkpoint truthful.
 | --- | --- | --- |
 | M0 — Restore trustworthy CI | **Complete** | Validated implementation SHA `d9efcf53`; GitHub Actions run `29624132748`, attempts 1 and 2 both succeeded. |
 | M1 — Public package and legal identity | **Complete** | Main implementation commit `286b872c` (parent `c44ff0d3`); packed-package and fresh-consumer rehearsal passed without publication. |
-| M2 — Complete packed product input | **In progress** | Extend the now-truthful package with the install-ready Home payload. |
-| M3–M12 | Planned | Intent and gates remain as specified below. |
+| M2 — Complete packed product input | **Complete** | Evidence SHA `4d136fbc`; GitHub Actions run `29648804676` passed both the primary and packed-product jobs. |
+| M3–M5 — Assess, scope, and adapt the vault | **Complete** | Evidence SHA `5cd2f56b`; GitHub Actions run `29654679087` passed typecheck, exhaustive runtime tests, PWA, and the source-less packed-product rehearsal. |
+| M6–M12 | Planned | Intent and gates remain as specified below. |
 
 ### M0 — Restore trustworthy CI
 
@@ -354,10 +355,26 @@ Acceptance gate:
 
 Non-goal: publishing to npm or replacing the existing Home artifact format.
 
+Completion evidence (evidence SHA `4d136fbc`):
+
+- GitHub Actions run `29648804676` passed both the primary product gate and the
+  separately gated packed-product rehearsal on `macos-15`/arm64 with Bun
+  `1.2.13`.
+- The rehearsal built from a private clean clone, installed the exact tarball
+  into a fresh global prefix, removed the producer checkout and caches, then
+  proved CLI/import, PWA inventory, and Home materialization from a neutral
+  working directory with outbound network disabled.
+- No npm package, Git tag, or GitHub release was published.
+
 ### M3 — Build a read-only setup assessment and plan
 
 **Outcome:** `dome setup` can explain exactly what it would do before changing
 the vault or host.
+
+**Checkpoint status (2026-07-18): complete.** The shipped assessment and
+compiler produce one strict revision-bound plan, render human and JSON output
+from that same contract, and keep Home activation as a separately consented
+M6 transaction.
 
 Work:
 
@@ -404,6 +421,11 @@ Non-goal: a generic installer framework, setup database, or workflow engine.
 **Outcome:** setup and every applicable processor agree on which owner
 Markdown belongs to Dome's compiled knowledge universe before any existing
 vault is adapted.
+
+**Checkpoint status (2026-07-18): complete.** The versioned content-scope
+Module is now the shared path policy for applicable first-party processors and
+surfaces; setup previews and applies the same policy without moving owner
+content.
 
 Today the product has a real policy split: Today, tasks, claims, and brief
 behavior hard-code `wiki/` plus `notes/`, while search, graph, and lint cover
@@ -462,7 +484,9 @@ Public apply requires the caller-retained plan and digest, and legacy
 `dome init` routes normal initialization through the same Module. The retained
 file is discardable caller state, not a setup database; it is required so a
 new process can recover the exact approved transaction. Home activation is not
-an M5 action and remains M6.
+an M5 action and remains M6. GitHub Actions run `29654679087` passed on exact
+main SHA `5cd2f56b`, including the exhaustive primary gate and the isolated
+source-less packed-product rehearsal.
 
 Work:
 
