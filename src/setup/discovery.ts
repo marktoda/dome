@@ -85,6 +85,7 @@ export async function discoverSetupProduct(
   const evidence: ReadOnlyInstalledProductEvidence = await verify({ packageRoot: resolve(packageRoot) });
   const manifest = evidence.manifest;
   return Object.freeze({
+    distribution: "packaged" as const,
     packageName: manifest.package.name,
     packageVersion: manifest.package.version,
     sourceCommit: manifest.package.sourceCommit,

@@ -49,49 +49,41 @@ The artifact contains its pinned runtime, PWA, provider helper, and backup
 tools. Do not replace `DOME` with the checkout's `bin/dome`: Home installation
 verifies and copies the exact invoking artifact.
 
-## 2. Initialize a new or existing vault
+## 2. Initialize a new vault or explicitly adapt an existing vault
 
-Choose an absolute path and initialize the shipped Anthropic provider:
+Choose an absolute path whose parent already exists. For a new vault:
 
 ```sh
 VAULT="$HOME/Documents/My Vault"
-"$DOME" init "$VAULT" --with-model-provider anthropic
+"$DOME" init "$VAULT"
 ```
 
-For a new directory, Dome creates a Git repository, the vault orientation and
-configuration, and an initial commit. For an existing Obsidian vault, it fills
-only missing scaffold and preserves existing files. Review and commit those
-additions before starting Home:
+For an existing Obsidian or Git vault, do not use implicit init consent. Follow
+the preview, external retained-plan, and digest flow in the README. Dome then
+adapts only the reviewed inventory and returns a fresh plan without mutation if
+the vault changes before apply.
+
+For a new directory, init creates only the canonical Git-backed Dome scaffold
+and its exact setup commit. It does not create example knowledge, source
+adapters, or model-provider scripts. Review the setup commit before Home:
 
 ```sh
 git -C "$VAULT" status --short
-git -C "$VAULT" add AGENTS.md CLAUDE.md .dome core.md preferences wiki notes inbox
-git -C "$VAULT" commit -m "Initialize Dome"
+git -C "$VAULT" log --oneline -3
 ```
 
-Adjust the paths in `git add` if the existing vault already had some of them.
 Do not commit `.dome/state`; the generated `.gitignore` excludes operational
 databases and logs. Dome requires an ordinary Git identity for commits.
 
-`dome init` is idempotent. It never overwrites owner content on an ordinary
-rerun. See [[wiki/specs/cli]] §"`dome init`" for source scaffolds and the
-maintenance-only refresh flags.
+`dome init` is idempotent for the complete vault it created. The former source,
+provider, and refresh flags are retired; existing-vault changes require the
+explicit setup consent flow.
 
-## 3. Configure the model and install Home
+## 3. Install Home (a model is optional)
 
-You need an Anthropic API key for ingestion, consolidation, Ask, and the
-morning brief. Store it through Home's prompt; the shipped helper writes it to
-the macOS login Keychain, not the launchd environment or vault:
-
-```sh
-"$DOME" home setup configure --vault "$VAULT"
-"$DOME" home setup check --vault "$VAULT"
-```
-
-Unlock Keychain and approve the prompt if macOS asks. `setup check` succeeds
-only when the credential is readable and the provider probe works.
-
-Install and verify the supervised Home service:
+A fresh minimal vault deliberately has no model provider. Capture, Git-backed
+adoption, tasks, deterministic Today content, and vault browsing work without
+one. Install and verify the supervised Home service first:
 
 ```sh
 "$DOME" home install --vault "$VAULT"
@@ -103,6 +95,15 @@ Home installs a per-vault launchd service, copies the verified artifact into
 its immutable managed release store, and waits for pairing readiness. launchd
 restarts it after process crashes and on later logins/reboots. Product logs are at
 `$VAULT/.dome/state/home.log`.
+
+Ask, model-assisted ingestion, consolidation, and the morning brief require an
+explicit `model_provider` configuration. The guided `dome setup model` flow is
+planned for the next productization mission; M5 does not silently add a
+provider script or API-key path. Advanced users may explicitly configure the
+documented command-provider seam in `.dome/config.yaml`, then run
+`dome home setup configure --vault "$VAULT"` to store its credential in the macOS login
+Keychain. Do not run that credential command on a fresh minimal vault: it will
+truthfully report that provider configuration is required first.
 
 ## 4. Pair the PWA
 
@@ -127,16 +128,18 @@ Do not put pairing codes or credentials in URLs. The supported local product
 URL is the root PWA, not `/today`, a query-token cockpit, or a bearer-token HTTP
 page.
 
-## 5. First capture, Ask, and Today
+## 5. First Capture and Today
 
 In the PWA composer:
 
 1. Type a thought and choose the **+** capture control. Dome commits it to the
    vault and the engine digests it asynchronously.
-2. Type a question and press Enter or the send arrow. Ask answers from adopted
-   vault state and cites its sources.
-3. Open Today or choose **Refresh Today** to see tasks, follow-ups, meetings,
+2. Open Today or choose **Refresh Today** to see tasks, follow-ups, meetings,
    decisions, and operational attention that are actually available.
+3. If you explicitly configured a model provider, type a question and press
+   Enter or the send arrow. Ask answers from adopted vault state and cites its
+   sources. Without a provider, Ask remains unavailable while Capture and Today
+   continue to work.
 
 You can also edit the vault in Obsidian or with a foreground coding agent.
 Make coherent Git commits; Home observes the commit boundary and adopts them.
@@ -155,11 +158,15 @@ Review its output with your foreground agent, then commit the resulting
 
 ## 6. The morning brief
 
-Home schedules the brief for 05:30 local time. If the Mac sleeps through the
+With an explicitly configured provider, Home schedules the brief for 05:30
+local time. If the Mac sleeps through the
 interval, the operational scheduler collapses the missed interval on wake and
 runs at most the due work; it does not fabricate repeated briefs. The brief
 updates marker-delimited blocks in `wiki/dailies/<date>.md` from adopted vault
 state and any source day-files that really exist.
+
+Without a provider, deterministic Today remains the supported daily surface;
+no setup step pretends that a model-backed brief can run.
 
 If the provider or network fails, deterministic Today content stays available
 and `dome check` reports the model failure. Fix the credential/runtime cause
@@ -229,12 +236,13 @@ For an unhealthy installation, start with:
 
 ```sh
 "$DOME" home status --vault "$VAULT"
-"$DOME" home setup check --vault "$VAULT"
 "$DOME" status --vault "$VAULT"
 "$DOME" check --vault "$VAULT"
 ```
 
-Follow the reported next action. Re-running `home upgrade` safely recovers a
+If you opted into a model provider, add `"$DOME" home setup check --vault
+"$VAULT"` to that diagnostic sequence. Follow the reported next action.
+Re-running `home upgrade` safely recovers a
 retained upgrade intent. Do not hand-edit `.dome/state` or the managed release
 store. The detailed lifecycle, backup, and failure contracts live in
 [[wiki/specs/product-host]].

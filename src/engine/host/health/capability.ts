@@ -64,11 +64,9 @@ export function capabilityKinds(
 // A vault that predates a bundle's newer behavior can keep old grant lists and
 // silently lose that behavior: the capability KIND is granted but the specific
 // entry is not, which the kind-level `capability.grant-missing` probe cannot
-// see. These probes name the exact YAML to add. They are also the merge gate
-// for `dome init --refresh-config`, which on a legacy enumerated vault now adds
-// exactly these missing entries automatically (wiki/specs/cli.md §"dome init");
-// this probe stays the detection half and the recovery for non-first-party
-// grants.
+// see. These probes name the exact YAML for the owner to add explicitly;
+// there is no second init mutation path. This probe is both detection and
+// recovery guidance for first- and third-party grants.
 //
 // The requirements are a MANIFEST CONTRIBUTION (`doctor.grantEntries`, per
 // [[wiki/gotchas/operator-surfaces-enumerate-first-party]]): each bundle

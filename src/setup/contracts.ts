@@ -45,6 +45,7 @@ export const ADAPTATION_ACTION_IDS = [
   "dome-directory",
   "dome-state-directory",
   "agents-orientation",
+  "claude-orientation",
   "gitignore",
   "content-scope",
 ] as const;
@@ -95,7 +96,7 @@ function sortedUnique<T extends z.ZodType<string>>(item: T) {
 
 const contentScopeSchema = canonicalContentScopeSchema;
 
-const scaffoldFileId = z.enum(["gitignore", "agents-orientation"]);
+const scaffoldFileId = z.enum(["gitignore", "agents-orientation", "claude-orientation"]);
 const scaffoldDirectoryId = z.enum(["dome-directory", "dome-state-directory"]);
 const contentScopeWriteSchema = z.object({
   path: z.enum([".dome/config.yaml", ".dome/content-scope.yaml"]),
@@ -165,18 +166,37 @@ const assessmentSchemaBase = z.object({
     platform: nonEmpty,
     architecture: nonEmpty,
   }).strict(),
-  product: z.object({
-    packageName: z.literal("@marktoda/dome"),
-    packageVersion: version,
-    sourceCommit: sha1,
-    productManifestSha256: sha256,
-    packagedHome: z.object({
-      artifactId: sha256,
-      productVersion: version,
-      buildCommit: sha1,
-      manifestSha256: sha256,
+  product: z.discriminatedUnion("distribution", [
+    z.object({
+      distribution: z.literal("packaged"),
+      packageName: z.literal("@marktoda/dome"),
+      packageVersion: version,
+      sourceCommit: sha1,
+      productManifestSha256: sha256,
+      packagedHome: z.object({
+        artifactId: sha256,
+        productVersion: version,
+        buildCommit: sha1,
+        manifestSha256: sha256,
+      }).strict(),
     }).strict(),
-  }).strict(),
+    z.object({
+      distribution: z.literal("home-artifact"),
+      packageName: z.literal("@marktoda/dome"),
+      packageVersion: version,
+      sourceCommit: sha1,
+      homeArtifactManifestSha256: sha256,
+      packagedHome: z.null(),
+    }).strict(),
+    z.object({
+      distribution: z.literal("source-tree"),
+      packageName: z.literal("@marktoda/dome"),
+      packageVersion: version,
+      sourceCommit: sha1,
+      sourceTreeSha256: sha256,
+      packagedHome: z.null(),
+    }).strict(),
+  ]),
   prerequisites: z.array(z.object({
     id: z.enum(["bun", "git"]),
     status: z.enum(["available", "missing", "unsupported"]),
@@ -189,6 +209,13 @@ const assessmentSchemaBase = z.object({
   dome: z.object({
     state: z.enum(["absent", "partial", "configured", "incompatible"]),
     contentScope: z.enum(["absent", "configured", "incompatible"]),
+    scaffold: z.object({
+      domeDirectory: z.boolean(),
+      stateDirectory: z.boolean(),
+      agentsOrientation: z.boolean(),
+      claudeOrientation: z.boolean(),
+      gitignore: z.boolean(),
+    }).strict(),
   }).strict(),
   installedHome: z.object({
     state: z.enum(["absent", "owned", "foreign-owner", "upgrade-active", "ambiguous"]),
@@ -221,8 +248,9 @@ export const vaultAssessmentSchema = assessmentSchemaBase.superRefine((assessmen
   if (expectedRevisionShape !== "any" && expectedRevisionShape !== actualRevisionShape) {
     context.addIssue({ code: "custom", path: ["revision"], message: `must match Git state ${assessment.git.state}` });
   }
-  if (assessment.product.packagedHome.productVersion !== assessment.product.packageVersion ||
-    assessment.product.packagedHome.buildCommit !== assessment.product.sourceCommit) {
+  if (assessment.product.distribution === "packaged" &&
+    (assessment.product.packagedHome.productVersion !== assessment.product.packageVersion ||
+      assessment.product.packagedHome.buildCommit !== assessment.product.sourceCommit)) {
     context.addIssue({ code: "custom", path: ["product", "packagedHome"], message: "must match the packaged product version and source commit" });
   }
   const prerequisiteIds = assessment.prerequisites.map((entry) => entry.id);
@@ -339,6 +367,13 @@ export const vaultAssessmentSchema = assessmentSchemaBase.superRefine((assessmen
       message: "must be incompatible exactly when Dome config is incompatible",
     });
   }
+  if ((assessment.dome.state === "configured" || assessment.dome.state === "incompatible") &&
+    !assessment.dome.scaffold.domeDirectory) {
+    context.addIssue({ code: "custom", path: ["dome", "scaffold"], message: "Dome config requires its direct directory" });
+  }
+  if (assessment.dome.scaffold.stateDirectory && !assessment.dome.scaffold.domeDirectory) {
+    context.addIssue({ code: "custom", path: ["dome", "scaffold", "stateDirectory"], message: "state requires the Dome directory" });
+  }
 });
 
 export type VaultAssessment = z.infer<typeof vaultAssessmentSchema>;
@@ -405,7 +440,8 @@ export const setupPlanSchema = setupPlanSchemaBase.superRefine((plan, context) =
     }
     if (action.kind === "write-scaffold-file") {
       writePaths.push(action.path);
-      const expectedPath = action.id === "agents-orientation" ? "AGENTS.md" : ".gitignore";
+      const expectedPath = action.id === "agents-orientation" ? "AGENTS.md" :
+        action.id === "claude-orientation" ? "CLAUDE.md" : ".gitignore";
       if (action.path !== expectedPath) {
         context.addIssue({ code: "custom", path: [...path, "path"], message: `${action.id} has a non-canonical path` });
       }
@@ -441,9 +477,12 @@ function expectedSetupActionIds(assessment: VaultAssessment): ReadonlyArray<Adap
   if (assessment.target.state === "missing") ids.push("vault-directory");
   if (assessment.git.state === "absent") ids.push("git-repository");
   if (assessment.git.state === "absent" && assessment.repository.baselineTracked.length > 0) ids.push("owner-baseline");
-  if (assessment.dome.state !== "configured") {
-    ids.push("dome-directory", "dome-state-directory", "agents-orientation", "gitignore", "content-scope");
-  } else if (assessment.dome.contentScope === "absent") {
+  if (!assessment.dome.scaffold.domeDirectory) ids.push("dome-directory");
+  if (!assessment.dome.scaffold.stateDirectory) ids.push("dome-state-directory");
+  if (!assessment.dome.scaffold.agentsOrientation) ids.push("agents-orientation");
+  if (!assessment.dome.scaffold.claudeOrientation) ids.push("claude-orientation");
+  if (!assessment.dome.scaffold.gitignore) ids.push("gitignore");
+  if (assessment.dome.state !== "configured" || assessment.dome.contentScope === "absent") {
     ids.push("content-scope");
   }
   return ids;
@@ -466,7 +505,13 @@ export const setupConsentSchema = z.object({
 export type SetupConsent = z.infer<typeof setupConsentSchema>;
 
 const recoverySchema = z.object({
-  code: z.enum(["plan-blocked", "consent-mismatch", "mutation-conflict", "verification-failed"]),
+  code: z.enum([
+    "plan-blocked",
+    "explicit-consent-required",
+    "consent-mismatch",
+    "mutation-conflict",
+    "verification-failed",
+  ]),
   message: nonEmpty,
   commands: sortedUnique(nonEmpty).max(SETUP_CONTRACT_CAPS.recoveryCommands),
 }).strict();

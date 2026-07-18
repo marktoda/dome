@@ -17,7 +17,8 @@ import { join } from "node:path";
 
 const REPO_ROOT = join(import.meta.dir, "..", "..");
 const INVARIANT_DOC = join(REPO_ROOT, "docs", "wiki", "invariants", "AGENTS_MD_IS_ORIENTATION_SURFACE.md");
-const INIT_COMMAND = join(REPO_ROOT, "src", "cli", "commands", "init.ts");
+const SETUP_DEFAULTS = join(REPO_ROOT, "src", "setup", "defaults.ts");
+const ORIENTATION_TEMPLATES = join(REPO_ROOT, "src", "cli", "commands", "init-templates.ts");
 const USER_PROSE_BEGIN = "<!-- BEGIN user-prose -->";
 const USER_PROSE_END = "<!-- END user-prose -->";
 
@@ -26,15 +27,16 @@ describe("AGENTS_MD_IS_ORIENTATION_SURFACE lockstep", () => {
     expect(existsSync(INVARIANT_DOC)).toBe(true);
   });
 
-  test("user-prose delimiters match the init refresh implementation", () => {
+  test("user-prose delimiters live in the canonical create-only setup scaffold", () => {
     const doc = readFileSync(INVARIANT_DOC, "utf8");
-    const init = readFileSync(INIT_COMMAND, "utf8");
-    const begin = init.match(/const USER_PROSE_BEGIN = "([^"]+)";/)?.[1];
-    const end = init.match(/const USER_PROSE_END = "([^"]+)";/)?.[1];
+    const defaults = readFileSync(SETUP_DEFAULTS, "utf8");
+    const templates = readFileSync(ORIENTATION_TEMPLATES, "utf8");
 
     expect(doc).toContain(USER_PROSE_BEGIN);
     expect(doc).toContain(USER_PROSE_END);
-    expect(begin).toBe(USER_PROSE_BEGIN);
-    expect(end).toBe(USER_PROSE_END);
+    expect(defaults).toContain("DEFAULT_AGENTS_MD");
+    expect(defaults).toContain("CLAUDE_MD_TEMPLATE");
+    expect(templates).toContain("@AGENTS.md");
+    expect(defaults).not.toContain("writeFile");
   });
 });

@@ -193,7 +193,13 @@ function dependencies(events: string[]): PackedProductAcceptanceDependencies {
     verifyConsumer: async () => {
       events.push("consumer");
       return Object.freeze({
-        scaffold: Object.freeze({ modelProvider: "anthropic" as const, source: "slack" as const, bundlesResolved: true as const }),
+        scaffold: Object.freeze({
+          canonicalAgents: true as const,
+          canonicalClaude: true as const,
+          canonicalConfig: true as const,
+          installedAssets: true as const,
+          bundlesResolved: true as const,
+        }),
         currentSchemaReopen: Object.freeze({
           attempts: 2 as const, succeeded: true as const, semanticRefsStable: true as const, priorVersionUpgradeClaimed: false as const,
         }),

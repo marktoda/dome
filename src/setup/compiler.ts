@@ -41,6 +41,7 @@ export type SetupInstalledHomeEvidence = VaultAssessment["installedHome"];
 
 export type SetupScaffoldEvidence = Readonly<{
   agentsOrientation: string;
+  claudeOrientation: string;
   gitignore: string;
   vaultConfig: string;
   contentScopeConfig: string;
@@ -137,6 +138,7 @@ function fingerprintValidatedInput(input: SetupCompilerInput, contentScope: Cont
     contentScope,
     scaffold: {
       agentsOrientationSha256: sha256(input.scaffold.agentsOrientation),
+      claudeOrientationSha256: sha256(input.scaffold.claudeOrientation),
       gitignoreSha256: sha256(input.scaffold.gitignore),
       vaultConfigSha256: sha256(input.scaffold.vaultConfig),
       contentScopeConfigSha256: sha256(input.scaffold.contentScopeConfig),
@@ -195,7 +197,6 @@ function addBlocker(
 function adaptationActions(input: SetupCompilerInput): AdaptationAction[] {
   const actions: AdaptationAction[] = [];
   const target = input.source.targetPath;
-  const needsDomeScaffold = input.source.dome.state !== "configured";
   if (input.source.targetState === "missing") actions.push({
     kind: "create-vault-directory", id: "vault-directory", path: target, mode: "0755", ifMissing: true,
   });
@@ -208,40 +209,55 @@ function adaptationActions(input: SetupCompilerInput): AdaptationAction[] {
     paths: [...input.source.repository.baselineTracked],
     message: "Dome setup: preserve owner baseline",
   });
-  if (needsDomeScaffold) {
+  if (!input.source.dome.scaffold.domeDirectory) {
     actions.push(
       { kind: "ensure-scaffold-directory", id: "dome-directory", path: ".dome", mode: "0755", ifMissing: true },
-      { kind: "ensure-scaffold-directory", id: "dome-state-directory", path: ".dome/state", mode: "0700", ifMissing: true },
-      scaffoldAction("agents-orientation", "AGENTS.md", input.scaffold.agentsOrientation),
-      scaffoldAction("gitignore", ".gitignore", input.scaffold.gitignore),
-      {
-        kind: "set-content-scope",
-        id: "content-scope",
-        scope: cloneContentScope(input.contentScope),
-        write: fileWrite(".dome/config.yaml", input.scaffold.vaultConfig),
-      },
     );
-  } else if (input.source.dome.contentScope === "absent") {
+  }
+  if (!input.source.dome.scaffold.stateDirectory) {
+    actions.push(
+      { kind: "ensure-scaffold-directory", id: "dome-state-directory", path: ".dome/state", mode: "0700", ifMissing: true },
+    );
+  }
+  if (!input.source.dome.scaffold.agentsOrientation) {
+    actions.push(
+      scaffoldAction("agents-orientation", "AGENTS.md", input.scaffold.agentsOrientation),
+    );
+  }
+  if (!input.source.dome.scaffold.claudeOrientation) {
+    actions.push(
+      scaffoldAction("claude-orientation", "CLAUDE.md", input.scaffold.claudeOrientation),
+    );
+  }
+  if (!input.source.dome.scaffold.gitignore) {
+    actions.push(
+      scaffoldAction("gitignore", ".gitignore", input.scaffold.gitignore),
+    );
+  }
+  if (input.source.dome.contentScope !== "configured") {
+    const write = input.source.dome.state === "configured"
+      ? fileWrite(".dome/content-scope.yaml", input.scaffold.contentScopeConfig)
+      : fileWrite(".dome/config.yaml", input.scaffold.vaultConfig);
     actions.push({
       kind: "set-content-scope",
       id: "content-scope",
       scope: cloneContentScope(input.contentScope),
-      write: fileWrite(".dome/content-scope.yaml", input.scaffold.contentScopeConfig),
+      write,
     });
   }
   return actions;
 }
 
 function scaffoldAction(
-  id: "agents-orientation" | "gitignore",
-  path: "AGENTS.md" | ".gitignore",
+  id: "agents-orientation" | "claude-orientation" | "gitignore",
+  path: "AGENTS.md" | "CLAUDE.md" | ".gitignore",
   body: string,
 ): Extract<AdaptationAction, { kind: "write-scaffold-file" }> {
   const write = fileWrite(path, body);
   return { kind: "write-scaffold-file", id, path, ...withoutPath(write) };
 }
 
-function fileWrite<Path extends ".dome/config.yaml" | ".dome/content-scope.yaml" | "AGENTS.md" | ".gitignore">(
+function fileWrite<Path extends ".dome/config.yaml" | ".dome/content-scope.yaml" | "AGENTS.md" | "CLAUDE.md" | ".gitignore">(
   path: Path,
   body: string,
 ) {

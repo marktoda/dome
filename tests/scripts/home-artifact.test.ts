@@ -149,6 +149,12 @@ describe("Dome Home artifact", () => {
     expect(signing).toBeGreaterThan(-1);
     expect(alias).toBeGreaterThan(signing);
     expect(metadata).toBeGreaterThan(alias);
+    const verification = source.indexOf("const evidence = await verifyHomeArtifactEvidence(directory)");
+    const initAdmission = source.indexOf('await discoverInitProduct(join(directory, "app")');
+    const rehearsal = source.indexOf("rehearseArchive: async");
+    expect(verification).toBeGreaterThan(metadata);
+    expect(initAdmission).toBeGreaterThan(verification);
+    expect(rehearsal).toBeGreaterThan(initAdmission);
   });
 
   test("derives named launch only from an exact executable manifest twin", async () => {

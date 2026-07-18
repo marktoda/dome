@@ -507,11 +507,10 @@ The SDK ships a batteries-included first-party model provider template at
 `<SDK>/assets/model-providers/anthropic.ts`. Like the `assets/extensions/`
 bundles, it is **shipped data, not SDK code**: no `src/` module imports it
 (the [[wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] fence is
-untouched), and `dome init --with-model-provider anthropic` copies it into the
-vault as `.dome/model-provider.ts` and wires the
+untouched). Explicit model setup may copy it into the vault as
+`.dome/model-provider.ts` and wire the
 `model_provider: { kind: "command", command: ["bun", ".dome/model-provider.ts"] }`
-stanza ([[wiki/specs/cli]] §"dome init" carries the full flag contract,
-including the idempotent re-run path for existing vaults).
+stanza; narrow `dome init` does not perform integration setup.
 
 The template is a self-contained Bun script over plain `fetch` — no
 `@anthropic-ai/sdk`, no `ai`, no new `package.json` dependency — speaking all

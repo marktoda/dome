@@ -80,7 +80,7 @@ describe("bin/dome process boundary", () => {
     const init = await runDome(["init", vaultPath]);
     expect(init.exitCode).toBe(0);
     expect(init.stderr).toBe("");
-    expect(init.stdout).toContain("CLAUDE.md");
+    expect(init.stdout).toContain("Dome setup complete");
 
     const sync = await runDomeJson<{
       readonly status: string;
@@ -200,17 +200,9 @@ async function expectServeSignalClearsHeartbeat(
 ): Promise<void> {
   const vaultPath = mkdtempSync(join(tmpdir(), "dome-bin-serve-"));
   fixtures.push(vaultPath);
-  // --with-model-provider wires a model_provider stanza so dome.agent
-  // (shipped enabled by default per product-review-3 Task 17) has a
-  // provider configured — this test is about signal handling, not the
-  // agent bundle, and asserts pristine (empty) stderr; without a provider
-  // configured at all, `dome serve` now loudly logs `agent.no-model-
-  // provider` regardless of `--quiet` (by design — silence is the bug
-  // Task 17 removes), which would otherwise trip this test's assertion.
-  expect(
-    (await runDome(["init", vaultPath, "--with-model-provider", "anthropic"]))
-      .exitCode,
-  ).toBe(0);
+  // Narrow init intentionally leaves the default model-backed bundle without
+  // a provider; the host must remain operational while warning loudly.
+  expect((await runDome(["init", vaultPath])).exitCode).toBe(0);
 
   const serve = Bun.spawn({
     cmd: [
@@ -287,7 +279,7 @@ async function expectServeSignalClearsHeartbeat(
     expect(stopped.forced).toBe(false);
     expect(stopped.exitCode).toBe(0);
     expect(stopped.stdout).toBe("");
-    expect(stopped.stderr).toBe("");
+    expect(stopped.stderr).toContain("dome home setup status");
 
     const after = await runDomeJson<{
       readonly serve_status: string;

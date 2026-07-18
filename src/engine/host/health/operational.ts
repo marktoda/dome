@@ -268,9 +268,7 @@ export function instructionDriftFinding(id: string, message: string): HealthFind
     subject: "instructions" as const,
     id,
     message,
-    recovery:
-      "Run `dome init --refresh-instructions` to repair orientation shims " +
-      "without overwriting user prose.",
+    recovery: "Repair the managed orientation block explicitly while preserving user prose.",
   });
 }
 

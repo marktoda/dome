@@ -58,9 +58,9 @@ export type FirstPartyExtensionDefault = {
 };
 
 /**
- * The source kinds `dome init --with-source <kind>` can scaffold: each has a
- * shipped fetch-adapter template at `assets/source-handlers/claude-<kind>.sh`
- * and a standard subscription stanza below. Scaffolding NEVER enables a
+ * These source kinds have shipped fetch-adapter templates at
+ * `assets/source-handlers/claude-<kind>.sh` and standard subscription stanzas
+ * below. Explicit setup NEVER enables a
  * subscription — `enabled: false` is the shipped consent stance
  * (wiki/specs/sources.md); the owner reviews the script, then flips it.
  */

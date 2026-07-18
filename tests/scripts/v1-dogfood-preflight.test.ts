@@ -81,7 +81,7 @@ describe("v1 dogfood preflight script", () => {
     );
     expect(report.capture.ready).toBe(false);
     expect(report.capture.intakeStatus).toBe("disabled");
-    expect(report.capture.modelStatus).toBe("disabled-provider-configured");
+    expect(report.capture.modelStatus).toBe("disabled-no-provider");
     expect(report.capture.findings).toContain("dome.agent is disabled");
     expect(report.release.status).toBe("not-ready");
     expect(report.release.serveHostEvidenceDays).toBe(1);
@@ -329,7 +329,7 @@ describe("v1 dogfood preflight script", () => {
 async function makeInitializedVault(): Promise<string> {
   const vaultPath = mkdtempSync(join(tmpdir(), "dome-v1-dogfood-preflight-"));
   fixtures.push(vaultPath);
-  const init = await runDome(["init", vaultPath, "--with-model-provider", "anthropic"]);
+  const init = await runDome(["init", vaultPath]);
   expect(init.exitCode).toBe(0);
 
   // dome.agent ships enabled by default (product-review-3 Task 17). This
@@ -387,11 +387,12 @@ async function makeIntakeReadyVault(): Promise<string> {
   const vaultPath = await makeInitializedVault();
   const configPath = join(vaultPath, ".dome", "config.yaml");
   const configBody = readFileSync(configPath, "utf8");
-  const updated = configBody.replace(
+  const enabled = configBody.replace(
     /(^\s+dome\.agent:\s*\n\s+enabled:\s*)false/m,
     "$1true",
   );
-  expect(updated).not.toBe(configBody);
+  expect(enabled).not.toBe(configBody);
+  const updated = `${enabled.trimEnd()}\n\nmodel_provider:\n  kind: command\n  command: ["bun", ".dome/model-provider.ts"]\n`;
   await writeFile(configPath, updated, "utf8");
   await writeFile(
     join(vaultPath, ".dome", "model-provider.ts"),

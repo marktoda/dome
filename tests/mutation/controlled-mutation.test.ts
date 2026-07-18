@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync } from "node:fs";
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -24,7 +24,7 @@ async function vault(): Promise<string> {
   const path = mkdtempSync(join(tmpdir(), "dome-controlled-mutation-"));
   roots.push(path);
   expect(await runInit({ path })).toBe(0);
-  return path;
+  return realpath(path);
 }
 
 describe("controlled mutation", () => {
@@ -54,6 +54,7 @@ describe("controlled mutation", () => {
 
   test("expected-byte conflict lands no commit and changes no owner bytes", async () => {
     const path = await vault();
+    await mkdir(join(path, "wiki"), { recursive: true });
     await writeFile(join(path, "wiki/page.md"), "owner edit\n", "utf8");
     const before = await currentSha(path);
 
@@ -91,6 +92,7 @@ describe("controlled mutation", () => {
 
   test("a planned full-file mutation aborts a lost ref CAS without stale-splicing", async () => {
     const path = await vault();
+    await mkdir(join(path, "wiki"), { recursive: true });
     await writeFile(join(path, "wiki/target.md"), "owner truth\n", "utf8");
     await commitSingleFileOnHead({
       path,
@@ -191,6 +193,7 @@ describe("controlled mutation", () => {
 
   test("an external edit after ref advance is preserved as durable divergence", async () => {
     const path = await vault();
+    await mkdir(join(path, "inbox", "raw"), { recursive: true });
     const target = join(path, "inbox/raw/race.md");
 
     const result = await applyControlledMutation({

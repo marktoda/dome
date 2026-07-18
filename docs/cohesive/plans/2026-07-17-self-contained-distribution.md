@@ -456,11 +456,13 @@ teaching setup to reorganize an Obsidian vault.
 **Outcome:** after consent, setup creates the minimum viable Dome vault or
 adds only safe missing scaffolding to an existing vault.
 
-**Checkpoint status (2026-07-18):** the product setup Module now ships the
-revision-bound `vault-adaptation` transaction and its exact crash recovery.
-The root CLI intentionally remains `dome setup --dry-run`; routing public apply
-and legacy `dome init` through this one Module is the remaining M5 checkpoint.
-Home activation is no longer an applicable M5 action and remains M6.
+**Checkpoint status (2026-07-18): complete.** The product setup Module ships
+the revision-bound `vault-adaptation` transaction and exact crash recovery.
+Public apply requires the caller-retained plan and digest, and legacy
+`dome init` routes normal initialization through the same Module. The retained
+file is discardable caller state, not a setup database; it is required so a
+new process can recover the exact approved transaction. Home activation is not
+an M5 action and remains M6.
 
 Work:
 

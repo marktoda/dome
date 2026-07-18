@@ -43,7 +43,7 @@ Working in the codebase? [[philosophy]] is the house style — pure-decide + thi
 - [[wiki/specs/mcp-surface]] — MCP server: the shipped `dome mcp` stdio adapter (wedge Phase 5) — typed capture/query/export_context/report_miss/status/check/resolve/settle/tasks/brief/proposals/apply_proposal/reject_proposal tools over the same handlers the CLI uses.
 - [[wiki/specs/http-surface]] — HTTP surface: the shipped `dome http` read+capture adapter (bearer-token; loopback/Tailscale) — POST /capture implements the remote-capture seam; status/query/tasks/doc/questions/resolve read routes.
 - [[wiki/specs/product-host]] — shipped Dome Home host contract: one owner/one vault/many paired clients; authority, readiness, operation classes, lifecycle, backup, and upgrade recovery.
-- [[wiki/specs/setup]] — versioned assessment, immutable plan, consent, and exact-recovery contracts for conservative vault adaptation; CLI apply and Home activation remain later adapters.
+- [[wiki/specs/setup]] — versioned assessment, caller-retained immutable plan, explicit consent, and exact-recovery contracts for conservative CLI vault adaptation; Home activation remains a later adapter.
 - [[wiki/specs/content-scope]] — versioned, deterministic policy Module for the owner Markdown in Dome's compiled knowledge universe; exclusions and private floors bound every later consumer.
 - [[wiki/specs/controlled-mutation]] — recovery-backed seam for Dome-mediated commits: expected bytes, bounded host coordination, crash journal, and conservative checkout repair.
 - [[wiki/specs/harnesses]] — How agentic harnesses (Claude Code, Cursor, OpenCode, Codex, future agents) interact with Dome via the compiler-boundary contract (AGENTS.md + CLI + compiler host + git-native writes).

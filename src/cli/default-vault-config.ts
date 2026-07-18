@@ -103,8 +103,8 @@ function renderContentScope(scope: ContentScopeConfig): string {
 }
 
 /**
- * The first-party defaults with the requested source kinds' subscription
- * stanzas merged into `dome.sources` (`--with-source`). Kinds whose stanza
+ * The first-party defaults with explicitly requested source subscription
+ * stanzas merged into `dome.sources`. Kinds whose stanza
  * already ships (calendar) are no-ops, so the unmodified frozen array is
  * returned when nothing new is requested.
  */

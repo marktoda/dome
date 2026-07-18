@@ -130,14 +130,13 @@ The daemon must survive reboots and require zero babysitting.
 ### Phase 2 — Batteries-included model provider
 
 - Ship a first-party provider template (Anthropic Messages API with tool-use
-  step support, cost caps honored) in `assets/`; `dome init
-  --with-model-provider anthropic` scaffolds it into `.dome/model-provider.ts`
-  and wires `.dome/config.yaml`.
+  step support, cost caps honored) in `assets/`; provider initialization is an
+  explicit model-setup step outside the narrow init alias.
 - `dome doctor` (or `check`) gains a provider probe: configured? responds to a
   ping envelope? key present? Today's silent no-op becomes loud.
 - Spec: model-provider scaffold + probe documented in [[wiki/specs/sdk-surface]]
   and the CLI spec.
-- Acceptance: fresh `dome init --with-model-provider anthropic` + API key env
+- Acceptance: fresh `dome init` + explicit provider setup + API key env
   → committing a file into `inbox/raw/` produces an ingest run visible in
   `dome inspect runs`, with no source-code reading required.
 

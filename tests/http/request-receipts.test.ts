@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
-import { rm } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -54,6 +54,7 @@ function request(base: string, auth: { cookie: string; csrf: string }, text: str
 describe("device mutation request receipts", () => {
   test("paired capture receipts expose only the opaque vault id", async () => {
     const f = await fixture();
+    await mkdir(join(f.root, "private"));
     const vault = join(f.root, "private", "work-vault");
     const originalLog = console.log;
     console.log = () => {};

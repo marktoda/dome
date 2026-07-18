@@ -1129,7 +1129,7 @@ surface. It persists no setup state and never rewrites `.dome/config.yaml`.
 Configure is available only for exact command
 `["bun", ".dome/model-provider.ts"]`, performs a decrypting post-write check,
 and probes the same helper route used by normal packaged Home. Missing config
-points to `dome init --with-model-provider anthropic`; custom config is
+requires explicit managed-provider initialization; custom config is
 reported and preserved. Mutations serialize within one Home process. An
 in-flight provider child may finish with its launch-time key; each subsequent
 invocation re-reads current Keychain truth, so rotation needs no restart.

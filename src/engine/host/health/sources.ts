@@ -153,7 +153,7 @@ export function enabledSubscriptionEntries(
  * The missing-fetch-script probe (`sources.fetch-script-missing`): an
  * enabled dome.sources subscription whose command references a script file
  * that is missing (or not a regular file) fails on every scheduled fetch.
- * Doctor says so up front — kind, path, and the `dome init --with-source`
+ * Doctor says so up front — kind, path, and an explicit configuration
  * recovery — instead of leaving the owner to decode failed outbox rows the
  * next morning.
  *
@@ -195,10 +195,8 @@ export function sourcesFetchScriptFindings(opts: {
           `references ${scriptPath}, which is missing or not a regular ` +
           "file — every scheduled fetch will fail.",
         recovery:
-          `Run \`dome init --with-source ${kind}\` to scaffold the shipped ` +
-          `fetch adapter (shipped kinds: calendar, slack) and review it ` +
-          `before relying on it, write your own script at ${scriptPath}, ` +
-          "or fix the subscription command in .dome/config.yaml.",
+          `Create and review an explicit fetch adapter at ${scriptPath}, ` +
+          "or fix the subscription command in .dome/config.yaml; dedicated source setup is planned for M9.",
         sources: Object.freeze({ kind, scriptPath }),
       }),
     );

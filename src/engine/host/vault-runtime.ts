@@ -136,7 +136,7 @@ const EMPTY_GRANT_ENTRY_REQUIREMENTS: ReadonlyArray<ManifestGrantEntryRequiremen
  * wording.
  */
 export const AGENT_NO_MODEL_PROVIDER_MESSAGE =
-  "dome.agent is enabled but no model provider is configured; run `dome init --with-model-provider` or set enabled: false";
+  "dome.agent is enabled but no model provider is configured; inspect `dome home setup status` or set enabled: false";
 
 // ----- Public types ---------------------------------------------------------
 

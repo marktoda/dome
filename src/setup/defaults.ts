@@ -1,5 +1,5 @@
 import { defaultConfigYaml } from "../cli/default-vault-config";
-import { DEFAULT_AGENTS_MD, DEFAULT_GITIGNORE } from "../cli/commands/init-templates";
+import { CLAUDE_MD_TEMPLATE, DEFAULT_AGENTS_MD, DEFAULT_GITIGNORE } from "../cli/commands/init-templates";
 import type { SetupDiscoveryDeps } from "./discovery";
 import { DEFAULT_SETUP_CONTENT_SCOPE, renderSetupContentScopeConfig } from "./scaffold";
 
@@ -13,6 +13,7 @@ export function canonicalSetupDiscoveryDeps(
     contentScope,
     scaffold: overrides.scaffold ?? {
       agentsOrientation: DEFAULT_AGENTS_MD,
+      claudeOrientation: CLAUDE_MD_TEMPLATE,
       gitignore: DEFAULT_GITIGNORE,
       vaultConfig: defaultConfigYaml({ contentScope }),
       contentScopeConfig: renderSetupContentScopeConfig(contentScope),

@@ -32,6 +32,24 @@ test("home setup CLI renders model-only derived status and fixed next command", 
   expect(errors.join("\n")).not.toContain("transcription");
 });
 
+test("home setup CLI does not route missing provider configuration back to credential setup", async () => {
+  expect(await runHomeSetup("status", { vault: "/vault" }, {
+    credentials: credentials(),
+    resolveModel: async () => ({
+      configuration: "missing",
+      credential: "not-managed",
+      modelState: "unconfigured",
+      probe: null,
+      detail: null,
+    }),
+    inspectResidue: async () => cleanResidue(),
+  })).toBe(1);
+  const output = errors.join("\n");
+  expect(output).toContain("configure model_provider explicitly in .dome/config.yaml");
+  expect(output).toContain("guided `dome setup model` is planned");
+  expect(output).not.toContain("next: dome home setup configure");
+});
+
 test("home setup CLI JSON emits only the public setup document", async () => {
   const states = [runtime("missing", "unconfigured"), runtime("present", "ready")];
   expect(await runHomeSetup("configure", { vault: "/vault", json: true }, {

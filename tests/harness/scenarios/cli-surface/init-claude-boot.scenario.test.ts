@@ -1,12 +1,9 @@
-// scenarios/cli-surface/init-claude-boot.scenario.test.ts
-//
-// `dome init` is the Claude Code boot path. A freshly initialized vault
-// must contain the orientation files, git scaffold, and enough CLI wiring
-// for the user or Claude to immediately run the compiler catch-up path.
+// The compatibility init surface is intentionally narrow: canonical setup
+// owns all mutation, while removed legacy mutation flags fail in Commander.
 
 import { expect } from "bun:test";
 import { existsSync, mkdtempSync } from "node:fs";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -16,248 +13,85 @@ import { currentSha, readBlob } from "../../../../src/git";
 
 scenario(
   {
-    name: "cli-surface: dome init creates a Claude Code-ready vault",
+    name: "cli-surface: dome init is a narrow alias over canonical setup",
     tags: [{ kind: "group", group: "cli-surface" }],
   },
   async () => {
-    const target = mkdtempSync(join(tmpdir(), "dome-init-boot-"));
+    const target = await realpath(mkdtempSync(join(tmpdir(), "dome-init-boot-")));
     try {
       const init = await runCliCaptured(["init", target]);
       expect(init.exitCode).toBe(0);
-      expect(init.stdout).toContain("CLAUDE.md");
+      expect(init.stdout).toContain("Dome setup complete");
       expect(init.stderr).toBe("");
 
       expect(existsSync(join(target, ".git"))).toBe(true);
       expect(existsSync(join(target, ".dome", "config.yaml"))).toBe(true);
       expect(existsSync(join(target, ".dome", "state"))).toBe(true);
-      expect(existsSync(join(target, "notes"))).toBe(true);
-      expect(existsSync(join(target, "inbox", "raw"))).toBe(true);
-      expect(existsSync(join(target, "inbox", "processed"))).toBe(true);
       expect(existsSync(join(target, ".gitignore"))).toBe(true);
       expect(existsSync(join(target, "AGENTS.md"))).toBe(true);
       expect(existsSync(join(target, "CLAUDE.md"))).toBe(true);
+      expect(existsSync(join(target, "notes"))).toBe(false);
+      expect(existsSync(join(target, "inbox"))).toBe(false);
 
       const agents = await readFile(join(target, "AGENTS.md"), "utf8");
       const claude = await readFile(join(target, "CLAUDE.md"), "utf8");
-      const gitignore = await readFile(join(target, ".gitignore"), "utf8");
-
-      expect(claude.startsWith("@AGENTS.md")).toBe(true);
-      expect(claude).toContain("dome status --json");
-      expect(claude).toContain("next_actions");
-      expect(claude).toContain("dome sync --json");
-      expect(claude).toContain("dome check --json");
-      expect(claude).toContain("dome resolve <id> <value>");
-      expect(claude).toContain("before broad manual file hunting");
-      expect(claude).toContain("agent-safe");
-      expect(claude).toContain("owner-needed");
-      expect(claude).not.toContain("only use `dome status`");
-      expect(agents).toContain("## Daily loop");
-      expect(agents).toContain("Dome works at the git commit boundary");
-      expect(agents).toContain("dome status --json");
-      expect(agents).toContain("attention_required");
-      expect(agents).toContain("serve_status");
-      expect(agents).toContain("foreground `dome serve` host");
-      expect(agents).toContain("next_actions");
-      expect(agents).toContain("dome check --json");
-      expect(agents).toContain("dome sync --json");
-      expect(agents).toContain("dome resolve <id> <value>");
-      expect(agents).toContain("agent-safe");
-      expect(agents).toContain("owner-needed");
-      expect(agents).toContain("recommended_answer");
-      expect(agents).toContain("## Source-first reading");
-      expect(agents).toContain("dome export-context <topic> --json");
-      expect(agents).toContain("dome query <text> --json");
-      expect(agents).toContain("dome views --json");
-      expect(agents).toContain("read and search the\n  markdown directly");
-      // The day surface's alternate framings are flags of `today`; the
-      // interactive cockpit itself stays untaught (agents read the prepared
-      // daily-note markdown, not a --watch terminal view).
-      expect(agents).toContain("dome today --prep");
-      expect(agents).toContain("dome today --with <person-or-topic>");
-      expect(agents).toContain("dome audit stale-claims");
-      expect(agents).not.toContain("--watch");
-      expect(agents).toContain("dome export-context <topic>");
-      expect(agents).toContain("Advanced/debug commands");
-      expect(agents).toContain("dome inspect <subject>");
-      expect(agents).toContain("dome inspect bundles --json");
-      expect(agents).toContain("inbox/raw/");
-      expect(agents).toContain("dome.agent");
-      expect(agents).toContain('model: "ready"');
-      expect(agents).toContain(".dome/state/");
-      expect(gitignore).toContain(".dome/state/");
-
+      expect(claude).toContain("@AGENTS.md");
       const head = await currentSha(target);
       expect(head).not.toBeNull();
       if (head === null) throw new Error("expected dome init to create HEAD");
-
-      expect(
-        await readBlob({ path: target, commit: head, filepath: "AGENTS.md" }),
-      ).toBe(agents);
-      expect(
-        await readBlob({ path: target, commit: head, filepath: "CLAUDE.md" }),
-      ).toBe(claude);
-      expect(
-        await readBlob({ path: target, commit: head, filepath: ".gitignore" }),
-      ).toBe(gitignore);
+      expect(await readBlob({ path: target, commit: head, filepath: "AGENTS.md" })).toBe(agents);
+      expect(await readBlob({ path: target, commit: head, filepath: "CLAUDE.md" })).toBe(claude);
 
       const sync = await runCliCaptured(["sync", "--vault", target, "--json"]);
       expect(sync.exitCode).toBe(0);
       const payload = JSON.parse(sync.stdout) as { readonly status: string };
-      expect(payload.status === "adopted" || payload.status === "in-sync").toBe(
-        true,
-      );
+      expect(["adopted", "in-sync"]).toContain(payload.status);
     } finally {
       await rm(target, { recursive: true, force: true });
     }
   },
 );
 
-scenario(
-  {
-    name: "cli-surface: dome init refreshes stale first-party grants",
-    tags: [{ kind: "group", group: "cli-surface" }],
-  },
-  async () => {
-    const target = mkdtempSync(join(tmpdir(), "dome-init-refresh-"));
-    try {
-      await mkdir(join(target, ".dome"), { recursive: true });
-      await writeFile(
-        join(target, ".dome", "config.yaml"),
-        "extensions:\n" +
-          "  dome.lint:\n" +
-          "    enabled: true\n" +
-          "  dome.markdown:\n" +
-          "    enabled: true\n" +
-          "    grant:\n" +
-          "      read:\n" +
-          "        - \"**/*.md\"\n",
-        "utf8",
-      );
+for (const flag of ["--refresh-config", "--refresh-instructions"] as const) {
+  scenario(
+    {
+      name: `cli-surface: dome init rejects retired ${flag}`,
+      tags: [{ kind: "group", group: "cli-surface" }],
+    },
+    async () => {
+      const target = mkdtempSync(join(tmpdir(), "dome-init-retired-"));
+      const ownerPath = join(target, "Owner.md");
+      try {
+        await writeFile(ownerPath, "owner bytes\n");
+        const before = await readFile(ownerPath, "utf8");
+        const init = await runCliCaptured(["init", target, flag]);
+        expect(init.exitCode).toBe(64);
+        expect(init.stderr).toContain(`unknown option '${flag}'`);
+        expect(await readFile(ownerPath, "utf8")).toBe(before);
+        expect(existsSync(join(target, ".git"))).toBe(false);
+        expect(existsSync(join(target, ".dome"))).toBe(false);
+      } finally {
+        await rm(target, { recursive: true, force: true });
+      }
+    },
+  );
+}
 
-      const init = await runCliCaptured(["init", target, "--refresh-config"]);
-      expect(init.exitCode).toBe(0);
-      expect(init.stderr).toBe("");
-      expect(init.stdout).toContain("UPDATED");
-      expect(init.stdout).toContain("- .dome/config.yaml");
-
-      const doctor = await runCliCaptured([
-        "doctor",
-        "--vault",
-        target,
-        "--json",
-      ]);
-      expect(doctor.exitCode).toBe(0);
-      expect(doctor.stderr).toBe("");
-      const report = JSON.parse(doctor.stdout) as {
-        readonly status: string;
-        readonly summary: {
-          readonly capabilityGrantGaps: number;
-          readonly modelProviderMissing: number;
-        };
-      };
-      // The refresh itself is clean: zero capability-grant gaps. But
-      // dome.agent ships enabled by default (product-review-3 Task 17) and
-      // was absent from the hand-written config above, so refresh adds it —
-      // enabled, with no model provider configured in this fixture. That is
-      // the new loud `model.provider-missing` warning working as intended,
-      // not a regression: silence is the thing Task 17 removed.
-      expect(report.summary.capabilityGrantGaps).toBe(0);
-      expect(report.summary.modelProviderMissing).toBe(1);
-      expect(report.status).toBe("unhealthy");
-    } finally {
-      await rm(target, { recursive: true, force: true });
-    }
-  },
-);
-
-scenario(
-  {
-    name: "cli-surface: dome init refreshes stale orientation shims",
-    tags: [{ kind: "group", group: "cli-surface" }],
-  },
-  async () => {
-    const target = mkdtempSync(join(tmpdir(), "dome-init-instructions-"));
-    try {
-      await writeFile(
-        join(target, "AGENTS.md"),
-        "# Old AGENTS\n\nVault-specific instructions.\n",
-        "utf8",
-      );
-      await writeFile(
-        join(target, "CLAUDE.md"),
-        "# Old CLAUDE\n\nClaude-specific instructions.\n",
-        "utf8",
-      );
-
-      const init = await runCliCaptured([
-        "init",
-        target,
-        "--refresh-instructions",
-      ]);
-      expect(init.exitCode).toBe(0);
-      expect(init.stderr).toBe("");
-      expect(init.stdout).toContain("UPDATED");
-      expect(init.stdout).toContain("- AGENTS.md");
-      expect(init.stdout).toContain("- CLAUDE.md");
-
-      const doctor = await runCliCaptured([
-        "doctor",
-        "--vault",
-        target,
-        "--json",
-      ]);
-      expect(doctor.exitCode).toBe(0);
-      expect(doctor.stderr).toBe("");
-      const report = JSON.parse(doctor.stdout) as {
-        readonly status: string;
-        readonly summary: {
-          readonly instructionDrift: number;
-          readonly modelProviderMissing: number;
-        };
-      };
-      // No `.dome/config.yaml` existed before this run, so `dome init`'s
-      // first-write path renders the shipped default — dome.agent enabled
-      // (product-review-3 Task 17) with no model provider configured in
-      // this fixture, which is the new loud `model.provider-missing`
-      // warning, not silence. The instruction-refresh itself is clean.
-      expect(report.summary.instructionDrift).toBe(0);
-      expect(report.summary.modelProviderMissing).toBe(1);
-      expect(report.status).toBe("unhealthy");
-
-      const agents = await readFile(join(target, "AGENTS.md"), "utf8");
-      expect(agents.startsWith("# This is a Dome vault.")).toBe(true);
-      expect(agents).toContain("## Source-first reading");
-      expect(agents).toContain("## Previous vault-specific instructions");
-      expect(agents).toContain("# Old AGENTS");
-      expect(agents).toContain("Vault-specific instructions.");
-    } finally {
-      await rm(target, { recursive: true, force: true });
-    }
-  },
-);
-
-async function runCliCaptured(args: ReadonlyArray<string>): Promise<{
+async function runCliCaptured(args: string[]): Promise<{
   readonly exitCode: number;
   readonly stdout: string;
   readonly stderr: string;
 }> {
-  const captured = { out: [] as string[], err: [] as string[] };
-  const origLog = console.log;
-  const origErr = console.error;
-  console.log = (...parts: unknown[]) =>
-    captured.out.push(parts.map((p) => String(p)).join(" "));
-  console.error = (...parts: unknown[]) =>
-    captured.err.push(parts.map((p) => String(p)).join(" "));
-
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+  const originalLog = console.log;
+  const originalError = console.error;
+  console.log = (...parts: unknown[]) => stdout.push(parts.map(String).join(" "));
+  console.error = (...parts: unknown[]) => stderr.push(parts.map(String).join(" "));
   try {
-    const exitCode = await runCli(args);
-    return {
-      exitCode,
-      stdout: captured.out.join("\n"),
-      stderr: captured.err.join("\n"),
-    };
+    return { exitCode: await runCli(args), stdout: stdout.join("\n"), stderr: stderr.join("\n") };
   } finally {
-    console.log = origLog;
-    console.error = origErr;
+    console.log = originalLog;
+    console.error = originalError;
   }
 }

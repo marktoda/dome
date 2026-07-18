@@ -15,13 +15,14 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "revision": {
         "head": null,
-        "worktreeFingerprint": "3e4a882745b09101189a5b471d54fbb92c11458039d89dc61296d2096dd10252"
+        "worktreeFingerprint": "7ff2b895343f5b5f94a7b209fc2b8f75db011c18a79048ac72d70615cc8c8a35"
       },
       "host": {
         "platform": "darwin",
         "architecture": "arm64"
       },
       "product": {
+        "distribution": "packaged",
         "packageName": "@marktoda/dome",
         "packageVersion": "0.4.0",
         "sourceCommit": "1111111111111111111111111111111111111111",
@@ -51,7 +52,14 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "dome": {
         "state": "absent",
-        "contentScope": "absent"
+        "contentScope": "absent",
+        "scaffold": {
+          "domeDirectory": false,
+          "stateDirectory": false,
+          "agentsOrientation": false,
+          "claudeOrientation": false,
+          "gitignore": false
+        }
       },
       "installedHome": {
         "state": "absent",
@@ -115,6 +123,15 @@ exports[`setup compiler compiles every closed classification into one exact plan
         "path": "AGENTS.md",
         "bytes": 13,
         "sha256": "721430bc7a77d472ced403be3ca0e5ea881bcb8978104e5f305ea579c60c5ada",
+        "mode": "0644",
+        "ifMissing": true
+      },
+      {
+        "kind": "write-scaffold-file",
+        "id": "claude-orientation",
+        "path": "CLAUDE.md",
+        "bytes": 11,
+        "sha256": "336cc4fbf19beaada7ccf9986414fa91851a8d7a07dfb3ccbe800a69eed0ab49",
         "mode": "0644",
         "ifMissing": true
       },
@@ -185,13 +202,14 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "revision": {
         "head": null,
-        "worktreeFingerprint": "4965f73724dd53c66f48c5cdc2c00ac611ede4d2a791081763b70844a19a02b5"
+        "worktreeFingerprint": "919ca7215d1777f1e5918206c385bc752e21034ce125a1a243d6dfa4186da323"
       },
       "host": {
         "platform": "darwin",
         "architecture": "arm64"
       },
       "product": {
+        "distribution": "packaged",
         "packageName": "@marktoda/dome",
         "packageVersion": "0.4.0",
         "sourceCommit": "1111111111111111111111111111111111111111",
@@ -221,7 +239,14 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "dome": {
         "state": "absent",
-        "contentScope": "absent"
+        "contentScope": "absent",
+        "scaffold": {
+          "domeDirectory": false,
+          "stateDirectory": false,
+          "agentsOrientation": false,
+          "claudeOrientation": false,
+          "gitignore": false
+        }
       },
       "installedHome": {
         "state": "absent",
@@ -278,6 +303,15 @@ exports[`setup compiler compiles every closed classification into one exact plan
         "path": "AGENTS.md",
         "bytes": 13,
         "sha256": "721430bc7a77d472ced403be3ca0e5ea881bcb8978104e5f305ea579c60c5ada",
+        "mode": "0644",
+        "ifMissing": true
+      },
+      {
+        "kind": "write-scaffold-file",
+        "id": "claude-orientation",
+        "path": "CLAUDE.md",
+        "bytes": 11,
+        "sha256": "336cc4fbf19beaada7ccf9986414fa91851a8d7a07dfb3ccbe800a69eed0ab49",
         "mode": "0644",
         "ifMissing": true
       },
@@ -348,13 +382,14 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "revision": {
         "head": null,
-        "worktreeFingerprint": "242002b47c678e29b1da0b68b4e2b7ac7ee99c5b2532c0aff2bfc5b0178b54a4"
+        "worktreeFingerprint": "94e16b18dfd145cec7a18fdbddd7f8179946871034e94b437fbabb9d36148583"
       },
       "host": {
         "platform": "darwin",
         "architecture": "arm64"
       },
       "product": {
+        "distribution": "packaged",
         "packageName": "@marktoda/dome",
         "packageVersion": "0.4.0",
         "sourceCommit": "1111111111111111111111111111111111111111",
@@ -384,7 +419,14 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "dome": {
         "state": "absent",
-        "contentScope": "absent"
+        "contentScope": "absent",
+        "scaffold": {
+          "domeDirectory": false,
+          "stateDirectory": false,
+          "agentsOrientation": false,
+          "claudeOrientation": false,
+          "gitignore": false
+        }
       },
       "installedHome": {
         "state": "absent",
@@ -470,6 +512,15 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       {
         "kind": "write-scaffold-file",
+        "id": "claude-orientation",
+        "path": "CLAUDE.md",
+        "bytes": 11,
+        "sha256": "336cc4fbf19beaada7ccf9986414fa91851a8d7a07dfb3ccbe800a69eed0ab49",
+        "mode": "0644",
+        "ifMissing": true
+      },
+      {
+        "kind": "write-scaffold-file",
         "id": "gitignore",
         "path": ".gitignore",
         "bytes": 13,
@@ -540,13 +591,14 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "revision": {
         "head": "1111111111111111111111111111111111111111",
-        "worktreeFingerprint": "434d9570b35b1818f9135a3250c350a8542011a5aadb4b6117c3666dad6f404c"
+        "worktreeFingerprint": "b6003485c7bfda8ab03ad60a19889ad1c490e727f7ed5144a576e756654468ba"
       },
       "host": {
         "platform": "darwin",
         "architecture": "arm64"
       },
       "product": {
+        "distribution": "packaged",
         "packageName": "@marktoda/dome",
         "packageVersion": "0.4.0",
         "sourceCommit": "1111111111111111111111111111111111111111",
@@ -576,7 +628,14 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "dome": {
         "state": "absent",
-        "contentScope": "absent"
+        "contentScope": "absent",
+        "scaffold": {
+          "domeDirectory": false,
+          "stateDirectory": false,
+          "agentsOrientation": false,
+          "claudeOrientation": false,
+          "gitignore": false
+        }
       },
       "installedHome": {
         "state": "absent",
@@ -641,6 +700,15 @@ exports[`setup compiler compiles every closed classification into one exact plan
         "path": "AGENTS.md",
         "bytes": 13,
         "sha256": "721430bc7a77d472ced403be3ca0e5ea881bcb8978104e5f305ea579c60c5ada",
+        "mode": "0644",
+        "ifMissing": true
+      },
+      {
+        "kind": "write-scaffold-file",
+        "id": "claude-orientation",
+        "path": "CLAUDE.md",
+        "bytes": 11,
+        "sha256": "336cc4fbf19beaada7ccf9986414fa91851a8d7a07dfb3ccbe800a69eed0ab49",
         "mode": "0644",
         "ifMissing": true
       },
@@ -716,13 +784,14 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "revision": {
         "head": "1111111111111111111111111111111111111111",
-        "worktreeFingerprint": "c619b0c673da0f8283f250054533f09649e910365b24fea72d94271b46a6d499"
+        "worktreeFingerprint": "9482b31a87423df9e893e264c7288a3788259fdd302e99dcf97193a285a9708d"
       },
       "host": {
         "platform": "darwin",
         "architecture": "arm64"
       },
       "product": {
+        "distribution": "packaged",
         "packageName": "@marktoda/dome",
         "packageVersion": "0.4.0",
         "sourceCommit": "1111111111111111111111111111111111111111",
@@ -752,7 +821,14 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "dome": {
         "state": "configured",
-        "contentScope": "configured"
+        "contentScope": "configured",
+        "scaffold": {
+          "domeDirectory": true,
+          "stateDirectory": true,
+          "agentsOrientation": true,
+          "claudeOrientation": true,
+          "gitignore": true
+        }
       },
       "installedHome": {
         "state": "absent",
@@ -837,13 +913,14 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "revision": {
         "head": "1111111111111111111111111111111111111111",
-        "worktreeFingerprint": "20af63138be08dedb863bd2bb03db315dcf4f05118f294c4a1f63cedaeaa6a09"
+        "worktreeFingerprint": "9d030f426ed3e5f4d564fd4ab36f56b94dd8f92a5517137d6c103565a2c01bb6"
       },
       "host": {
         "platform": "darwin",
         "architecture": "arm64"
       },
       "product": {
+        "distribution": "packaged",
         "packageName": "@marktoda/dome",
         "packageVersion": "0.4.0",
         "sourceCommit": "1111111111111111111111111111111111111111",
@@ -873,7 +950,14 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "dome": {
         "state": "absent",
-        "contentScope": "absent"
+        "contentScope": "absent",
+        "scaffold": {
+          "domeDirectory": false,
+          "stateDirectory": false,
+          "agentsOrientation": false,
+          "claudeOrientation": false,
+          "gitignore": false
+        }
       },
       "installedHome": {
         "state": "absent",
@@ -950,13 +1034,14 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "revision": {
         "head": "1111111111111111111111111111111111111111",
-        "worktreeFingerprint": "6ca4e1e1400f135473e87def44aabfc2e1e68fa13fb36f1abc8d429d70c726af"
+        "worktreeFingerprint": "a3b8b4d6260e4e7fabaa8c9405ed809d68353e0e830fbdbb4e567b7687560e9d"
       },
       "host": {
         "platform": "darwin",
         "architecture": "arm64"
       },
       "product": {
+        "distribution": "packaged",
         "packageName": "@marktoda/dome",
         "packageVersion": "0.4.0",
         "sourceCommit": "1111111111111111111111111111111111111111",
@@ -986,7 +1071,14 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "dome": {
         "state": "absent",
-        "contentScope": "absent"
+        "contentScope": "absent",
+        "scaffold": {
+          "domeDirectory": false,
+          "stateDirectory": false,
+          "agentsOrientation": false,
+          "claudeOrientation": false,
+          "gitignore": false
+        }
       },
       "installedHome": {
         "state": "absent",
@@ -1059,7 +1151,7 @@ Vault: /Users/example/Vault
 Scope: vault-adaptation
 Status: ready
 Classification: existing-non-git-vault
-Revision: no Git HEAD / 242002b47c678e29b1da0b68b4e2b7ac7ee99c5b2532c0aff2bfc5b0178b54a4
+Revision: no Git HEAD / 94e16b18dfd145cec7a18fdbddd7f8179946871034e94b437fbabb9d36148583
 
 Proposed owner baseline:
 - Journal.md
@@ -1070,6 +1162,7 @@ Planned actions:
 - Ensure .dome
 - Ensure .dome/state
 - Create AGENTS.md if missing
+- Create CLAUDE.md if missing
 - Create .gitignore if missing
 - Configure Markdown scope in .dome/config.yaml
 
@@ -1082,6 +1175,11 @@ Warnings:
 
 Deferred (not applied by this plan):
 - Install or upgrade Dome Home only through the separately consented Home activation transaction. (M6)
+
+Consent digest: c2124c6c93aeec9faccf202c544d0bb6e54276bb7f22489c70d67c7b17fa01b6
+Plan file: PLAN_FILE="$(mktemp "\${TMPDIR:-/tmp}/dome-setup-plan.XXXXXX")"
+Save: dome setup '/Users/example/Vault' --dry-run --json > "$PLAN_FILE"
+Apply: dome setup '/Users/example/Vault' --apply --plan "$PLAN_FILE" --consent c2124c6c93aeec9faccf202c544d0bb6e54276bb7f22489c70d67c7b17fa01b6
 
 No changes were made."
 `;

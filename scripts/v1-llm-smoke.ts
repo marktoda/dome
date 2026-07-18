@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -74,7 +74,7 @@ async function main(): Promise<void> {
   const vaultPath = opts.vaultPath ?? await tempVaultPath();
   let shouldCleanup = opts.vaultPath === null && !opts.keep;
   try {
-    await runDome(["init", vaultPath, "--with-model-provider", "anthropic"]);
+    await runDome(["init", vaultPath]);
     await configureSmokeVault(vaultPath, opts);
     await writeFile(join(vaultPath, capturePath), captureBody);
     if (opts.autoResolve) {
@@ -96,6 +96,7 @@ async function main(): Promise<void> {
     await git(vaultPath, [
       "add",
       ".dome/config.yaml",
+      ".dome/model-provider.ts",
       capturePath,
       ...(opts.autoResolve ? [autoResolvePath] : []),
     ]);
@@ -158,6 +159,10 @@ async function configureSmokeVault(
     string,
     unknown
   >;
+  parsed.model_provider = {
+    kind: "command",
+    command: ["bun", ".dome/model-provider.ts"],
+  };
   const extensions = ensureRecord(parsed, "extensions");
   const intake = ensureRecord(extensions, "dome.intake");
   intake.enabled = true;
@@ -171,6 +176,12 @@ async function configureSmokeVault(
     };
   }
   await writeFile(configPath, stringifyYaml(parsed));
+  await writeFile(
+    join(vaultPath, ".dome", "model-provider.ts"),
+    await readFile(join(repoRoot, "assets", "model-providers", "anthropic.ts"), "utf8"),
+  );
+  await mkdir(join(vaultPath, "inbox", "raw"), { recursive: true });
+  await mkdir(join(vaultPath, "wiki"), { recursive: true });
 }
 
 function ensureRecord(
@@ -546,7 +557,7 @@ function printHelp(): void {
       "Usage: bun scripts/v1-llm-smoke.ts [options]",
       "",
       "Runs an optional networked V1 capture-digestion smoke against a",
-      "temporary vault using `dome init --with-model-provider anthropic`.",
+      "temporary vault with an explicit smoke-owned Anthropic provider fixture.",
       "",
       "Options:",
       "  --auto-resolve   Enable low-risk agent-safe question auto-resolution.",

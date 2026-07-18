@@ -25,6 +25,7 @@ function assessment(): VaultAssessment {
     revision: { head: HEAD, worktreeFingerprint: FINGERPRINT },
     host: { platform: "darwin", architecture: "arm64" },
     product: {
+      distribution: "packaged",
       packageName: "@marktoda/dome",
       packageVersion: "0.4.0",
       sourceCommit: HEAD,
@@ -41,7 +42,17 @@ function assessment(): VaultAssessment {
       { id: "git", status: "available", version: "2.50.1" },
     ],
     git: { state: "clean", branch: "main" },
-    dome: { state: "absent", contentScope: "absent" },
+    dome: {
+      state: "absent",
+      contentScope: "absent",
+      scaffold: {
+        domeDirectory: false,
+        stateDirectory: false,
+        agentsOrientation: false,
+        claudeOrientation: false,
+        gitignore: false,
+      },
+    },
     installedHome: {
       state: "absent",
       artifactId: null,
@@ -73,6 +84,10 @@ function plan(): SetupPlan {
       {
         kind: "write-scaffold-file", id: "agents-orientation", path: "AGENTS.md",
         bytes: 10, sha256: FINGERPRINT, mode: "0644", ifMissing: true,
+      },
+      {
+        kind: "write-scaffold-file", id: "claude-orientation", path: "CLAUDE.md",
+        bytes: 11, sha256: FINGERPRINT, mode: "0644", ifMissing: true,
       },
       {
         kind: "write-scaffold-file", id: "gitignore", path: ".gitignore",
@@ -108,6 +123,48 @@ describe("VaultAssessment contract", () => {
     expect(validateVaultAssessment(JSON.parse(JSON.stringify(value)))).toEqual(value);
     expect(value).not.toHaveProperty("actions");
     expect(isDeeplyFrozen(value)).toBe(true);
+  });
+
+  test("source-tree compatibility evidence cannot claim packaged Home authority", () => {
+    const value = assessment();
+    const sourceTree = validateVaultAssessment({
+      ...value,
+      product: {
+        distribution: "source-tree",
+        packageName: "@marktoda/dome",
+        packageVersion: "0.4.0",
+        sourceCommit: HEAD,
+        sourceTreeSha256: MANIFEST,
+        packagedHome: null,
+      },
+    });
+    expect(sourceTree.product.distribution).toBe("source-tree");
+    expect(sourceTree.product.packagedHome).toBeNull();
+    expect(() => validateVaultAssessment({
+      ...value,
+      product: { ...sourceTree.product, packagedHome: value.product.packagedHome },
+    })).toThrow();
+  });
+
+  test("Home-artifact evidence is distinct from packaged Home activation authority", () => {
+    const value = assessment();
+    const homeArtifact = validateVaultAssessment({
+      ...value,
+      product: {
+        distribution: "home-artifact",
+        packageName: "@marktoda/dome",
+        packageVersion: "0.4.0",
+        sourceCommit: HEAD,
+        homeArtifactManifestSha256: MANIFEST,
+        packagedHome: null,
+      },
+    });
+    expect(homeArtifact.product.distribution).toBe("home-artifact");
+    expect(homeArtifact.product.packagedHome).toBeNull();
+    expect(() => validateVaultAssessment({
+      ...value,
+      product: { ...homeArtifact.product, packagedHome: value.product.packagedHome },
+    })).toThrow();
   });
 
   test("rejects repository rows that forge a safe disposition", () => {
@@ -174,11 +231,16 @@ describe("VaultAssessment contract", () => {
     const value = assessment();
     expect(() => validateVaultAssessment({
       ...value,
-      dome: { state: "absent", contentScope: "configured" },
+      dome: { ...value.dome, state: "absent", contentScope: "configured" },
     })).toThrow("cannot exist without Dome config");
     expect(() => validateVaultAssessment({
       ...value,
-      dome: { state: "configured", contentScope: "incompatible" },
+      dome: {
+        ...value.dome,
+        state: "configured",
+        contentScope: "incompatible",
+        scaffold: { ...value.dome.scaffold, domeDirectory: true },
+      },
     })).toThrow("must be incompatible exactly when Dome config is incompatible");
   });
 
@@ -194,7 +256,12 @@ describe("VaultAssessment contract", () => {
     const value = assessment();
     expect(() => validateVaultAssessment({
       ...value,
-      dome: { state: "configured", contentScope: "configured" },
+      dome: {
+        ...value.dome,
+        state: "configured",
+        contentScope: "configured",
+        scaffold: { ...value.dome.scaffold, domeDirectory: true },
+      },
     })).toThrow("must equal existing-dome-vault");
     expect(() => validateVaultAssessment({
       ...value,
@@ -209,7 +276,12 @@ describe("VaultAssessment contract", () => {
       target: { ...value.target, kind: "existing-non-git-vault" },
       revision: { ...value.revision, head: null },
       git: { state: "absent", branch: null },
-      dome: { state: "configured", contentScope: "configured" },
+      dome: {
+        ...value.dome,
+        state: "configured",
+        contentScope: "configured",
+        scaffold: { ...value.dome.scaffold, domeDirectory: true },
+      },
       markdown: { ...value.markdown, tracked: [], untracked: ["notes/hello.md"] },
     });
     expect(configuredNonGit.target.kind).toBe("existing-non-git-vault");
@@ -298,7 +370,17 @@ describe("SetupPlan contract", () => {
     const existing = {
       ...value,
       assessment: { ...value.assessment, target: { ...value.assessment.target, kind: "existing-dome-vault" as const },
-        dome: { state: "configured" as const, contentScope: "absent" as const } },
+        dome: {
+          state: "configured" as const,
+          contentScope: "absent" as const,
+          scaffold: {
+            domeDirectory: true,
+            stateDirectory: true,
+            agentsOrientation: true,
+            claudeOrientation: true,
+            gitignore: true,
+          },
+        } },
       actions: value.actions.filter((action) =>
         action.kind !== "ensure-scaffold-directory" && action.kind !== "write-scaffold-file"
       ).map((action) => action.kind === "set-content-scope" ? {

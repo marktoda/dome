@@ -1,6 +1,6 @@
 // First-party grant-entry probes (`capability.grant-entry-missing`).
 //
-// `dome init --refresh-config` fills only MISSING grant keys, so an existing
+// Explicit owner repair fills only MISSING grant keys, so an existing
 // vault that predates the memory-quality phases keeps its old grant lists:
 // the kind is granted but the new entry is not — invisible to the kind-level
 // `capability.grant-missing` probe. `dome doctor` must name the exact YAML

@@ -2,10 +2,18 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import { defaultConfigYaml } from "../src/cli/default-vault-config";
+import {
+  CLAUDE_MD_TEMPLATE,
+  DEFAULT_AGENTS_MD,
+} from "../src/cli/commands/init-templates";
+
 export type InstalledConsumerEvidence = Readonly<{
   scaffold: Readonly<{
-    modelProvider: "anthropic";
-    source: "slack";
+    canonicalAgents: true;
+    canonicalClaude: true;
+    canonicalConfig: true;
+    installedAssets: true;
     bundlesResolved: true;
   }>;
   currentSchemaReopen: Readonly<{
@@ -29,35 +37,59 @@ export async function verifyInstalledConsumerWorkflow(input: Readonly<{
   run: Run;
 }>): Promise<InstalledConsumerEvidence> {
   const vault = join(input.workspace, "external-vault");
-  await input.run([
-    input.domeBin, "init", vault,
-    "--with-model-provider", "anthropic",
-    "--with-source", "slack",
-  ], input.workspace, input.env);
+  await input.run([input.domeBin, "init", vault], input.workspace, input.env);
   for (const required of [
     join(input.installedRoot, "assets", "extensions", "dome.markdown", "manifest.yaml"),
     join(input.installedRoot, "assets", "model-providers", "anthropic.ts"),
     join(input.installedRoot, "assets", "source-handlers", "claude-slack.sh"),
-    join(vault, ".dome", "model-provider.ts"),
-    join(vault, ".dome", "bin", "fetch-slack.sh"),
   ]) {
     if (!existsSync(required)) throw new Error(`installed package did not resolve asset: ${required}`);
   }
-  if (await readFile(join(vault, ".dome", "model-provider.ts"), "utf8") !==
-    await readFile(join(input.installedRoot, "assets", "model-providers", "anthropic.ts"), "utf8")) {
-    throw new Error("installed model-provider scaffold differs from its shipped asset");
+  for (const [path, expected, label] of [
+    [join(vault, "AGENTS.md"), DEFAULT_AGENTS_MD, "AGENTS.md"],
+    [join(vault, "CLAUDE.md"), CLAUDE_MD_TEMPLATE, "CLAUDE.md"],
+    [join(vault, ".dome", "config.yaml"), defaultConfigYaml(), ".dome/config.yaml"],
+  ] as const) {
+    if (await readFile(path, "utf8") !== expected) {
+      throw new Error(`installed minimal init produced noncanonical ${label}`);
+    }
   }
-  if (await readFile(join(vault, ".dome", "bin", "fetch-slack.sh"), "utf8") !==
-    await readFile(join(input.installedRoot, "assets", "source-handlers", "claude-slack.sh"), "utf8")) {
-    throw new Error("installed Slack scaffold differs from its shipped asset");
+  for (const retired of [
+    "core.md", "wiki", "notes", "inbox", "preferences",
+    ".dome/model-provider.ts", ".dome/bin",
+  ]) {
+    if (existsSync(join(vault, ...retired.split("/")))) {
+      throw new Error(`installed minimal init recreated retired scaffold: ${retired}`);
+    }
   }
   await input.run([input.domeBin, "sync", "--vault", vault, "--quiet"], input.workspace, input.env);
+  const bundles = parseBundles(await input.run([
+    input.domeBin, "inspect", "bundles", "--vault", vault, "--json",
+  ], input.workspace, input.env));
+  if (!bundles.some((row) => row.bundle === "dome.markdown" && row.loaded === true)) {
+    throw new Error("installed package did not resolve the shipped dome.markdown bundle");
+  }
   const first = parseStatus(await input.run([input.domeBin, "status", "--vault", vault, "--json"], input.workspace, input.env));
   const second = parseStatus(await input.run([input.domeBin, "status", "--vault", vault, "--json"], input.workspace, input.env));
   return Object.freeze({
-    scaffold: Object.freeze({ modelProvider: "anthropic" as const, source: "slack" as const, bundlesResolved: true as const }),
+    scaffold: Object.freeze({
+      canonicalAgents: true as const,
+      canonicalClaude: true as const,
+      canonicalConfig: true as const,
+      installedAssets: true as const,
+      bundlesResolved: true as const,
+    }),
     currentSchemaReopen: currentSchemaReopenEvidence(first, second),
   });
+}
+
+function parseBundles(result: Readonly<{ stdout: string }>): ReadonlyArray<Readonly<{
+  bundle?: unknown;
+  loaded?: unknown;
+}>> {
+  const parsed: unknown = JSON.parse(result.stdout);
+  if (!Array.isArray(parsed)) throw new Error("installed package bundle inventory is invalid");
+  return parsed as ReadonlyArray<Readonly<{ bundle?: unknown; loaded?: unknown }>>;
 }
 
 export function currentSchemaReopenEvidence(

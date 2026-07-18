@@ -139,47 +139,55 @@ describe("runCli", () => {
     expect(cleanupHelp).toContain("irreversibly");
   });
 
-  test("init help exposes the optional model-provider scaffold", async () => {
+  test("init help exposes only the narrow path/json grammar", async () => {
     expect(await runCli(["init", "-h"])).toBe(0);
     const out = captured.out.join("\n");
     expect(out).toContain("Usage: dome init");
-    expect(out).toContain("--with-model-provider <provider>");
     expect(out).toContain("--json");
+    expect(out).toContain("existing vaults use dome setup");
+    expect(out).not.toContain("--with-model-provider");
+    expect(out).not.toContain("--with-source");
+    expect(out).not.toContain("--refresh-config");
+    expect(out).not.toContain("--refresh-instructions");
   });
 
-  test("setup is an explicit read-only preview surface", async () => {
+  test("setup exposes explicit preview and consented-apply modes", async () => {
     expect(await runCli(["setup", "--help"])).toBe(0);
     const help = captured.out.join("\n");
     expect(help).toContain("Usage: dome setup");
     expect(help).toContain("--dry-run");
+    expect(help).toContain("--apply");
+    expect(help).toContain("--plan <file>");
+    expect(help).toContain("--consent <digest>");
     expect(help).toContain("--json");
 
     captured.out = [];
     captured.err = [];
     expect(await runCli(["setup", "/tmp/example"])).toBe(64);
-    expect(captured.err.join("\n")).toContain("required option '--dry-run' not specified");
+    expect(captured.err.join("\n")).toContain("choose exactly one");
+
+    captured.err = [];
+    expect(await runCli(["setup", "/tmp/example", "--apply"])).toBe(64);
+    expect(captured.err.join("\n")).toContain("requires --consent");
+
+    captured.err = [];
+    expect(await runCli([
+      "setup", "/tmp/example", "--apply", "--consent", "a".repeat(64),
+    ])).toBe(64);
+    expect(captured.err.join("\n")).toContain("requires --plan");
   });
 
-  test("init rejects unknown model-provider scaffolds", async () => {
-    expect(await runCli(["init", "--with-model-provider", "openai"])).toBe(64);
-    const err = captured.err.join("\n");
-    expect(err).toContain("invalid provider; expected one of: anthropic");
-    expect(err).toContain("Usage: dome init");
-  });
-
-  test("init help exposes the repeatable source scaffold", async () => {
-    expect(await runCli(["init", "-h"])).toBe(0);
-    const out = captured.out.join("\n");
-    expect(out).toContain("--with-source <kind>");
-    expect(out).toContain("calendar");
-    expect(out).toContain("slack");
-  });
-
-  test("init rejects unknown source kinds with the kind list", async () => {
-    expect(await runCli(["init", "--with-source", "gmail"])).toBe(64);
-    const err = captured.err.join("\n");
-    expect(err).toContain("invalid source kind; expected one of: calendar, slack");
-    expect(err).toContain("Usage: dome init");
+  test("removed init mutation flags are ordinary unknown options", async () => {
+    for (const flag of [
+      "--with-model-provider",
+      "--with-source",
+      "--refresh-config",
+      "--refresh-instructions",
+    ]) {
+      captured.err = [];
+      expect(await runCli(["init", flag])).toBe(64);
+      expect(captured.err.join("\n")).toContain(`unknown option '${flag}'`);
+    }
   });
 
   test("compiler host help exposes quiet output mode", async () => {

@@ -51,6 +51,13 @@ function input(kind: SetupCompilerInput["source"]["kind"]): SetupCompilerInput {
       dome: {
         state: kind === "existing-dome-vault" ? "configured" : "absent",
         contentScope: kind === "existing-dome-vault" ? "configured" : "absent",
+        scaffold: {
+          domeDirectory: kind === "existing-dome-vault",
+          stateDirectory: kind === "existing-dome-vault",
+          agentsOrientation: kind === "existing-dome-vault",
+          claudeOrientation: kind === "existing-dome-vault",
+          gitignore: kind === "existing-dome-vault",
+        },
       },
       markdown: {
         tracked: gitPresent ? ["notes/hello.md"] : [],
@@ -71,6 +78,7 @@ function input(kind: SetupCompilerInput["source"]["kind"]): SetupCompilerInput {
     host: { platform: "darwin", architecture: "arm64" },
     prerequisites: { bun: "1.2.13", git: "2.50.1" },
     product: {
+      distribution: "packaged",
       packageName: "@marktoda/dome",
       packageVersion: "0.4.0",
       sourceCommit: HEAD,
@@ -93,6 +101,7 @@ function input(kind: SetupCompilerInput["source"]["kind"]): SetupCompilerInput {
     contentScope: { version: 1, include: ["**/*.md"], exclude: [".dome/**", ".git/**"] },
     scaffold: {
       agentsOrientation: "# Dome vault\n",
+      claudeOrientation: "@AGENTS.md\n",
       gitignore: ".dome/state/\n",
       vaultConfig: "content_scope:\n  version: 1\n  include: [\"**/*.md\"]\n  exclude: [\".dome/**\", \".git/**\"]\n",
       contentScopeConfig: "content_scope:\n  version: 1\n  include: [\"**/*.md\"]\n  exclude: [\".dome/**\", \".git/**\"]\n",
@@ -108,6 +117,7 @@ describe("setup compiler", () => {
 
   test("is deterministic and binds all injected evidence into the revision", () => {
     const evidence = input("existing-git-vault");
+    if (evidence.product.distribution !== "packaged") throw new Error("fixture must be packaged");
     expect(compileSetupPlan(evidence)).toEqual(compileSetupPlan(structuredClone(evidence)));
     const mutations: ReadonlyArray<SetupCompilerInput> = [
       { ...evidence, source: { ...evidence.source, worktreeFingerprint: "8".repeat(64) } },
@@ -117,7 +127,7 @@ describe("setup compiler", () => {
       { ...evidence, product: { ...evidence.product, productManifestSha256: "9".repeat(64) } },
       { ...evidence, installedHome: { ...evidence.installedHome, state: "ambiguous" } },
       { ...evidence, scaffold: { ...evidence.scaffold, agentsOrientation: "# Different orientation\n" } },
-      { ...evidence, scaffold: { ...evidence.scaffold, gitignore: ".dome/state/\n.DS_Store\n" } },
+      { ...evidence, scaffold: { ...evidence.scaffold, claudeOrientation: "@AGENTS.md\n# Different\n" } },
       {
         ...evidence,
         contentScope: { ...evidence.contentScope, include: ["notes/**/*.md"] },
@@ -130,6 +140,25 @@ describe("setup compiler", () => {
     ];
     const baseline = setupRevisionFingerprint(evidence);
     for (const changed of mutations) expect(setupRevisionFingerprint(changed)).not.toBe(baseline);
+
+    const homeArtifact: SetupCompilerInput = {
+      ...evidence,
+      product: {
+        distribution: "home-artifact",
+        packageName: "@marktoda/dome",
+        packageVersion: evidence.product.packageVersion,
+        sourceCommit: evidence.product.sourceCommit,
+        homeArtifactManifestSha256: "7".repeat(64),
+        packagedHome: null,
+      },
+    };
+    if (homeArtifact.product.distribution !== "home-artifact") {
+      throw new Error("fixture must carry Home-artifact evidence");
+    }
+    expect(setupRevisionFingerprint({
+      ...homeArtifact,
+      product: { ...homeArtifact.product, homeArtifactManifestSha256: "6".repeat(64) },
+    })).not.toBe(setupRevisionFingerprint(homeArtifact));
     expect(() => setupRevisionFingerprint({
       ...evidence,
       contentScope: { ...evidence.contentScope, include: ["notes/**/*.md"] },
@@ -195,7 +224,10 @@ describe("setup compiler", () => {
     const base = input("existing-dome-vault");
     const plan = compileSetupPlan({
       ...base,
-      source: { ...base.source, dome: { state: "configured", contentScope: "absent" } },
+      source: {
+        ...base.source,
+        dome: { ...base.source.dome, state: "configured", contentScope: "absent" },
+      },
     });
     const scopeActions = plan.actions.filter((action) => action.kind === "set-content-scope");
     expect(scopeActions).toHaveLength(1);
@@ -210,12 +242,50 @@ describe("setup compiler", () => {
     ]);
   });
 
+  test("plans the missing Claude shim independently of configured Dome state", () => {
+    const base = input("existing-dome-vault");
+    const plan = compileSetupPlan({
+      ...base,
+      source: {
+        ...base.source,
+        dome: {
+          ...base.source.dome,
+          scaffold: { ...base.source.dome.scaffold, claudeOrientation: false },
+        },
+      },
+    });
+    expect(plan.actions).toEqual([
+      expect.objectContaining({
+        kind: "write-scaffold-file",
+        id: "claude-orientation",
+        path: "CLAUDE.md",
+        ifMissing: true,
+      }),
+    ]);
+  });
+
   test("renders human and JSON forms from the same validated plan", () => {
     const plan = compileSetupPlan(input("existing-non-git-vault"));
     expect(JSON.parse(renderSetupPlanJson(plan))).toEqual(plan);
     expect(renderSetupPlanHuman(plan)).toMatchSnapshot();
     expect(renderSetupPlanHuman(plan)).toContain("No changes were made.");
     expect(() => renderSetupPlanHuman({ ...plan, status: "blocked" })).toThrow("must agree with assessment blockers");
+  });
+
+  test("renders copyable setup commands with shell-safe target quoting", () => {
+    const evidence = input("new-path");
+    const targetPath = "/Users/O'Brien/$Vault";
+    const plan = compileSetupPlan({
+      ...evidence,
+      source: { ...evidence.source, targetPath },
+    });
+    const rendered = renderSetupPlanHuman(plan);
+    expect(rendered).toContain("dome setup '/Users/O'\\''Brien/$Vault'");
+    expect(rendered).not.toContain('dome setup "/Users/O\'Brien/$Vault"');
+    expect(rendered).toContain('PLAN_FILE="$(mktemp "${TMPDIR:-/tmp}/dome-setup-plan.XXXXXX")"');
+    expect(rendered).toContain('> "$PLAN_FILE"');
+    expect(rendered).toContain('--plan "$PLAN_FILE"');
+    expect(rendered).not.toContain("> dome-setup-plan.json");
   });
 
   test("fails closed on malformed evidence instead of coercing it", () => {
@@ -257,7 +327,11 @@ describe("setup compiler", () => {
       ...existing,
       source: {
         ...existing.source,
-        dome: { state: "configured", contentScope: "configured" },
+        dome: {
+          ...existing.source.dome,
+          state: "configured",
+          contentScope: "configured",
+        },
       },
     })).toThrow("classification disagrees with its evidence");
     expect(() => compileSetupPlan({

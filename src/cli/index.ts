@@ -9,7 +9,6 @@
 import {
   Command,
   CommanderError,
-  InvalidArgumentError,
   Option,
 } from "commander";
 
@@ -174,37 +173,13 @@ function buildProgram(setExitCode: (code: number) => void): Command {
   program
     .command("init")
     .helpGroup(GROUP_START)
-    .description("Initialize a vault.")
+    .description("Initialize a new vault (existing vaults use dome setup).")
     .argument("[path]", "Vault path (defaults to current directory).")
-    .option(
-      "--refresh-config",
-      "Fill missing first-party default grant keys in an existing config.",
-    )
-    .option(
-      "--refresh-instructions",
-      "Repair old AGENTS.md/CLAUDE.md orientation shims.",
-    )
-    .option(
-      "--with-model-provider <provider>",
-      "Write a local command model provider template (currently: anthropic).",
-      parseInitModelProviderOption,
-    )
-    .option(
-      "--with-source <kind>",
-      "Scaffold a source fetch adapter + disabled subscription stanza " +
-        "(repeatable; kinds: calendar, slack).",
-      parseInitSourceOption,
-      [] as ReadonlyArray<"calendar" | "slack">,
-    )
     .option("--json", "Emit JSON.")
     .action(async (path: string | undefined, options: InitCliOptions) => {
       setExitCode(
         await runInit({
           path,
-          refreshConfig: options.refreshConfig,
-          refreshInstructions: options.refreshInstructions,
-          modelProvider: options.withModelProvider,
-          withSource: options.withSource,
           json: options.json,
         }),
       );
@@ -213,12 +188,22 @@ function buildProgram(setExitCode: (code: number) => void): Command {
   program
     .command("setup")
     .helpGroup(GROUP_START)
-    .description("Assess a vault and preview additive setup work.")
+    .description("Assess or apply conservative vault setup.")
     .argument("[path]", "Vault path (defaults to current directory).")
-    .requiredOption("--dry-run", "Preview setup without changing files, Git, Home, or services.")
-    .option("--json", "Emit the versioned setup plan as JSON.")
+    .option("--dry-run", "Preview setup without changing files, Git, Home, or services.")
+    .option("--apply", "Apply the revision-bound vault-adaptation plan.")
+    .option("--plan <file>", "Caller-retained plan JSON from --dry-run --json.")
+    .option("--consent <digest>", "SHA-256 digest printed by the approved preview.")
+    .option("--json", "Emit the versioned setup document as JSON.")
     .action(async (path: string | undefined, options: SetupCliOptions) => {
-      setExitCode(await runSetup({ path, dryRun: options.dryRun, json: options.json }));
+      setExitCode(await runSetup({
+        path,
+        dryRun: options.dryRun,
+        apply: options.apply,
+        plan: options.plan,
+        consent: options.consent,
+        json: options.json,
+      }));
     });
 
   program
@@ -1295,10 +1280,6 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 }
 
 type InitCliOptions = {
-  readonly refreshConfig?: boolean;
-  readonly refreshInstructions?: boolean;
-  readonly withModelProvider?: "anthropic";
-  readonly withSource?: ReadonlyArray<"calendar" | "slack">;
   readonly json?: boolean;
 };
 
@@ -1345,6 +1326,9 @@ type HomeCliOptions = {
 
 type SetupCliOptions = {
   readonly dryRun?: boolean;
+  readonly apply?: boolean;
+  readonly plan?: string;
+  readonly consent?: string;
   readonly json?: boolean;
 };
 
@@ -1687,24 +1671,6 @@ function parseLintFailOnOption(value: string): LintFailOn {
     EX_USAGE,
     "commander.invalidArgument",
     `error: invalid lint severity '${value}'`,
-  );
-}
-
-function parseInitModelProviderOption(value: string): "anthropic" {
-  if (value === "anthropic") return value;
-  throw new InvalidArgumentError(
-    "invalid provider; expected one of: anthropic",
-  );
-}
-
-/** Repeatable `--with-source <kind>` accumulator. Unknown kind → EX_USAGE. */
-function parseInitSourceOption(
-  value: string,
-  previous: ReadonlyArray<"calendar" | "slack">,
-): ReadonlyArray<"calendar" | "slack"> {
-  if (value === "calendar" || value === "slack") return [...previous, value];
-  throw new InvalidArgumentError(
-    "invalid source kind; expected one of: calendar, slack",
   );
 }
 

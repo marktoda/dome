@@ -81,7 +81,7 @@ function queueFile(name: string, body: string): string {
 
 function rawCaptures(): ReadonlyArray<string> {
   try {
-    // The init scaffold ships inbox/raw/.gitkeep; only captures are .md.
+    // The capture operation creates inbox/raw on demand; only captures are .md.
     return readdirSync(join(vaultPath, "inbox", "raw"))
       .filter((name) => name.endsWith(".md"))
       .sort();

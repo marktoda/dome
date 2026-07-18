@@ -157,7 +157,7 @@ function deriveNext(
 
 function configurationMessage(configuration: HomeModelRuntime["configuration"]): string {
   if (configuration === "custom") return "custom model_provider configuration is preserved and not managed by Home setup";
-  if (configuration === "missing") return "run `dome init --with-model-provider anthropic` before storing a Home credential";
+  if (configuration === "missing") return "initialize the managed model-provider configuration before storing a Home credential";
   return "vault model_provider configuration is invalid";
 }
 

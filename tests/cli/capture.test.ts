@@ -330,6 +330,7 @@ describe("runCapture commit isolation", () => {
     await writeFile(join(vault, "AGENTS.md"), `${agentsOriginal}\nSTAGED EDIT\n`);
     await add(vault, "AGENTS.md");
     // ...plus an untracked draft.
+    await mkdir(join(vault, "notes"), { recursive: true });
     await writeFile(join(vault, "notes/draft.md"), "loose draft\n", "utf8");
 
     expect(await runCapture({ vault, text: "the capture" }, clock)).toBe(0);

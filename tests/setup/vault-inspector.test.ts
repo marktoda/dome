@@ -132,7 +132,17 @@ describe("read-only setup vault inspector", () => {
     const repeated = await inspectSetupVaultSource(root);
     expect(repeated).toEqual(first);
     expect(first.kind).toBe("existing-dome-vault");
-    expect(first.dome).toEqual({ state: "configured", contentScope: "configured" });
+    expect(first.dome).toEqual({
+      state: "configured",
+      contentScope: "configured",
+      scaffold: {
+        domeDirectory: true,
+        stateDirectory: false,
+        agentsOrientation: false,
+        claudeOrientation: false,
+        gitignore: false,
+      },
+    });
     expect(first.blockers).toEqual([]);
   });
 
@@ -150,7 +160,17 @@ content_scope:
     await git(root, "commit", "-m", "Add malformed content scope");
 
     const inspected = await inspectSetupVaultSource(root);
-    expect(inspected.dome).toEqual({ state: "incompatible", contentScope: "incompatible" });
+    expect(inspected.dome).toEqual({
+      state: "incompatible",
+      contentScope: "incompatible",
+      scaffold: {
+        domeDirectory: true,
+        stateDirectory: false,
+        agentsOrientation: false,
+        claudeOrientation: false,
+        gitignore: false,
+      },
+    });
     expect(inspected.kind).toBe("unsafe-or-ambiguous-state");
     expect(inspected.blockers.map((blocker) => blocker.code)).toEqual(["ambiguous-state"]);
   });
@@ -164,7 +184,17 @@ content_scope:
     await git(root, "commit", "-m", "Configure Dome policy documents");
 
     const inspected = await inspectSetupVaultSource(root);
-    expect(inspected.dome).toEqual({ state: "configured", contentScope: "configured" });
+    expect(inspected.dome).toEqual({
+      state: "configured",
+      contentScope: "configured",
+      scaffold: {
+        domeDirectory: true,
+        stateDirectory: false,
+        agentsOrientation: false,
+        claudeOrientation: false,
+        gitignore: false,
+      },
+    });
     expect(inspected.blockers).toEqual([]);
   });
 
@@ -191,7 +221,17 @@ content_scope:
       await git(root, "commit", "-m", "Add incompatible policy documents");
 
       const inspected = await inspectSetupVaultSource(root);
-      expect(inspected.dome).toEqual({ state: "incompatible", contentScope: "incompatible" });
+      expect(inspected.dome).toEqual({
+        state: "incompatible",
+        contentScope: "incompatible",
+        scaffold: {
+          domeDirectory: true,
+          stateDirectory: false,
+          agentsOrientation: false,
+          claudeOrientation: false,
+          gitignore: false,
+        },
+      });
       expect(inspected.blockers.map((blocker) => blocker.code)).toEqual(["ambiguous-state"]);
     }
   });
@@ -832,6 +872,7 @@ function validateInspectionAssessment(
     revision: { head: inspected.git.head, worktreeFingerprint: inspected.worktreeFingerprint },
     host: { platform: "darwin", architecture: "arm64" },
     product: {
+      distribution: "packaged",
       packageName: "@marktoda/dome",
       packageVersion: "0.4.0",
       sourceCommit: "1".repeat(40),

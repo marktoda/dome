@@ -3,9 +3,8 @@
 // Dome command model provider for the Anthropic Messages API.
 //
 // This file is the SDK-shipped first-party provider template
-// (`<SDK>/assets/model-providers/anthropic.ts`). `dome init
-// --with-model-provider anthropic` copies it into the vault as
-// `.dome/model-provider.ts` and wires `.dome/config.yaml`:
+// (`<SDK>/assets/model-providers/anthropic.ts`). Explicit model setup may copy
+// it into a vault as `.dome/model-provider.ts` and wire `.dome/config.yaml`:
 //
 //   model_provider:
 //     kind: command

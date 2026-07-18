@@ -198,7 +198,7 @@ Shape rules (loose by design — the file is produced by vault-adopted tooling):
 - Consumers MUST parse defensively: entries that don't match the bracket/time grammar are still entries (text-only), per-section counts and text lengths are capped (`dome.agent.brief`'s parser caps at 15 entries per section and 240 characters per entry text, ellipsis included), and the content is **untrusted input** to any model prompt — data, never instructions.
 - A missing file means "no digest known"; consumers degrade by omitting their Slack-derived output entirely, never by inventing one.
 
-Populating it follows the calendar pattern with one stance difference: Slack is supported but **never shipped on** ([[wiki/specs/sources]] §"The Slack stance"). The opt-in `dome.sources` `slack` subscription runs the vault-adopted fetch command through the outbox; `assets/source-handlers/claude-slack.sh` ships as the template — `dome init --with-source slack` copies it to `.dome/bin/fetch-slack.sh` alongside a disabled subscription stanza, and the owner reviews the script (its fetch is headless `claude` running **as the owner**) before flipping `enabled: true`.
+Populating it follows the calendar pattern with one stance difference: Slack is supported but **never shipped on** ([[wiki/specs/sources]] §"The Slack stance"). The opt-in `dome.sources` `slack` subscription runs the vault-adopted fetch command through the outbox; `assets/source-handlers/claude-slack.sh` ships as a template the owner may copy explicitly to `.dome/bin/fetch-slack.sh`, configure, review (its fetch is headless `claude` running **as the owner**), and enable. Dedicated source setup is planned for M9.
 
 ## `core.md` — the core memory page (convention)
 
@@ -296,18 +296,17 @@ knowledge writers, the exclusion remains a follow-up — gated on moving
 future adoption-phase apply surface) — tracked in
 [[wiki/specs/preferences]] §"Follow-ups".
 
-`dome init` scaffolds a commented `core.md` skeleton (first-write-only, never
-overwritten on re-run) — see [[wiki/specs/cli]] §"dome init". `dome recipe
-core-seed` is the seeding path for the owner-authored sections.
+Canonical setup deliberately does not invent owner memory. `dome recipe
+core-seed` is the explicit seeding path for the owner-authored `core.md`
+sections.
 
 ## `preferences/signals.md` — preference signals (convention)
 
 `preferences/signals.md` is the **append-only preference-signal page** for
 the promotion mechanism specced at [[wiki/specs/preferences]]. By the
 category table above, `preferences/` is `external` — a documented convention,
-not a new category. `dome init` scaffolds it as a heading plus a commented
-grammar header (first-write-only — like `core.md` it is owner data; re-init
-never clobbers accumulated signal lines, and there is no refresh path). One
+not a new category. Canonical setup does not create this owner data; the first
+explicit signal write creates the page with its grammar header. One
 dated, signed line per signal:
 
 ```markdown
@@ -516,10 +515,10 @@ git:
   auto_commit_workflows: true     # mirror of engine.auto_commit_workflows
 ```
 
-`model_provider` is optional. `dome init --with-model-provider anthropic`
-copies the shipped template (`<SDK>/assets/model-providers/anthropic.ts`) to a
-vault-local `.dome/model-provider.ts` command adapter and adds the stanza
-above. The command runs from the vault root, receives one JSON envelope on
+`model_provider` is optional. Explicit model setup may copy the shipped
+template (`<SDK>/assets/model-providers/anthropic.ts`) to a vault-local
+`.dome/model-provider.ts` command adapter and add the stanza above; narrow
+`dome init` does neither. The command runs from the vault root, receives one JSON envelope on
 stdin — `dome.model-provider.request/v1` (one-shot text),
 `dome.model-provider.step/v1` (tool-use step), or
 `dome.model-provider.probe/v1` (cheap liveness probe; see

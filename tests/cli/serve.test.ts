@@ -1117,7 +1117,7 @@ extensions:
     );
     expect(warningLine).toBeDefined();
     expect(warningLine).toContain("dome.agent is enabled");
-    expect(warningLine).toContain("dome init --with-model-provider");
+    expect(warningLine).toContain("dome home setup status");
   }, 10_000);
 
   test("does not log the no-provider warning when dome.agent is disabled", async () => {

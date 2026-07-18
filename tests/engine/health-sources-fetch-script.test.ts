@@ -4,7 +4,7 @@
 // script file that is missing (or not a regular file) fails on every
 // scheduled fetch; discovering that from failed outbox rows the next morning
 // is miserable. Doctor flags it up front: kind + script path + the
-// `dome init --with-source <kind>` recovery. The check is STATIC — doctor
+// explicit source-configuration recovery. The check is STATIC — doctor
 // never executes the fetch command (it would hit Slack/calendar for real).
 // Disabled or absent subscriptions produce nothing; a present script file is
 // healthy (no finding). Commands with no statically checkable script
@@ -46,7 +46,7 @@ function subscription(opts: {
 }
 
 describe("sourcesFetchScriptFindings", () => {
-  test("enabled subscription with a missing script → finding (kind + path + --with-source recovery)", () => {
+  test("enabled subscription with a missing script → finding with explicit recovery", () => {
     const findings = findingsFor({
       enabled: ["dome.sources"],
       sourcesConfig: subscription({
@@ -64,7 +64,7 @@ describe("sourcesFetchScriptFindings", () => {
     expect(finding.id).toBe("sources_fetch:slack");
     expect(finding.message).toContain("slack");
     expect(finding.message).toContain(".dome/bin/fetch-slack.sh");
-    expect(finding.recovery).toContain("dome init --with-source slack");
+    expect(finding.recovery).toContain("dedicated source setup is planned for M9");
     if (finding.code === "sources.fetch-script-missing") {
       expect(finding.sources).toEqual({
         kind: "slack",

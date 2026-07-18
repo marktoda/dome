@@ -96,8 +96,10 @@ export type ReleasePackageReport = {
   readonly exports: ReadonlyArray<string>;
   readonly cliHelp: true;
   readonly scaffold: {
-    readonly modelProvider: "anthropic";
-    readonly source: "slack";
+    readonly canonicalAgents: true;
+    readonly canonicalClaude: true;
+    readonly canonicalConfig: true;
+    readonly installedAssets: true;
     readonly bundlesResolved: true;
   };
   readonly currentSchemaReopen: {

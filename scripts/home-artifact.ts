@@ -44,10 +44,12 @@ import {
   PINNED_BUN_BINARY_SHA256,
   PINNED_BUN_VERSION,
   verifyHomeArtifact,
+  verifyHomeArtifactEvidence,
   type HomeArtifactCodeSigning,
   type HomeArtifactEntry,
   type HomeArtifactManifest,
 } from "../src/product-host/home-artifact";
+import { discoverInitProduct } from "../src/setup/init-product";
 import { HOME_DURABLE_STATE_PROTOCOL, HOME_STORE_MIGRATIONS } from "../src/product-host/home-store-migrations";
 import { HOME_PAIRING_READINESS_TIMEOUT_MS } from "../src/product-host/home-readiness";
 import {
@@ -390,9 +392,22 @@ export async function buildHomeArtifact(options: BuildOptions = {}): Promise<{
       }
     },
     verifyArtifact: async ({ directory }) => {
-      await runReleasePhase(
-        "home-verify-artifact", reportProgress, async () => await verifyHomeArtifact(directory),
-      );
+      await runReleasePhase("home-verify-artifact", reportProgress, async () => {
+        const evidence = await verifyHomeArtifactEvidence(directory);
+        const initProduct = await discoverInitProduct(join(directory, "app"), async (artifactRoot) => {
+          if (artifactRoot !== directory) {
+            throw new Error("Home artifact init selected a different artifact root");
+          }
+          return evidence;
+        });
+        if (initProduct.distribution !== "home-artifact" ||
+          initProduct.packageVersion !== evidence.manifest.product.version ||
+          initProduct.sourceCommit !== evidence.manifest.build.gitCommit ||
+          initProduct.homeArtifactManifestSha256 !== evidence.manifestSha256 ||
+          initProduct.packagedHome !== null) {
+          throw new Error("verified Home artifact is not compatible with Dome init");
+        }
+      });
     },
     rehearseArchive: async ({ directory, archive }) => {
       await runReleasePhase(

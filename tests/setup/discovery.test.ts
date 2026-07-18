@@ -187,6 +187,8 @@ describe("setup discovery adapters", () => {
       expect(packageRoot).toBe("/installed/dome");
       return verified;
     });
+    expect(product.distribution).toBe("packaged");
+    if (product.distribution !== "packaged") throw new Error("expected packaged evidence");
     expect(product.packageName).toBe("@marktoda/dome");
     expect(product.packagedHome.artifactId).toBe(sha);
     expect(product.productManifestSha256).toBe("c".repeat(64));

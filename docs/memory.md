@@ -118,7 +118,8 @@ the four pre-existing `v1-dogfood-preflight` failures. M1 → (M2 ∥ M3) →
   review). Documented as the canonical grant shape.
 - **Size lint**: deterministic warning when core.md exceeds the budget
   (~6,000 chars) — it must stay an always-loadable block, not a junk drawer.
-- `dome init` scaffolds a commented skeleton.
+- Canonical setup does not invent this owner memory; `dome recipe core-seed`
+  is the explicit seeding path.
 
 ### M4 — Dismissal-derived impression discounting
 
@@ -172,10 +173,9 @@ Specced at [[wiki/specs/embeddings]]; invariant drafted at
 
 ## Vault rollout (after merge)
 
-`dome init --refresh-config` fills only **missing** grant keys for enabled
-first-party bundles — it never merges new entries into a grant list the vault
-already carries (grant lists are user-owned config; auto-merging is too
-risky). An existing vault therefore applies the grant edits below by hand in
+The retired init refresh path does not mutate existing grant lists (grant
+lists are user-owned config; auto-merging is too risky). An existing vault
+therefore applies the grant edits below by hand in
 `.dome/config.yaml`. Until they land, `dome doctor` raises one
 `capability.grant-entry-missing` warning per gap, naming the exact YAML to
 add (`capabilityGrantEntryFindings` in `src/engine/host/health.ts` is the
@@ -219,8 +219,7 @@ canonical probe list — keep this section and that table in lockstep).
    `page-status` supersession facts; needed for vaults whose config predates
    the M2 grant).
 
-**Other rollout steps:** seed `core.md` (or let `dome init` scaffold the
-first-write-only skeleton); remove the stale `.dome/prompts/` augmentation
+**Other rollout steps:** seed `core.md` with `dome recipe core-seed`; remove the stale `.dome/prompts/` augmentation
 section from CLAUDE.md (retired in v1); restart the daemon.
 Supersession/status conventions announce themselves via lint.
 

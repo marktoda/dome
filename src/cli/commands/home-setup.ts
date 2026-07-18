@@ -64,8 +64,12 @@ function cleanupNext(action: Awaited<ReturnType<typeof cleanupHomeCredentialResi
 function formatNext(action: Awaited<ReturnType<typeof manageHomeSetup>>["nextAction"]): string {
   if (action === "none") return "none";
   if (action === "configure-model") return "dome home setup configure";
-  if (action === "initialize-model-provider") return "dome init --with-model-provider anthropic";
-  if (action === "configure-model-provider") return "configure model_provider in .dome/config.yaml";
+  if (action === "initialize-model-provider") {
+    return "configure model_provider explicitly in .dome/config.yaml (guided `dome setup model` is planned)";
+  }
+  if (action === "configure-model-provider") {
+    return "repair model_provider explicitly in .dome/config.yaml (guided `dome setup model` is planned)";
+  }
   if (action === "unlock-keychain") return "unlock the login Keychain and retry";
   return "inspect legacy credential residue before migration";
 }

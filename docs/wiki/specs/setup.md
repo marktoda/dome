@@ -7,12 +7,13 @@ updated: 2026-07-18
 
 # Setup assessment, plan, and vault adaptation
 
-`dome setup --dry-run` is the first public onboarding grammar. It produces one
-read-only `VaultAssessment` and one immutable `SetupPlan`. The product setup
-Module can consume that same plan through `applySetupPlan(plan, consent)` to
-perform its `vault-adaptation` scope. The current CLI remains preview-only;
-exposing this mutation through `dome setup --apply` and collapsing `dome init`
-onto the same Module are the next M5 checkpoint.
+`dome setup --dry-run` produces one read-only `VaultAssessment` and one
+immutable `SetupPlan`. The caller retains the JSON plan and supplies it with
+its printed SHA-256 to `dome setup --apply --plan <file> --consent <digest>`.
+The command routes that exact plan through `applySetupPlan(plan, consent)` for
+its `vault-adaptation` scope. Legacy `dome init` delegates only new/empty-vault
+construction (plus an already-complete no-op) to the same Module. Existing
+vault decisions always require the public retained-plan consent grammar.
 
 This page defines assessment, planning, consent, vault adaptation, and
 recovery. It does not define an installer workflow, a persisted setup record,
@@ -32,10 +33,14 @@ vault path. It contains:
   `existing`), and exactly one closed vault classification;
 - a Git `HEAD` when the target is a Git worktree and a deterministic worktree
   fingerprint in all cases;
-- host, installed-package, packaged-product, prerequisite, Git, Dome, and
-  installed-Home classifications. Packaged Home identity (artifact ID,
-  version, build commit, and manifest hash) is distinct from installed Home
-  identity and vault-selector truth;
+- host, product-distribution, prerequisite, Git, Dome, and installed-Home
+  classifications. A verified packaged distribution carries packaged Home
+  identity (artifact ID, version, build commit, and manifest hash), which is
+  distinct from installed Home identity and vault-selector truth. The init
+  adapter may instead carry verified `home-artifact` evidence when it runs
+  from an artifact's exact canonical `app/` directory, or explicit
+  `source-tree` evidence from a direct developer checkout. Both use
+  `packagedHome: null`; neither can claim or authorize Home activation;
 - sorted tracked and untracked lowercase-`.md` path inventories plus the
   proposed versioned content scope. Case-variant `.MD` files remain ordinary
   source bytes for revision binding but are outside version 1's owner-Markdown
@@ -117,6 +122,12 @@ content bytes and modes within the assessment budget, ignore behavior,
 symlink evidence, Dome configuration, and the Home vault selector and active
 operation evidence.
 
+The command-facing adaptation Module first resolves the selected path's parent
+once and appends the untouched final basename. Preview therefore reports one
+canonical target, and apply performs the same normalization before comparing
+the retained plan target. A final-component symlink remains visible to the
+inspector rather than being followed.
+
 The read-only inspector lives in `src/setup/vault-inspector.ts`. It selects a
 repository only when `.git` exists at the requested root; an ancestor
 repository is conflict evidence and is never silently adopted as the vault
@@ -125,10 +136,11 @@ Redirected `.git` symlinks, nested repositories, special files, hard links,
 detached or unborn history, active operations, and dirty worktrees fail
 closed with a specific blocker.
 
-The inspector validates every selected-path component and walks in byte-stable
-sorted order without following symlinks. This applies equally to an existing
-vault and to a missing leaf beneath an existing parent; an ancestor symlink is
-always ambiguity evidence, never an invitation to inspect its target.
+The inspector validates every canonical selected-path component and walks in
+byte-stable sorted order without following symlinks. This applies equally to
+an existing vault and to a missing leaf beneath an existing parent. Symlinks
+inside that frozen boundary, including the final leaf, remain ambiguity
+evidence and are never followed.
 Any component that case-folds to `.dome` or `.git` without being that exact
 lowercase spelling, or to `state` directly beneath `.dome`, is blocked before
 it is opened, read, or traversed. This fail-closed rule prevents
@@ -299,6 +311,16 @@ the SHA-256 of the complete canonical plan, including inventory proofs, content
 scope, and exact write digests. The applier validates both values but neither
 mutates nor persists them as workflow state.
 
+The CLI requires the caller-retained plan file on apply. It opens only a
+2 MiB-bounded, direct, single-link regular file with `O_NOFOLLOW`, parses the exact
+validated plan, and never includes its path or raw bytes in an error. The file
+is not Dome state and may be discarded after completion. It exists because a
+digest alone cannot reconstruct the approved owner inventory after a process
+crashes across a durable boundary. Retaining the exact plan lets a new process
+present the original transaction to the applier, which then either admits an
+exact attributable prefix, returns an ordinary stale result with a fresh plan,
+or blocks. Preview itself remains write-free.
+
 ## Vault-adaptation apply and recovery
 
 `applySetupPlan` accepts only a ready `dome.setup.plan/v1` with matching
@@ -313,8 +335,9 @@ The ordered mutation is deliberately small:
    repository when the plan requires it.
 2. For owner content, create a root baseline commit from the approved binary
    bytes and `100644`/`100755` modes.
-3. Create only missing `.dome/`, `.dome/state/`, `AGENTS.md`, and `.gitignore`
-   scaffold.
+3. Create only missing `.dome/`, `.dome/state/`, `AGENTS.md`, `CLAUDE.md`, and
+   `.gitignore` scaffold. The Claude shim is ordinary create-only scaffold:
+   setup never replaces owner bytes.
 4. Create the exact fresh config or the separate managed scope document, then
    create one exact configuration commit on the admitted parent.
 
@@ -395,12 +418,13 @@ executing it; full Home admission remains a later apply concern. Rendering perfo
 discovery. Human output and `--json` therefore describe the same validated
 plan rather than independently reconstructing setup policy.
 
-The implemented root command requires `--dry-run`; it has no `--apply` flag.
-A ready preview exits zero, a valid blocked preview exits one, and a usage
-error exits 64. Both presentations explicitly state that no changes were made.
-The SDK product Module now owns vault mutation, but the CLI adapter does not
-expose it until the next checkpoint collapses setup and init onto this one
-seam. Home remains outside this mutation boundary.
+The root command requires exactly one mode: `--dry-run`, or `--apply` together
+with `--plan <file>` and `--consent <digest>`. A ready preview or completed
+apply exits zero; a valid blocked or stale result exits one; malformed grammar
+or an unavailable, unsafe, oversized, or invalid plan file exits 64. Human
+preview output prints both the digest and copyable save/apply commands. JSON
+preview remains the exact validated plan. Home remains outside this mutation
+boundary.
 
 Exact JSON fixtures for all seven vault classifications and adversarial
 validator coverage live in `tests/setup/contracts.test.ts` and
@@ -409,7 +433,8 @@ every durable boundary and pins ancestor symlink races, symbolic-HEAD switches,
 conflicting staged state, forged commit markers, witness-free final bytes,
 post-publication durability replay, partial temp files, binary owner content,
 executable modes, config preservation, and idempotent recovery. CLI adapter
-coverage proves that omission of
-`--dry-run` cannot invoke discovery and JSON is the exact validated plan. The
+coverage spans new, non-Git, Git, already-Dome, stale, blocked, malformed plan,
+and real cross-process recovery fixtures. It proves invalid grammar cannot
+invoke discovery and JSON preview is the exact validated plan. The
 case-sensitive inventory fixture and generated-config round trip pin setup to
 the same versioned ContentScope interface used by the setup contract.

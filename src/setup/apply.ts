@@ -44,6 +44,8 @@ export const SETUP_DURABLE_BOUNDARIES = [
   "scaffold-directories-created",
   "agents-orientation-prepared",
   "agents-orientation-published",
+  "claude-orientation-prepared",
+  "claude-orientation-published",
   "gitignore-prepared",
   "gitignore-published",
   "scaffold-files-written",
@@ -247,10 +249,11 @@ async function execute(
 
   for (const write of plan.actions.filter((row): row is Extract<AdaptationAction, { kind: "write-scaffold-file" }> =>
     row.kind === "write-scaffold-file")) {
-    const body = write.id === "agents-orientation" ? context.scaffold.agentsOrientation : context.scaffold.gitignore;
+    const body = scaffoldWriteBody(write, context.scaffold);
     assertWriteEvidence(write, body);
-    if (await publishScaffoldIfAbsent(context, write.path, body, write.id === "agents-orientation"
-      ? "agents-orientation-prepared" : "gitignore-prepared")) context.actualWrites.add(write.path);
+    if (await publishScaffoldIfAbsent(context, write.path, body, scaffoldPreparedBoundary(write))) {
+      context.actualWrites.add(write.path);
+    }
   }
   if (plan.actions.some((row) => row.kind === "write-scaffold-file")) {
     await context.afterBoundary("scaffold-files-written");
@@ -427,7 +430,7 @@ async function publishScaffoldIfAbsent(
   context: ApplyContext,
   path: string,
   body: string,
-  preparedBoundary: "agents-orientation-prepared" | "gitignore-prepared" | "content-scope-prepared",
+  preparedBoundary: SetupPreparedBoundary,
 ): Promise<boolean> {
   const existing = await anchored(context).readRegular(path, bodyReadLimit(body));
   if (existing !== null) {
@@ -449,7 +452,7 @@ async function publishAtomic(
   relativePath: string,
   body: string,
   mode: number,
-  preparedBoundary: "agents-orientation-prepared" | "gitignore-prepared" | "content-scope-prepared",
+  preparedBoundary: SetupPreparedBoundary,
 ): Promise<void> {
   const files = anchored(context);
   let identity = await readWitnessIdentity(context, relativePath, body, mode, "prepared");
@@ -547,10 +550,15 @@ async function requireRegular(
   return opened;
 }
 
-function publishedBoundary(
-  prepared: "agents-orientation-prepared" | "gitignore-prepared" | "content-scope-prepared",
-): "agents-orientation-published" | "gitignore-published" | "content-scope-published" {
+type SetupPreparedBoundary =
+  | "agents-orientation-prepared"
+  | "claude-orientation-prepared"
+  | "gitignore-prepared"
+  | "content-scope-prepared";
+
+function publishedBoundary(prepared: SetupPreparedBoundary): SetupDurableBoundary {
   if (prepared === "agents-orientation-prepared") return "agents-orientation-published";
+  if (prepared === "claude-orientation-prepared") return "claude-orientation-published";
   if (prepared === "gitignore-prepared") return "gitignore-published";
   return "content-scope-published";
 }
@@ -779,7 +787,7 @@ async function inspectPlannedWritePrefixAnchored(
   for (const write of plan.actions.filter((row): row is Extract<AdaptationAction, { kind: "write-scaffold-file" }> =>
     row.kind === "write-scaffold-file")) {
     if (wasPresentAtAssessment(plan, write.path)) continue;
-    const expected = write.id === "agents-orientation" ? scaffold.agentsOrientation : scaffold.gitignore;
+    const expected = scaffoldWriteBody(write, scaffold);
     const actual = await readOptionalRegular(files, write.path, bodyReadLimit(expected));
     if (actual !== null) {
       observed = true;
@@ -1102,7 +1110,7 @@ function expectedConfigurationBodies(
   for (const write of plan.actions.filter((row): row is Extract<AdaptationAction, { kind: "write-scaffold-file" }> =>
     row.kind === "write-scaffold-file")) {
     if (!wasPresentAtAssessment(plan, write.path)) {
-      expected.set(write.path, write.id === "agents-orientation" ? scaffold.agentsOrientation : scaffold.gitignore);
+      expected.set(write.path, scaffoldWriteBody(write, scaffold));
     }
   }
   const config = action(plan, "set-content-scope");
@@ -1119,6 +1127,23 @@ function contentScopeWriteBody(
   return config.write.path === ".dome/config.yaml"
     ? scaffold.vaultConfig
     : scaffold.contentScopeConfig;
+}
+
+function scaffoldWriteBody(
+  write: Extract<AdaptationAction, { kind: "write-scaffold-file" }>,
+  scaffold: SetupScaffoldEvidence,
+): string {
+  if (write.id === "agents-orientation") return scaffold.agentsOrientation;
+  if (write.id === "claude-orientation") return scaffold.claudeOrientation;
+  return scaffold.gitignore;
+}
+
+function scaffoldPreparedBoundary(
+  write: Extract<AdaptationAction, { kind: "write-scaffold-file" }>,
+): SetupPreparedBoundary {
+  if (write.id === "agents-orientation") return "agents-orientation-prepared";
+  if (write.id === "claude-orientation") return "claude-orientation-prepared";
+  return "gitignore-prepared";
 }
 
 function phaseMessage(subject: string, digest: string, phase: "baseline" | "configuration"): string {

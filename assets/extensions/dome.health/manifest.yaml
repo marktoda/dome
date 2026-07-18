@@ -142,9 +142,9 @@ processors:
     module: processors/trust-review.ts
 
 # Doctor contributions (wiki/specs/cli.md §"dome doctor"): grant-entry probes
-# evaluated generically by the health report. dome init --refresh-config never
-# merges new entries into existing grant keys, so these name the exact YAML a
-# pre-rollout vault must add.
+# evaluated generically by the health report. Existing owner configuration is
+# never rewritten by narrow init, so these name the exact YAML an older vault
+# must review and add explicitly.
 doctor:
   grantEntries:
     - processorId: dome.health.report-card

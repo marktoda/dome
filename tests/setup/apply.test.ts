@@ -30,6 +30,7 @@ const MANIFEST = "3".repeat(64);
 const scope = { version: 1 as const, include: ["**/*.md"], exclude: [".dome/**", ".git/**"] };
 const scaffold = {
   agentsOrientation: "# Dome vault\n",
+  claudeOrientation: "@AGENTS.md\n",
   gitignore: ".dome/state/\n",
   vaultConfig: "content_scope:\n  version: 1\n  include: [\"**/*.md\"]\n  exclude: [\".dome/**\", \".git/**\"]\n",
   contentScopeConfig: "content_scope:\n  version: 1\n  include: [\"**/*.md\"]\n  exclude: [\".dome/**\", \".git/**\"]\n",
@@ -46,6 +47,7 @@ async function evidence(target: string): Promise<SetupCompilerInput> {
     host: { platform: "linux", architecture: "x64" },
     prerequisites: { bun: "1.2.13", git: "2.50.1" },
     product: {
+      distribution: "packaged",
       packageName: "@marktoda/dome",
       packageVersion: "0.4.0",
       sourceCommit: HEAD,
@@ -148,6 +150,7 @@ describe("applySetupPlan", () => {
       const result = await applier()(plan, consent);
       expect(result.status, JSON.stringify(result)).toBe("completed");
       expect(await readFile(join(target, ".dome/config.yaml"), "utf8")).toBe(scaffold.vaultConfig);
+      expect(await readFile(join(target, "CLAUDE.md"), "utf8")).toBe(scaffold.claudeOrientation);
       expect((await statusMatrix(target)).filter(([, h, w, s]) => !(h === 1 && w === 1 && s === 1))).toEqual([]);
       const messages = (await log({ path: target, depth: 4 })).map((row) => row.commit.message);
       expect(messages.some((message) => message.includes("Dome-Setup-Phase: configuration"))).toBe(true);

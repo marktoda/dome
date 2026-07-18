@@ -36,8 +36,8 @@ export function resolveShippedBundlesRoot(): string {
  * Returns the absolute path to the SDK's shipped first-party model-provider
  * templates directory (`<SDK>/assets/model-providers/`). Same resolution
  * story as `resolveShippedBundlesRoot`. The templates are shipped data —
- * `dome init --with-model-provider <provider>` copies one into the vault as
- * `.dome/model-provider.ts` — and are never imported by any `src/` module,
+ * explicit model setup may copy one into the vault as
+ * `.dome/model-provider.ts`; they are never imported by any `src/` module,
  * so the ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY fence stays intact.
  */
 export function resolveShippedModelProvidersRoot(): string {
@@ -49,8 +49,8 @@ export function resolveShippedModelProvidersRoot(): string {
  * Returns the absolute path to the SDK's shipped source-handler templates
  * directory (`<SDK>/assets/source-handlers/`). Same resolution story as
  * `resolveShippedBundlesRoot`. The templates are shipped data —
- * `dome init --with-source <kind>` copies one into the vault as
- * `.dome/bin/fetch-<kind>.sh` — and are never imported by any `src/`
+ * explicit source setup may copy one into the vault as
+ * `.dome/bin/fetch-<kind>.sh`; they are never imported by any `src/`
  * module (they are shell scripts the vault owner reviews before enabling
  * the matching dome.sources subscription).
  */

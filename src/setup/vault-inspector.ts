@@ -360,12 +360,18 @@ export function validateSetupVaultSourceInspection(value: unknown): SetupVaultSo
     state === "detached" ? "head" : state === "ambiguous" ? shape : "both";
   if (shape !== expectedShape) throw new Error("setup source Git revision evidence is inconsistent");
 
-  const dome = exactObject(source["dome"], "setup source Dome evidence", ["state", "contentScope"]);
+  const dome = exactObject(source["dome"], "setup source Dome evidence", ["state", "contentScope", "scaffold"]);
   const domeStates = ["absent", "partial", "configured", "incompatible"] as const;
   if (!domeStates.includes(dome["state"] as typeof domeStates[number])) throw new Error("setup source Dome state is invalid");
   const contentScopeStates = ["absent", "configured", "incompatible"] as const;
   if (!contentScopeStates.includes(dome["contentScope"] as typeof contentScopeStates[number])) {
     throw new Error("setup source content-scope state is invalid");
+  }
+  const scaffold = exactObject(dome["scaffold"], "setup source scaffold evidence", [
+    "domeDirectory", "stateDirectory", "agentsOrientation", "claudeOrientation", "gitignore",
+  ]);
+  if (Object.values(scaffold).some((present) => typeof present !== "boolean")) {
+    throw new Error("setup source scaffold evidence is invalid");
   }
   const markdown = exactObject(source["markdown"], "setup source Markdown evidence", ["tracked", "untracked"]);
   const tracked = validatedMarkdownPaths(markdown["tracked"], "tracked Markdown");
@@ -989,12 +995,20 @@ async function inspectDomeState(
   tree: ReadonlyArray<FileEvidence>,
   addBlocker: (code: BlockerCode, message: string, nextAction: string) => void,
 ): Promise<VaultAssessment["dome"]> {
+  const scaffold = Object.freeze({
+    domeDirectory: tree.some((entry) => entry.path === ".dome" && entry.kind === "directory"),
+    stateDirectory: tree.some((entry) => entry.path === ".dome/state" && entry.kind === "directory"),
+    agentsOrientation: tree.some((entry) => entry.path === "AGENTS.md" && entry.kind === "file"),
+    claudeOrientation: tree.some((entry) => entry.path === "CLAUDE.md" && entry.kind === "file"),
+    gitignore: tree.some((entry) => entry.path === ".gitignore" && entry.kind === "file"),
+  });
   const config = tree.find((entry) => entry.path === ".dome/config.yaml");
   const overlay = tree.find((entry) => entry.path === ".dome/content-scope.yaml");
   if (config === undefined && overlay === undefined) {
     return Object.freeze({
       state: tree.some((entry) => entry.path === ".dome" || entry.path.startsWith(".dome/")) ? "partial" : "absent",
       contentScope: "absent",
+      scaffold,
     });
   }
   let documents: {
@@ -1012,7 +1026,7 @@ async function inspectDomeState(
       error instanceof Error ? error.message : String(error),
       "Wait for concurrent changes or repair the named policy document, then reassess.",
     );
-    return Object.freeze({ state: "incompatible", contentScope: "incompatible" });
+    return Object.freeze({ state: "incompatible", contentScope: "incompatible", scaffold });
   }
   const parsed = resolveCapabilityPolicyDocuments(documents);
   if (!parsed.ok) {
@@ -1021,11 +1035,12 @@ async function inspectDomeState(
       `Dome policy documents are invalid: ${parsed.error}`,
       "Repair the named Dome policy document, then reassess.",
     );
-    return Object.freeze({ state: "incompatible", contentScope: "incompatible" });
+    return Object.freeze({ state: "incompatible", contentScope: "incompatible", scaffold });
   }
   return Object.freeze({
     state: "configured",
     contentScope: parsed.value.contentScope === null ? "absent" : "configured",
+    scaffold,
   });
 }
 

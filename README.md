@@ -78,15 +78,37 @@ DOME="/path/from-the-directory-field/bin/dome"
 ```
 
 Continue with the [Dome Home getting-started guide](https://github.com/marktoda/dome/blob/main/docs/getting-started.md).
-It covers creating or adopting a vault, configuring the model provider,
-installing Home, pairing the PWA, the first Capture and Ask, updates, encrypted
+It covers creating or adopting a vault, the current no-model Capture and Today
+path, optional explicit model configuration, installing Home, pairing the PWA, updates, encrypted
 backup, restore, and recovery.
 
-For an **existing vault**, `dome init` adds only missing Dome scaffolding and
-preserves owner files; an ordinary rerun is idempotent. You review and commit
-the additions before Home starts. Dome does not silently reorganize the vault.
-For a **new vault**, it creates the minimal Git-backed structure, orientation,
-configuration, and first commit without filling it with fake example content.
+For an **existing vault**, setup inventories the exact repository boundary,
+owner baseline, content scope, and missing Dome scaffold before it writes.
+For a **new vault**, it proposes the minimal Git-backed structure,
+orientation, configuration, and first commit without fake example content.
+It never reorganizes owner files or changes Home and services.
+
+Preview first, save that exact plan, then apply the digest printed by the
+human preview:
+
+```sh
+dome setup ~/Vault --dry-run
+PLAN_FILE="$(mktemp "${TMPDIR:-/tmp}/dome-setup-plan.XXXXXX")"
+dome setup ~/Vault --dry-run --json > "$PLAN_FILE"
+dome setup ~/Vault --apply --plan "$PLAN_FILE" --consent <digest>
+rm "$PLAN_FILE"
+```
+
+The plan file is caller-owned, contains the same bounded evidence shown by the
+preview, and can be discarded after completion. Retaining it until setup
+finishes is what makes a process restart recover the exact approved
+transaction without a setup database. Keep it outside the vault: writing the
+plan into the target would itself change the inspected revision and make the
+plan stale. If ordinary vault state changes, apply
+returns a fresh plan and makes no changes. `dome init` remains a compatibility
+spelling over the same vault-adaptation Module only for a new/empty vault (or
+an already-complete no-op). Existing vaults always use the explicit setup
+consent flow; the old provider, source, and refresh flags are retired.
 
 The planned no-checkout installation is:
 
@@ -99,9 +121,8 @@ That package is **not published yet**. The current source-built path above is
 the only documented installation path; the registry command is the next
 distribution milestone. npm is the package installer; Dome still runs on Bun.
 This boundary preserves the packed CLI's exact executable permissions, which
-the current Bun global installer does not. The setup command currently provides
-a safe, revision-bound preview only. It makes no vault or host changes; setup
-apply remains the next onboarding milestone.
+the current Bun global installer does not. Setup applies only the retained,
+revision-bound vault plan; Home installation remains a separate milestone.
 
 ## How it works
 

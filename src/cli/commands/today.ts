@@ -181,7 +181,7 @@ async function renderTodayOnce(
             severity: "error",
             code: "dome.daily not installed",
             what: "no today processor is enabled for this vault",
-            fix: "dome init --refresh-config   (adds current first-party defaults)",
+            fix: "review current first-party defaults and update .dome/config.yaml explicitly",
           },
           caps,
         ),

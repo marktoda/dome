@@ -291,7 +291,7 @@ describe("dome today: dome.daily not installed", () => {
     // Finding header: error glyph (ASCII "x" in non-TTY) + code.
     expect(out).toContain("dome.daily not installed");
     // Fix line:
-    expect(out).toContain("dome init --refresh-config");
+    expect(out).toContain("review current first-party defaults");
     // Old bare run-on sentence must be gone.
     expect(out).not.toContain(
       "dome.daily is not installed or no today processor is enabled",

@@ -273,7 +273,7 @@ scenario(
         // The pre-memory-quality grant shape: every capability KIND is
         // granted (so kind-level capability.grant-missing stays quiet) but
         // the rollout entries (docs/memory.md §"Vault rollout") are absent.
-        // `dome init --refresh-config` fills only missing keys, so an
+        // Explicit owner repair fills only missing keys, so an
         // existing vault stays in this shape until the owner edits YAML.
         ".dome/config.yaml": [
           "extensions:",
@@ -636,7 +636,7 @@ scenario(
       }),
     ]);
     expect(report.findings[0]?.recovery).toContain(
-      "dome init --with-source slack",
+      "dedicated source setup is planned for M9",
     );
   },
 );

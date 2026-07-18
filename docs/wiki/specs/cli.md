@@ -29,11 +29,11 @@ Home is the canonical lifecycle and PWA host; the standalone Serve lifecycle
 and HTTP adapter remain callable but are hidden compatibility commands.
 
 ```text
-dome init [path] [--with-model-provider anthropic]
-                                Initialize a new vault.
-dome setup [path] --dry-run [--json]
-                                Assess a vault and print its revision-bound
-                                additive setup plan. Never writes.
+dome init [path] [--json]
+                                Narrow new-vault compatibility alias.
+dome setup [path] (--dry-run | --apply --plan <file> --consent <digest>) [--json]
+                                Preview or apply one retained,
+                                revision-bound vault-adaptation plan.
 dome capture [text] [--file <path>] [--title <t>] [--capture-id <id>] [--json]
                                 Frictionless capture: write a timestamped raw
                                 source into inbox/raw/ and commit it on the
@@ -150,7 +150,7 @@ questions and `dome resolve`, so recovery still goes through normal Effect
 routing and capability checks.
 - **View-phase commands:** `dome run <name>` plus dedicated wrappers such as `dome query`, `dome lint`, `dome export-context`, `dome today` (whose `--prep`/`--with` flags dispatch the `prep`/`agenda-with` view processors), and `dome audit` (whose subjects dispatch `stale-claims`/`orphan-pages`) — command-triggered view-phase processors invoked through the shared view-command boundary. `dome run <name>` remains available as the generic escape hatch for extension-authored view processors that have not (yet) earned a dedicated binding.
 - **Capture ingress:** `dome capture` — the frictionless write-side entry point ([[wedge]] §"Phase 3 — Capture loop"). It writes a timestamped raw source into `inbox/raw/` and lands it as an ordinary human commit on the current branch; adoption and `dome.agent.ingest` handle everything after the commit boundary. See [[wiki/specs/capture]] for the capture-loop spec and the phone/voice ingress recipe.
-- **Lifecycle:** `dome setup --dry-run` assesses and previews additive onboarding, `dome init` remains the current public mutation path that constructs a vault, and `dome home` is the canonical PWA-first Product Host owning one long-lived vault, compiler scheduler, HTTP listener, setup, upgrade, and supervised service. The product setup Module now implements revision-bound vault adaptation behind the SDK boundary; exposing it through the root setup command and collapsing init onto that seam are the next M5 checkpoint. Home activation remains M6. The hidden top-level service commands preserve the pre-Home Serve lifecycle only for compatibility. Schema migration is handled by storage open/rebuild and Home upgrade paths; a dedicated `dome migrate` remains a roadmap item.
+- **Lifecycle:** `dome setup --dry-run` assesses and previews additive onboarding; `dome setup --apply --plan <file> --consent <digest>` applies that exact caller-retained vault plan; `dome init` is a compatibility adapter over the same revision-bound Module; and `dome home` is the canonical PWA-first Product Host owning one long-lived vault, compiler scheduler, HTTP listener, setup, upgrade, and supervised service. Home activation remains M6. The hidden top-level service commands preserve the pre-Home Serve lifecycle only for compatibility. Schema migration is handled by storage open/rebuild and Home upgrade paths; a dedicated `dome migrate` remains a roadmap item.
 - **Protocol adapters:** `dome mcp` is the visible stdio server for foreground harnesses ([[wiki/specs/mcp-surface]]). Hidden `dome http` is the standalone compatibility form of HTTP contracts Home now hosts as a cohesive product ([[wiki/specs/http-surface]]). Both consume the public `openVault` wrapper and protocol-neutral `src/surface/` collectors.
 
 Planned dedicated view aliases such as `dome stats` are not Commander bindings
@@ -185,251 +185,97 @@ without imposing a first-party schema.
 
 ## Per-command specs
 
-### `dome setup [path] --dry-run [--json]`
+### `dome setup [path] (--dry-run | --apply --plan <file> --consent <digest>) [--json]`
 
-Produces the versioned [[wiki/specs/setup]] `SetupPlan` for `<path>` (defaults
-to `.`). The current Commander binding is deliberately preview-only:
-`--dry-run` is required and there is no `--apply` option. It performs bounded
-local discovery, then passes closed evidence through the pure setup compiler.
-The separate SDK setup Module can apply the same consented plan's
-`vault-adaptation` scope, but this CLI adapter does not invoke it yet. The
-preview command does not write files, initialize Git, open the Dome runtime,
-persist setup state, call a model, read credentials, access the network, or
-change Home or services. Its reused installed-product proof is the read-only
-closed-package layer: it hashes the compressed Home archive but does not
-extract or execute it.
+Produces or applies the versioned [[wiki/specs/setup]] `SetupPlan` for `<path>`
+(defaults to `.`). Preview performs bounded local discovery, passes closed
+evidence through the pure setup compiler, and writes nothing. Human output
+prints the plan digest plus copyable save and apply commands; `--json` is the
+exact validated plan and may be redirected to a caller-owned file.
+Before discovery, setup freezes aliases in the selector's parent to its
+reported canonical path while preserving the final basename. Apply repeats
+that normalization before retained-plan target comparison; retargeting the
+alias cannot redirect an approved plan, and a final-leaf symlink still fails
+closed in inspection.
+
+Noninteractive apply requires both that retained file and its lowercase
+64-character SHA-256 digest. The plan reader accepts only a bounded direct
+single-link regular file, does not follow a symlink, and does not echo its path
+or content in an error. The file is not Dome state and can be discarded after
+completion. It is required because a digest cannot reconstruct the approved
+owner inventory after a crash. Supplying the original plan lets a new process
+enter the setup applier's exact partial-transaction recovery. The applier
+recomputes all evidence immediately before mutation: ordinary drift returns
+`stale` with a fresh plan and no mutation, while an attributable partial Dome
+transaction resumes safely.
+
+Preview does not write files, initialize Git, open the Dome runtime, persist
+setup state, call a model, read credentials, access the network, or change Home
+or services. Apply is limited to the plan's `vault-adaptation` action union;
+Home remains deferred. Packaged setup uses the read-only closed-package proof.
+Only the compatibility `init` adapter can supply non-package evidence. It
+accepts either the verified identity of the exact enclosing Home artifact or a
+direct source checkout; neither carries packaged Home identity or M6 authority.
 
 The compiler, not the CLI adapter, owns classification and prerequisite policy.
 The discovery adapter supplies observed Bun and Git versions, packaged-product
 identity, installed-Home identity, host identity, and the vault inspection.
 Minimums are Bun `>=1.2.13 <2` and Git `>=2.45.0`; Git 2.45 is the first release
 whose `GIT_NO_LAZY_FETCH` behavior supports the inspector's no-promisor-fetch
-boundary. Human and `--json` output render the same validated plan.
+boundary. Human and `--json` preview output render the same validated plan.
 
-Exit `0` means the preview is ready, exit `1` means it is valid but blocked,
-and exit `64` means the required preview grammar was not supplied. Blocked
-plans carry specific next actions and no applicable actions. No setup database
-or workflow state is created. The next M5 checkpoint adds the public apply
-grammar and routes both setup and init through the one adaptation Module; M6
-then adds separately consented Home activation.
+Exit `0` means a preview is ready or apply completed. Exit `1` means a valid
+preview/apply result is blocked or stale. Exit `64` means the mode grammar or
+plan-file boundary is invalid. Blocked plans carry specific next actions and
+no applicable actions. No setup database or workflow state is created. M6
+will reuse the retained-plan consent grammar for separately consented Home
+activation.
 
-### `dome init [path] [--refresh-config] [--refresh-instructions] [--with-model-provider anthropic] [--with-source <kind>]...`
+### `dome init [path] [--json]`
 
-Creates a new Dome vault at `<path>` (defaults to `.`). Phase 11f
-hotfix: `dome init` no longer copies the shipped first-party bundles
-into the vault. They live with the SDK at `<SDK>/assets/extensions/`
-and are resolved at runtime via `resolveShippedBundlesRoot()`. Normal CLI
-commands also compose an existing vault-local `.dome/extensions/` root after
-the shipped root, so third-party bundles only need a local bundle directory
-and an enabled `.dome/config.yaml` stanza. Per [[wiki/specs/vault-layout]]
-§"`extensions/`" and docs/v1.md §10.1, the vault carries activations + grants
-in `.dome/config.yaml`; shipped bundle code itself doesn't need to be copied
-into every vault.
+A narrow compatibility alias for creating a new vault. It delegates the entire
+vault mutation to the same revision-bound adaptation Module as
+`dome setup --apply`; the CLI command itself has no file writer or Git
+committer.
 
-**Refresh-only mode.** When `--refresh-config` and/or `--refresh-instructions`
-is set, init refreshes exactly what the flag names and scaffolds nothing: no
-git init, no directory scaffold, no `.gitkeep`/`.gitignore`, no
-`core.md`/`preferences/signals.md`, no config creation (the config is touched
-only by `--refresh-config`), no initial commit. A vault that deliberately
-omits optional scaffold (the design-substrate dogfood vault omits `core.md`,
-`inbox/`, and `preferences/`) keeps its shape across refreshes; an old vault
-that wants newer scaffold runs plain `dome init`, whose idempotent
-fill-missing pass is the migration path. The scaffold flags
-(`--with-model-provider`, `--with-source`) contradict refresh-only mode and
-are rejected with exit 64.
+Implicit init consent is intentionally limited to:
 
-The shipped initialization steps (plain `dome init`):
+- a missing leaf beneath an existing parent (whose aliases are frozen to the
+  same canonical selector used by public setup);
+- an existing empty directory; or
+- an already-complete Dome vault whose compiled plan has no actions.
 
-1. Initializes a git repository if one doesn't exist (`git init` is
-   idempotent — a no-op when `.git/` already exists).
-2. Creates the directory scaffold: `wiki/`, `notes/`, `inbox/raw/`,
-   `inbox/processed/`, and `.dome/state/`. `inbox/raw/` is the raw
-   capture drop-zone once `dome.agent` is enabled and model-ready; generated
-   AGENTS guidance tells Claude Code to verify the `dome.agent` row from
-   `dome inspect bundles --json` reports `status: "enabled"` and
-   `model: "ready"` before using raw captures. `inbox/processed/` is the
-   archive target for processed captures. `.dome/extensions/` is not created —
-   the shipped bundles live
-   with the SDK; users wanting vault-local third-party bundles create the
-   directory themselves.
-3. Writes `<vault>/.dome/config.yaml` from a shipped default (extension
-   activation + engine settings). First-write-only by default.
-   `--refresh-config` is an explicit maintenance path for old or hand-edited
-   first-party configs. It makes two insert-only edits (never removing or
-   narrowing an existing entry), always through the yaml Document API — only
-   inserted stanzas/keys are new text, and hand-written comments and formatting
-   on untouched nodes are preserved (caveat: an inline comment trailing a
-   block-collection key moves to the next line — never deleted):
+Every existing owner vault—including an existing Git vault, a configured
+pre-scope vault, or a Dome vault missing scaffold—must use
+`dome setup --dry-run`, retain the JSON plan, and apply its exact consent
+digest. Init returns 1 with that guidance and makes no change. This prevents a
+legacy convenience spelling from silently consenting to owner-baseline or
+content-scope decisions.
 
-   - **Missing first-party bundle stanzas** are added. On a **legacy enumerated
-     vault** (one that opted out of the `grants: standard` preset with explicit
-     grant blocks) the added stanza carries its FULL shipped default grant block
-     (bundle grant + per-processor replacement grants) so a newly shipped bundle
-     is never stranded capability-starved. On a `grants: standard` vault the
-     stanza is added enabled-only — the preset supplies its grants at load time.
-   - **Present, enabled first-party bundles on a legacy enumerated vault** are
-     brought up to the shipped default in two ways. First, any grant KIND the
-     bundle's default declares but the vault omits entirely (`patch.auto`,
-     `graph.write`, `question.ask`, …) lands at its full shipped default — these
-     are capabilities the bundle's processors gained since the config was
-     written, the kind-level `capability.grant-missing` starvation. Second, a
-     kind the vault DOES list is owner-authored and is only merged into
-     surgically, gated by the bundle manifest's `doctor.grantEntries` — the same
-     rows `dome doctor`'s `capability.grant-entry-missing` probe checks: a
-     bundle-level entry adds the most-specific shipped default glob that covers
-     the entry's target (so a probe target like `sources/calendar/2026-01-01.md`
-     resolves to the canonical default glob `sources/calendar/*.md`, and
-     `core.md` resolves to `core.md` — never widening a deliberately narrowed
-     `read` list to `**/*.md`), and a per-processor entry (whose processor ships
-     a replacement grant) adds the full replacement stanza when the vault
-     carries none. **Omission ≠ withholding:** a default grant kind the vault
-     omits entirely is treated as stale config and refilled, so a kind the owner
-     wants withheld must be declared present-but-empty (`patch.auto: []`,
-     `question.ask: false`) — refresh always respects a present value: it is
-     never refilled, and an explicitly empty list is never merged into, even
-     when a `doctor.grantEntries` row names a missing entry for it. When the
-     vault uses `grants: standard`, this whole merge is a no-op — the preset
-     already tracks every enabled bundle's shipped defaults.
+Init creates only the canonical setup scaffold: the vault directory when
+needed, Git, `.dome/state`, `.dome/config.yaml`, `AGENTS.md`, `CLAUDE.md`, and
+`.gitignore`, followed by the setup Module's exact configuration commit. It
+does not create example knowledge, `wiki/`, inbox keepers, `core.md`,
+`preferences/signals.md`, model-provider scripts, or source adapters. An ordinary rerun
+against the resulting complete vault is an idempotent no-op.
 
-   Explicitly disabled bundles (`enabled: false`) and third-party bundle config
-   are never touched. The run prints a summary of the grants and stanzas it
-   added (`grants_added` under `--json`). This closes the second-user blocker
-   where per-processor default grants never propagated to vaults with a
-   user-owned grant block (NEEDS_ARE_LOUD incident #4); `dome doctor`'s
-   `capability.grant-entry-missing` probe remains the detection half that names
-   the exact YAML for grants outside the first-party set (see `docs/memory.md`
-   §"Vault rollout").
-4. When `--with-model-provider anthropic` is supplied, copies the shipped
-   first-party provider template from
-   `<SDK>/assets/model-providers/anthropic.ts` to
-   `<vault>/.dome/model-provider.ts` and adds a command-provider stanza to
-   `.dome/config.yaml`:
-   `model_provider: { kind: "command", command: ["bun", ".dome/model-provider.ts"] }`.
-   The template is shipped data (resolved like the `assets/extensions/`
-   bundles, never imported by any `src/` module — the
-   [[wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] fence stays
-   intact). It is a self-contained Bun script speaking the full
-   JSON-over-stdio protocol — `dome.model-provider.request/v1` (one-shot
-   text), `dome.model-provider.step/v1` (tool-use step), and
-   `dome.model-provider.probe/v1` (cheap liveness probe, no API call) —
-   against the Anthropic Messages API using plain `fetch` (no new
-   dependency). It expects `ANTHROPIC_API_KEY` at runtime; the default
-   model is `claude-sonnet-4-6`, overridable per-request via the envelope's
-   `model` field or globally via `ANTHROPIC_MODEL`. `ANTHROPIC_BASE_URL`,
-   `ANTHROPIC_MAX_TOKENS`, and `ANTHROPIC_INPUT_COST_PER_MTOK` /
-   `ANTHROPIC_OUTPUT_COST_PER_MTOK` are further env overrides. The template
-   reports `costUsd` from token usage for known model families (built-in
-   price table, env-overridable), which is what makes the engine's
-   `maxDailyCostUsd` caps effective by default. It does not itself change
-   `dome.agent`'s enablement — that bundle ships `enabled: true` unconditionally
-   (product-review-3 Task 17: the brain is on by default, guarded by the
-   shipped `$2.00/day` model-spend cap rather than by silence). Running
-   `dome init` **without** `--with-model-provider` leaves `dome.agent`
-   enabled with no model provider configured, which surfaces as a loud
-   `agent.no-model-provider` warning once `dome serve` opens its runtime
-   (§"`dome serve`") — never a silent no-op. `--with-model-provider` wires
-   the provider the already-enabled agent processors need to actually run.
-   Re-running `dome init --with-model-provider anthropic` on an existing
-   vault is the supported wiring path for an already-initialized vault: the
-   provider file and the `model_provider` stanza are each first-write-only,
-   so the re-run adds whichever piece is missing and never overwrites a
-   hand-edited provider or stanza.
-4b. When `--with-source <kind>` is supplied (repeatable; shipped kinds:
-   `calendar`, `slack` — any other kind is rejected with exit 64), scaffolds
-   each requested source adapter: copies the shipped fetch template from
-   `<SDK>/assets/source-handlers/claude-<kind>.sh` to
-   `<vault>/.dome/bin/fetch-<kind>.sh` (executable) and ensures the matching
-   subscription stanza exists under
-   `extensions.dome.sources.config.subscriptions.<kind>` with the shipped
-   default — always `enabled: false`: scaffolding is not consent
-   ([[wiki/specs/sources]] §"The Slack stance"); the owner reviews the script
-   and flips the flag. Both halves are first-write-only, mirroring the
-   model-provider step: an existing script keeps its content and mode, and an
-   existing stanza — whatever its shape or `enabled` value — is user-owned
-   config left byte-untouched (in particular, a re-run **never flips an
-   existing `enabled`** in either direction). Re-running
-   `dome init --with-source <kind>` on an existing vault is the supported
-   wiring path; on a vault with commits the resulting script + config changes
-   are left **uncommitted** for the owner to review (the scaffold commit in
-   step 9 only fires on a fresh repo). Stanza inserts (shared with the
-   `--with-model-provider` insert and the `--refresh-config` fill) edit
-   `.dome/config.yaml` through the yaml Document API and **preserve
-   hand-written comments and formatting** on untouched nodes. One documented
-   caveat (yaml@2.9): an inline comment trailing a block-collection key
-   (`calendar: # note`) is repositioned onto the next line — never
-   deleted.
-5. Writes `<vault>/.gitignore` (ignores `.dome/state/` per
-   [[wiki/specs/vault-layout]] §"Git repository structure"). First-write-only.
-6. Writes `<vault>/core.md`, the always-loaded core memory page (per
-   [[wiki/specs/vault-layout]] §"`core.md` — the core memory page"), as a
-   commented skeleton: `# Core memory` plus `## Who I am`,
-   `## Active projects`, and `## Standing preferences` sections, with an
-   HTML comment explaining the propose-only convention (Dome agents read it
-   every run but never auto-write it) and the ~6,000-character size budget
-   the `dome.markdown.core-size` lint enforces. First-write-only — re-runs
-   never overwrite the user's core memory. `dome recipe core-seed`
-   (§"`dome recipe`") prints the owner interview that seeds the two
-   owner-authored sections; `## Active projects` hosts the generated block
-   `dome.agent.active-projects` maintains.
-7. Writes `<vault>/preferences/signals.md`, the append-only
-   preference-signal log (per [[wiki/specs/vault-layout]]
-   §"`preferences/signals.md`" and [[wiki/specs/preferences]]), as a heading
-   plus a commented header explaining the signal grammar. Like `core.md` it
-   is owner data: first-write-only with NO refresh path — accumulated signal
-   lines are never clobbered.
-8. Writes `<vault>/AGENTS.md` from the shipped orientation template
-   (per [[wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE]]) and
-   `<vault>/CLAUDE.md` as a small Claude Code shim importing `AGENTS.md`.
-   Claude Code reads `CLAUDE.md`, so the shim is part of the v1 boot
-   path rather than polish. The generated instructions tell agents to inspect
-   `serve_status` from `dome status --json` at session start, using
-   `dome sync --json` after commits when no foreground `dome serve` host is
-   running, use native Markdown reads for known scope, discover installed
-   compiled views with `dome views --json`, and use `query` /
-   `export-context` when unknown or cross-vault scope earns them. The optional
-   adopted-state views include `dome log` (the activity view). The template also carries the foreground
-   "Preference signals" section — the standing instruction to append a
-   well-formed signal line to `preferences/signals.md` when the owner
-   explicitly expresses a durable preference or corrects agent behavior in
-   conversation, never writing `core.md` or its promoted block
-   ([[wiki/specs/preferences]] §"The signal convention").
-   First-write-only by default — re-runs preserve
-   any local edits. `--refresh-instructions` is an explicit maintenance path
-   for old orientation files: it replaces the managed AGENTS scaffold with the
-   current shipped template while preserving the delimited user-prose block. If
-   an older AGENTS file has no delimiters, its previous content is moved into
-   the new user-prose block. The same flag prepends the `@AGENTS.md` shim to
-   CLAUDE.md when missing, preserving existing file content below it.
-9. Creates an initial scaffold commit (`dome init: initial scaffold`)
-   staging `.gitignore`, `AGENTS.md`, `CLAUDE.md`, `core.md`,
-   `preferences/signals.md`, `.dome/config.yaml`, and the
-   `inbox/raw/.gitkeep` + `inbox/processed/.gitkeep` keepers, plus
-   `.dome/model-provider.ts` when the provider scaffold was requested and
-   `.dome/bin/fetch-<kind>.sh` for each `--with-source` kind. Skipped if HEAD already resolves (re-init on a vault
-   with commits is a no-op for this step — which is why §4b's changes stay
-   uncommitted on an existing vault).
+The former `--refresh-config`, `--refresh-instructions`,
+`--with-model-provider`, and `--with-source` flags are not Commander options;
+Commander rejects them before invoking init. Model credential setup through
+`dome home setup configure --vault <path>` requires an exact pre-existing
+`model_provider` in `.dome/config.yaml`; guided `dome setup model` is deferred.
+Dedicated source setup is planned
+for M9, so source configuration remains explicit in the interim.
 
-Deferred to v1.1:
-- `.dome/page-types.yaml` is not scaffolded by default. The page-type
-  substrate ships today through built-in and bundle-contributed page types;
-  this vault-local file remains an optional extension point for custom
-  frontmatter schemas.
-- The initial `dome sync` to produce `refs/dome/adopted/main` — the
-  user runs `dome sync` (or `dome serve`) manually as their next step;
-  the adopted-ref substrate initializes on first sync.
-
-Installing a third-party bundle: create
-`<vault>/.dome/extensions/<bundle-id>/` and enable the bundle in
-`.dome/config.yaml`. `--bundles-root <path>` is an exact root override for
-tests and ad-hoc development; it is not needed for normal vault-local
-installation.
-
-Each step prints a one-line outcome (`created`, `updated`, or `skipped
-(already present)`); idempotent re-runs surface as all-skipped no-ops.
-
-Exit codes: 0 on success (including idempotent re-runs); 1 on
-unexpected I/O failure; 64 (EX_USAGE) on malformed path argument or an
-unknown `--with-source` kind.
+Source-checkout execution supplies truthful `source-tree` product evidence;
+source-built Home execution supplies verified `home-artifact` evidence bound
+to the enclosing artifact manifest. Both use `packagedHome: null` and cannot
+authorize Home activation. Completed and
+blocked outcomes use the same human renderer and closed
+`dome.setup.apply-result/v1` JSON as public setup—there is no second init step
+matrix. Exit 0 means the new/empty vault completed or an already-complete vault
+needed no work; exit 1 means the vault requires explicit setup consent or
+another safe runtime error occurred; Commander usage errors exit 64.
 
 ### `dome capture [text] [--file <path>] [--title <t>] [--capture-id <id>] [--vault <path>] [--json]`
 
@@ -2225,11 +2071,9 @@ without `"core.md"` read, the preference-promotion answer handler without
 its per-processor replacement grant), doctor raises a
 `capability.grant-entry-missing` warning whose
 recovery text names the exact YAML to add. On a legacy enumerated vault,
-`dome init --refresh-config` now merges exactly these `doctor.grantEntries`
-rows into the vault's grant blocks automatically (§"`dome init`"), so the gap
-self-heals on refresh; the probe remains the detection half and the manual
-recovery for grants outside the first-party set (see `docs/memory.md`
-§"Vault rollout").
+the recovery text names exact YAML for an explicit owner edit. The retired
+init refresh path no longer mutates existing config; the probe remains the
+detection surface (see `docs/memory.md` §"Vault rollout").
 Beyond the hand-curated rows, the **general grant-starvation probe**
 (`capability.grant-starved`, **info**) covers every loaded processor: for
 each manifest-declared `read` / `patch.auto` pattern it derives a
@@ -2259,8 +2103,8 @@ model-backed fetch commands (the timeout footgun;
 When an enabled `dome.sources` subscription's fetch command references a
 script file that is missing or not a regular file, doctor raises a
 `sources.fetch-script-missing` **warning** naming the kind and path, with
-`dome init --with-source <kind>` in the recovery text — the
-stanza-enabled-but-never-scaffolded gap, caught before every scheduled fetch
+explicit source configuration in the recovery text — the
+stanza-enabled-but-missing-script gap, caught before every scheduled fetch
 fails overnight. The probe is **static**: doctor never executes the fetch
 command; the script reference is derived from the command shape alone
 (`command[0]` when it carries a path separator, else `command[1]` under a
@@ -2497,7 +2341,7 @@ or through a harness); the host catches up by adopting the new HEAD.
 
 Composition (v1.0):
 
-1. `openVaultRuntime({vaultPath, bundlesRoot, additionalBundlesRoots})` opens the operational databases (`projection.db`, `answers.db`, `outbox.db`, `runs.db`) and loads extension bundles from the resolved root set (SDK-shipped `assets/extensions/` by default, plus vault-local `.dome/extensions/` when present; `--bundles-root` replaces the set). Two host-open findings are logged loudly right after open, regardless of `--quiet`: a pruned-quarantine line (a quarantine row for a processor id no active bundle registers, per the registry-orphan GC) and, when `dome.agent` is enabled with no model provider configured or injected, the one-line `agent.no-model-provider` warning ("dome.agent is enabled but no model provider is configured; run `dome init --with-model-provider` or set enabled: false") — the runtime complement to `dome doctor`'s `model.provider-missing` config-time probe (product-review-3 Task 17).
+1. `openVaultRuntime({vaultPath, bundlesRoot, additionalBundlesRoots})` opens the operational databases (`projection.db`, `answers.db`, `outbox.db`, `runs.db`) and loads extension bundles from the resolved root set (SDK-shipped `assets/extensions/` by default, plus vault-local `.dome/extensions/` when present; `--bundles-root` replaces the set). Two host-open findings are logged loudly right after open, regardless of `--quiet`: a pruned-quarantine line (a quarantine row for a processor id no active bundle registers, per the registry-orphan GC) and, when `dome.agent` is enabled with no model provider configured or injected, the one-line `agent.no-model-provider` warning pointing to `dome home setup status` or disabling the bundle — the runtime complement to `dome doctor`'s `model.provider-missing` config-time probe (product-review-3 Task 17).
 2. Resolves the initial branch via `getCurrentBranch`. A detached HEAD is a startup error (the adopted-ref substrate requires a branch).
 3. Polls `refs/heads/<branch>` every `--poll-interval-ms <n>` (default 500ms). On each tick, compares HEAD to `refs/dome/adopted/<branch>`:
    - If the adopted ref is uninitialized: runs an empty-diff `(HEAD, HEAD)` adoption to initialize it.
@@ -2922,8 +2766,8 @@ read/decrypt/probe only; `remove` is idempotent. None of the verbs writes a
 setup record or changes `.dome/config.yaml`.
 
 Only exact command `["bun", ".dome/model-provider.ts"]` is managed. Missing
-configuration points to `dome init --with-model-provider anthropic`; custom
-configuration is reported and preserved. Output is the fixed
+configuration is reported as requiring explicit provider initialization before
+credential setup; custom configuration is reported and preserved. Output is the fixed
 `dome.home.setup/v1` document: action/status/exit code, model
 configuration/credential/runtime states, residue state, fixed next action, and
 a bounded message—never secret bytes or helper diagnostics. Mutations have live-rotation semantics: an

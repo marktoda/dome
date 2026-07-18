@@ -285,7 +285,7 @@ export function validateStructuredRun<TPayload>(
 }
 
 const OLD_FIRST_PARTY_CONFIG_HINT =
-  "For older vault configs, run `dome init --refresh-config` to add current first-party defaults.";
+  "For older vault configs, review current first-party defaults and update the config explicitly.";
 
 /**
  * The label fields the operator-message renderers read. Narrowed from the
