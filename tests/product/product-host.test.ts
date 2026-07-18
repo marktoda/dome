@@ -24,6 +24,18 @@ import {
   releaseOperationalWriterBarrier,
 } from "../../src/operational-state/writer-barrier";
 import type { HomeArtifactManifest } from "../../src/product-host/home-artifact";
+import {
+  cleanupOwnedProductFixtures,
+  closeTrackedProductFixture,
+} from "./support/owned-fixture-cleanup";
+import {
+  fetchBodiesWithin,
+  fetchResponseWithin,
+  fetchTextWithin,
+  pollJsonWithin,
+  readControlledResponseText,
+  type ControlledResponse,
+} from "./support/bounded-http";
 
 const roots: string[] = [];
 const hosts: ProductHost[] = [];
@@ -33,8 +45,9 @@ const originalError = console.error;
 afterEach(async () => {
   console.log = originalLog;
   console.error = originalError;
-  await Promise.all(hosts.splice(0).map((host) => host.close()));
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  await cleanupOwnedProductFixtures(hosts, roots, {
+    removeRoot: (root) => rm(root, { recursive: true, force: true }),
+  });
 });
 
 describe("P3 Product Host", () => {
@@ -178,7 +191,7 @@ describe("P3 Product Host", () => {
     } finally {
       // Bun does not cancel a timed-out async test body. Close here, while the
       // vault still exists, so a slow request cannot outlive fixture cleanup.
-      await closeTrackedHost(started.value);
+      await closeTrackedProductFixture(started.value, hosts);
     }
   }, 60_000);
 
@@ -317,7 +330,7 @@ describe("P3 Product Host", () => {
     expect(started.ok).toBe(true);
     if (!started.ok) return;
     hosts.push(started.value);
-    let turn: Response | null = null;
+    let turn: ControlledResponse | null = null;
     try {
       const created = await fetchTextWithin(
         "slow-turn session creation",
@@ -342,34 +355,48 @@ describe("P3 Product Host", () => {
           body: JSON.stringify({ message: "wait" }),
         },
       );
-      expect(turn.status).toBe(200);
+      expect(turn.response.status).toBe(200);
 
-      const [ready, today, doc, capture] = await within(Promise.all([
-        fetch(`${started.value.url}/readyz`, { headers: { cookie: auth.cookie } }),
-        fetch(`${started.value.url}/tasks`, { headers: { cookie: auth.cookie } }),
-        fetch(`${started.value.url}/doc?path=wiki/host.md`, { headers: { cookie: auth.cookie } }),
-        fetch(`${started.value.url}/capture`, {
-          method: "POST",
-          headers: {
-            ...mutationHeaders(started.value.url, auth),
-            "content-type": "application/json",
+      const [ready, today, doc, capture] = await fetchBodiesWithin(
+        "concurrent Product Host operations",
+        2_000,
+        [{
+          url: `${started.value.url}/readyz`,
+          init: { headers: { cookie: auth.cookie } },
+        }, {
+          url: `${started.value.url}/tasks`,
+          init: { headers: { cookie: auth.cookie } },
+        }, {
+          url: `${started.value.url}/doc?path=wiki/host.md`,
+          init: { headers: { cookie: auth.cookie } },
+        }, {
+          url: `${started.value.url}/capture`,
+          init: {
+            method: "POST",
+            headers: {
+              ...mutationHeaders(started.value.url, auth),
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              text: "Concurrent owner capture",
+              captureId: "p2-concurrent",
+            }),
           },
-          body: JSON.stringify({ text: "Concurrent owner capture", captureId: "p2-concurrent" }),
-        }),
-      ]), 2_000);
-      expect(ready.status).toBe(200);
-      expect(today.status).toBe(200);
-      expect(doc.status).toBe(200);
-      if (capture.status !== 200) {
-        throw new Error(`capture returned ${capture.status}: ${await capture.text()}`);
+        }],
+      );
+      expect(ready.response.status).toBe(200);
+      expect(today.response.status).toBe(200);
+      expect(doc.response.status).toBe(200);
+      if (capture.response.status !== 200) {
+        throw new Error(`capture returned ${capture.response.status}: ${capture.text}`);
       }
-      const captureDocument = await capture.json() as { status: string; commit: string };
+      const captureDocument = JSON.parse(capture.text) as { status: string; commit: string };
       expect(captureDocument).toMatchObject({
         status: "captured",
         adoption_status: "pending",
       });
-      const receiptId = capture.headers.get("x-dome-receipt-id");
-      const requestId = capture.headers.get("x-dome-request-id");
+      const receiptId = capture.response.headers.get("x-dome-receipt-id");
+      const requestId = capture.response.headers.get("x-dome-request-id");
       expect(receiptId).not.toBeNull();
       expect(requestId).not.toBeNull();
       const receiptDb = await openRequestReceiptsDb({ path: join(vault, ".dome", "state", "request-receipts.db") });
@@ -390,20 +417,29 @@ describe("P3 Product Host", () => {
         ]);
         receipts.close();
       }
-      await eventually(async () => {
-        const readiness = await started.value.readiness();
-        return readiness.adoption.state === "current" &&
-          readiness.adoption.head === readiness.adoption.adopted;
-      }, 3_000);
+      await pollJsonWithin<{
+        adoption: { state: string; head: string | null; adopted: string | null };
+      }>({
+        operation: "post-capture readiness",
+        totalMs: 3_000,
+        requestMs: 500,
+        url: `${started.value.url}/readyz`,
+        init: { headers: { cookie: auth.cookie } },
+        accept: (readiness) => {
+          return readiness.adoption.state === "current" &&
+            readiness.adoption.head === readiness.adoption.adopted;
+        },
+      });
     } finally {
       // Bun does not cancel an async test body when its test deadline fires.
       // Always unblock and drain the deliberately cancellation-resistant model
       // fixture, then close the host while its SQLite files still exist.
       release();
       try {
-        if (turn !== null) await turn.text();
+        if (turn !== null) await readControlledResponseText(turn, 5_000, "slow-turn SSE body");
       } finally {
-        await closeTrackedHost(started.value);
+        turn?.abort();
+        await closeTrackedProductFixture(started.value, hosts);
       }
     }
   }, 30_000);
@@ -617,51 +653,6 @@ function mutationHeaders(baseUrl: string, auth: BrowserAuth): Record<string, str
   return { cookie: auth.cookie, origin: baseUrl, "x-dome-csrf": auth.csrf };
 }
 
-async function fetchTextWithin(
-  operation: string,
-  milliseconds: number,
-  url: string,
-  init: RequestInit,
-  diagnostic?: () => string,
-): Promise<{ readonly response: Response; readonly text: string }> {
-  const signal = AbortSignal.timeout(milliseconds);
-  try {
-    const response = await fetch(url, { ...init, signal });
-    return { response, text: await response.text() };
-  } catch (error) {
-    if (!signal.aborted) throw error;
-    const detail = diagnostic?.();
-    throw new Error(
-      `${operation} exceeded ${milliseconds}ms${detail === undefined ? "" : ` (${detail})`}`,
-      { cause: error },
-    );
-  }
-}
-
-async function fetchResponseWithin(
-  operation: string,
-  milliseconds: number,
-  url: string,
-  init: RequestInit,
-): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), milliseconds);
-  try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } catch (error) {
-    if (!controller.signal.aborted) throw error;
-    throw new Error(`${operation} exceeded ${milliseconds}ms`, { cause: error });
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function closeTrackedHost(host: ProductHost): Promise<void> {
-  await host.close();
-  const index = hosts.indexOf(host);
-  if (index >= 0) hosts.splice(index, 1);
-}
-
 async function bootstrapBrowserAuth(
   vault: string,
   deviceName: string,
@@ -722,13 +713,4 @@ async function within<T>(promise: Promise<T>, milliseconds: number): Promise<T> 
   } finally {
     clearTimeout(timer);
   }
-}
-
-async function eventually(check: () => Promise<boolean>, milliseconds: number): Promise<void> {
-  const deadline = Date.now() + milliseconds;
-  while (Date.now() < deadline) {
-    if (await check()) return;
-    await Bun.sleep(25);
-  }
-  throw new Error(`condition was not met within ${milliseconds}ms`);
 }
