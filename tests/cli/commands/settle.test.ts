@@ -1,8 +1,8 @@
 // `dome settle` — end-to-end tests for the CLI binding over `performSettle`
 // (src/surface/settle.ts). Unlike `dome resolve` (projection-db backed),
 // settle is a fs/git-direct commit-or-nothing write — same trust domain as
-// `dome capture` — so the fixture mirrors tests/cli/capture.test.ts and
-// tests/surface/settle.test.ts rather than ./fixture.ts's projection setup.
+// `dome capture` — so the fixture keeps the required Git/HEAD/config boundary
+// real without coupling this command adapter test to the full setup product.
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
@@ -10,9 +10,13 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { runInit } from "../../../src/cli/commands/init";
 import { runSettle } from "../../../src/cli/commands/settle";
-import { commitSingleFileOnHead, resolveRef } from "../../../src/git";
+import {
+  commit,
+  commitSingleFileOnHead,
+  initRepo,
+  resolveRef,
+} from "../../../src/git";
 
 // ----- Console capture -------------------------------------------------------
 
@@ -49,7 +53,15 @@ function tempDir(prefix: string): string {
 
 async function initVault(): Promise<string> {
   const vault = tempDir("dome-settle-cli-vault-");
-  expect(await runInit({ path: vault })).toBe(0);
+  await initRepo(vault);
+  await mkdir(join(vault, ".dome"), { recursive: true });
+  await writeFile(join(vault, ".dome", "config.yaml"), "{}\n", "utf8");
+  await commit({
+    path: vault,
+    files: [".dome/config.yaml"],
+    message: "fixture: initialize minimal Dome vault",
+    author: { name: "fixture", email: "fixture@local" },
+  });
   logs = [];
   errors = [];
   return vault;
