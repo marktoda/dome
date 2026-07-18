@@ -7,6 +7,7 @@
 import { expect } from "bun:test";
 import { join } from "node:path";
 
+import { queryQuestionRecords } from "../../../../src/projections/questions";
 import { scenario } from "../../index";
 
 const PAGE_TYPE_JOB_BUNDLE = join(
@@ -173,11 +174,10 @@ extensions:
       .diagnostics({ code: "dome.markdown.unknown-frontmatter-field" })
       .toHaveCount(1);
 
-    const inspect = await h.runCli(["inspect", "questions", "--json"]);
-    expect(inspect.exitCode).toBe(0);
-    const rows = JSON.parse(inspect.stdout) as ReadonlyArray<{
-      readonly id: number;
-    }>;
+    // Question inspection is not this scenario's subject. Read the harness's
+    // live projection directly so the only CLI/runtime lifecycle exercised
+    // below is the answer-driven patch path under test.
+    const rows = queryQuestionRecords(h.projection, { resolved: false });
     expect(rows.length).toBe(1);
     const questionId = rows[0]?.id;
     expect(questionId).toBeGreaterThan(0);
@@ -186,7 +186,10 @@ extensions:
     const answered = await h.runCli([
       "answer",
       String(questionId),
-      "wiki/entities/grace-danco#Notes",
+      // The ambiguous-link question is only the answer-flow vehicle. Keep its
+      // own handler neutral so this scenario produces exactly the one page-
+      // type sub-Proposal whose projection rebuild it claims to prove.
+      "keep unresolved",
       "--json",
     ]);
     expect(answered.exitCode).toBe(0);
@@ -194,12 +197,14 @@ extensions:
       readonly handlers: {
         readonly status: string;
         readonly runs: ReadonlyArray<{ readonly processor_id: string }>;
+        readonly sub_proposals: number;
       } | null;
     };
     expect(body.handlers?.status).toBe("handled");
     expect(body.handlers?.runs.map((run) => run.processor_id)).toContain(
       "test.page-type-job-flow.answer-worker",
     );
+    expect(body.handlers?.sub_proposals).toBe(1);
 
     await h
       .expectProjection()
