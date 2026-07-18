@@ -10,11 +10,12 @@ test("Product Host integration tests use only owned bounded fixture seams", asyn
   expect(matches(source, /\.value\.close\s*\(/g)).toBe(0);
   expect(matches(source, /\bhosts\.splice\s*\(/g)).toBe(0);
   expect(matches(source, /\bstartProductHost\s*\(/g)).toBe(1);
-  expect(matches(source, /\bhosts\.push\s*\(/g)).toBe(1);
+  expect(matches(source, /\bhosts\.push\s*\(/g)).toBe(0);
   expect(matches(source, /\bstartTrackedProductHost\s*\(/g)).toBeGreaterThan(10);
   expect(matches(source, /\bfetchTextWithin\s*\(/g)).toBeGreaterThan(5);
   expect(source).toContain("await closeTrackedProductFixture(first.value, hosts)");
   expect(source).toContain("await cleanupOwnedProductFixtures(hosts, roots");
+  expect(source).toContain("return startOwnedProductFixture(");
 });
 
 function matches(source: string, pattern: RegExp): number {

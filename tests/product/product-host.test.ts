@@ -27,6 +27,8 @@ import type { HomeArtifactManifest } from "../../src/product-host/home-artifact"
 import {
   cleanupOwnedProductFixtures,
   closeTrackedProductFixture,
+  startOwnedProductFixture,
+  type CloseableProductFixture,
 } from "./support/owned-fixture-cleanup";
 import {
   fetchBodiesWithin,
@@ -38,7 +40,7 @@ import {
 } from "./support/bounded-http";
 
 const roots: string[] = [];
-const hosts: ProductHost[] = [];
+const hosts: CloseableProductFixture[] = [];
 const originalLog = console.log;
 const originalError = console.error;
 
@@ -668,9 +670,11 @@ async function startTrackedProductHost(
   options: Parameters<typeof startProductHost>[0],
   deps?: Parameters<typeof startProductHost>[1],
 ): ReturnType<typeof startProductHost> {
-  const result = await startProductHost(options, deps);
-  if (result.ok) hosts.push(result.value);
-  return result;
+  return startOwnedProductFixture(
+    hosts,
+    () => startProductHost(options, deps),
+    (result) => result.ok ? result.value : null,
+  );
 }
 
 function mutationHeaders(baseUrl: string, auth: BrowserAuth): Record<string, string> {
