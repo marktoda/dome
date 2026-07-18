@@ -80,10 +80,12 @@ type PrivateRootTestProcessGroup = {
 const privateRootTestProcessGroups = new WeakMap<RootTestChild, PrivateRootTestProcessGroup>();
 
 /**
- * Spawn one test command with process-tree ownership hidden behind RootTestChild.
+ * Spawn one test command with process-group ownership hidden behind RootTestChild.
  * Bun's detached POSIX spawn creates a new session whose group id is the child
- * pid. The supervisor can therefore retire descendants without making callers
- * or unit-test fakes coordinate pid/group signaling themselves.
+ * pid. The supervisor can therefore retire descendants that remain in that
+ * group without making callers or unit-test fakes coordinate pid/group
+ * signaling themselves. A fixture that deliberately creates a new detached
+ * session owns that escaped process and must clean it itself.
  */
 export function spawnRootTestProcess(
   command: ReadonlyArray<string>,

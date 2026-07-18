@@ -169,13 +169,15 @@ Work:
    four areas remain progress groupings, not isolation boundaries. Each file
    owns a private POSIX process group: normal direct exit, timeout, and owner
    interruption all retire the full group before the runner advances, even
-   when a wrapper exits before its descendants. POSIX exposes only a numeric
-   process-group id rather than a handle-bound group capability, so the runner
-   signals immediately at the ownership boundary, treats `ESRCH` as terminal,
-   and never signals that id again after observing retirement; this is the
-   narrow conventional defense against identifier reuse without adding
-   platform FFI to the test gate. Do not use bare recursive `bun test`, which
-   also crosses into nested packages.
+   when a wrapper exits before descendants that remain in its group. A fixture
+   that deliberately starts a new detached session owns and must clean that
+   escaped process; the runner does not claim ownership across that boundary.
+   POSIX exposes only a numeric process-group id rather than a handle-bound
+   group capability, so the runner signals immediately at the ownership
+   boundary, treats `ESRCH` as terminal, and never signals that id again after
+   observing retirement; this is the narrow conventional defense against
+   identifier reuse without adding platform FFI to the test gate. Do not use
+   bare recursive `bun test`, which also crosses into nested packages.
 4. Run `bun run check:pwa` as its own explicit gate, alongside typecheck and
    the root tests, so the PWA remains required without conflating test roots.
    Keep one macOS job with named attributable steps unless measured latency or

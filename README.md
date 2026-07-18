@@ -139,9 +139,11 @@ coverage without carrying one test file's scheduler, SQLite, server, or
 lifecycle state into another file. A file that does not exit within five
 minutes is reported by exact path; the runner requests TERM, waits a bounded
 grace period, then escalates to KILL for the test's private POSIX process group,
-so a grandchild cannot outlive its named file and consume the rest of the CI
-job. An owner interrupt is forwarded to that group as INT before the same
-bounded TERM-to-KILL fallback. Run
+so a descendant that remains in that group cannot outlive its named file and
+consume the rest of the CI job. A test that deliberately starts a new detached
+session owns and must clean that escaped process. An owner interrupt is
+forwarded to the owned group as INT before the same bounded TERM-to-KILL
+fallback. Run
 `bun run check:pwa` separately for the PWA package.
 
 Useful narrower gates include `bun test tests/invariants` and
