@@ -19,12 +19,11 @@ export type SetupClassificationEvidence = Readonly<{
   gitDirect: boolean;
   domeState: "absent" | "partial" | "configured" | "incompatible";
   blockerCodes: ReadonlyArray<string>;
-  installedHomeState?: "absent" | "owned" | "foreign-owner" | "upgrade-active" | "ambiguous" | undefined;
 }>;
 
 /** The one deterministic mapping from observed setup evidence to public kind. */
 export function classifySetupVault(evidence: SetupClassificationEvidence): VaultKind {
-  if (evidence.gitState === "operation-active" || evidence.installedHomeState === "upgrade-active") {
+  if (evidence.gitState === "operation-active") {
     return "incompatible-active-operation";
   }
   if (evidence.blockerCodes.length > 0) return "unsafe-or-ambiguous-state";

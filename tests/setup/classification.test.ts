@@ -12,7 +12,6 @@ const base: SetupClassificationEvidence = {
   gitDirect: false,
   domeState: "absent",
   blockerCodes: [],
-  installedHomeState: "absent",
 };
 
 describe("setup vault classification", () => {
@@ -34,9 +33,7 @@ describe("setup vault classification", () => {
     expect(classifySetupVault({ ...base, gitState: "clean", gitDirect: true, domeState: "configured" }))
       .toBe("existing-dome-vault");
     expect(classifySetupVault({ ...base, domeState: "configured" })).toBe("existing-non-git-vault");
-    expect(classifySetupVault({ ...base, installedHomeState: "upgrade-active", blockerCodes: ["active-home-upgrade"] }))
-      .toBe("incompatible-active-operation");
-    expect(classifySetupVault({ ...base, blockerCodes: ["active-home-upgrade"] }))
+    expect(classifySetupVault({ ...base, blockerCodes: ["unsafe-path"] }))
       .toBe("unsafe-or-ambiguous-state");
   });
 });

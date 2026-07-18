@@ -3,7 +3,6 @@ import {
   canonicalContentScopeSchema,
   type ContentScopeConfig,
 } from "../core/content-scope";
-import { homeServiceLabelForVault } from "../core/vault-service-identity";
 import {
   deepFreezeSetupContract,
   passiveSetupContractSnapshot,
@@ -25,27 +24,29 @@ export type { ContentScopeConfig };
 
 export const VAULT_ASSESSMENT_SCHEMA = "dome.setup.vault-assessment/v1" as const;
 export const SETUP_PLAN_SCHEMA = "dome.setup.plan/v1" as const;
+export const SETUP_CONSENT_SCHEMA = "dome.setup.consent/v1" as const;
+export const SETUP_APPLY_RESULT_SCHEMA = "dome.setup.apply-result/v1" as const;
 
 export { VAULT_KINDS } from "./classification";
 
 export const ADAPTATION_ACTION_KINDS = [
   "create-vault-directory",
   "initialize-git",
+  "commit-owner-baseline",
   "ensure-scaffold-directory",
   "write-scaffold-file",
   "set-content-scope",
-  "activate-home",
 ] as const;
 
 export const ADAPTATION_ACTION_IDS = [
   "vault-directory",
   "git-repository",
+  "owner-baseline",
   "dome-directory",
   "dome-state-directory",
   "agents-orientation",
   "gitignore",
   "vault-config",
-  "home-activation",
 ] as const;
 
 export const SETUP_CONTRACT_CAPS = SETUP_CONTRACT_LIMITS;
@@ -68,6 +69,7 @@ const repositoryCandidateSchema = z.object({
   path: relativePath,
   kind: z.enum(SETUP_REPOSITORY_CANDIDATE_KINDS),
   bytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  proofSha256: sha256,
   tracking: z.enum(["tracked", "untracked", "ignored", "other"]),
   disposition: z.enum(SETUP_REPOSITORY_DISPOSITIONS),
   reason: z.enum(SETUP_REPOSITORY_REASONS),
@@ -89,7 +91,6 @@ const contentScopeSchema = canonicalContentScopeSchema;
 
 const scaffoldFileId = z.enum(["gitignore", "agents-orientation"]);
 const scaffoldDirectoryId = z.enum(["dome-directory", "dome-state-directory"]);
-const serviceLabel = z.string().regex(/^com\.dome\.home\.[a-z0-9][a-z0-9-]*$/);
 const contentScopeWriteSchema = z.object({
   path: z.literal(".dome/config.yaml"),
   operation: z.enum(["create-file", "merge-managed-config"]),
@@ -112,6 +113,11 @@ const actionSchemas = [
     ifMissing: z.literal(true),
   }).strict(),
   z.object({
+    kind: z.literal("commit-owner-baseline"), id: z.literal("owner-baseline"),
+    paths: sortedUnique(relativePath).min(1).max(SETUP_CONTRACT_CAPS.repositoryCandidates),
+    message: z.literal("Dome setup: preserve owner baseline"),
+  }).strict(),
+  z.object({
     kind: z.literal("ensure-scaffold-directory"), id: scaffoldDirectoryId, path: relativePath,
     mode: z.enum(["0700", "0755"]), ifMissing: z.literal(true),
   }).strict(),
@@ -124,15 +130,6 @@ const actionSchemas = [
     kind: z.literal("set-content-scope"), id: z.literal("vault-config"), scope: contentScopeSchema,
     write: contentScopeWriteSchema,
   }).strict(),
-  z.object({
-    kind: z.literal("activate-home"),
-    id: z.literal("home-activation"),
-    artifactId: sha256,
-    disposition: z.enum(["install-or-resume", "upgrade"]),
-    vaultPath: absolutePath,
-    serviceLabel,
-    installServiceIfMissing: z.literal(true),
-  }).strict(),
 ] as const;
 
 export const adaptationActionSchema = z.discriminatedUnion("kind", actionSchemas);
@@ -140,12 +137,9 @@ export type AdaptationAction = z.infer<typeof adaptationActionSchema>;
 
 const blockerSchema = z.object({
   code: z.enum([
-    "unsupported-host",
     "missing-prerequisite",
     "dirty-worktree",
     "active-git-operation",
-    "active-home-upgrade",
-    "conflicting-home-owner",
     "symlink-ambiguity",
     "unsafe-path",
     "ambiguous-state",
@@ -167,7 +161,6 @@ const assessmentSchemaBase = z.object({
   host: z.object({
     platform: nonEmpty,
     architecture: nonEmpty,
-    supported: z.boolean(),
   }).strict(),
   product: z.object({
     packageName: z.literal("@marktoda/dome"),
@@ -252,13 +245,9 @@ export const vaultAssessmentSchema = assessmentSchemaBase.superRefine((assessmen
     gitDirect: assessment.git.state !== "absent",
     domeState: assessment.dome.state,
     blockerCodes,
-    installedHomeState: assessment.installedHome.state,
   });
   if (assessment.target.kind !== expectedKind) {
     context.addIssue({ code: "custom", path: ["target", "kind"], message: `must equal ${expectedKind} for the observed evidence` });
-  }
-  if (assessment.host.supported === assessment.blockers.some((blocker) => blocker.code === "unsupported-host")) {
-    context.addIssue({ code: "custom", path: ["host", "supported"], message: "must agree with unsupported-host blocker" });
   }
   requireBlocker(assessment.prerequisites.some((entry) => entry.status === "missing"), "missing-prerequisite", assessment, context);
   requireBlocker(
@@ -271,10 +260,8 @@ export const vaultAssessmentSchema = assessmentSchemaBase.superRefine((assessmen
   requireBlocker(assessment.git.state === "operation-active", "active-git-operation", assessment, context);
   requireBlocker(assessment.git.state === "detached", "detached-head", assessment, context);
   requireBlocker(assessment.git.state === "unborn", "unborn-repository", assessment, context);
-  requireBlocker(assessment.installedHome.state === "upgrade-active", "active-home-upgrade", assessment, context);
-  requireBlocker(assessment.installedHome.state === "foreign-owner", "conflicting-home-owner", assessment, context);
   requireBlocker(
-    assessment.git.state === "ambiguous" || assessment.installedHome.state === "ambiguous" || assessment.dome.state === "incompatible",
+    assessment.git.state === "ambiguous" || assessment.dome.state === "incompatible",
     "ambiguous-state",
     assessment,
     context,
@@ -355,6 +342,7 @@ export type VaultAssessment = z.infer<typeof vaultAssessmentSchema>;
 
 const setupPlanSchemaBase = z.object({
   schema: z.literal(SETUP_PLAN_SCHEMA),
+  scope: z.literal("vault-adaptation"),
   status: z.enum(["ready", "blocked"]),
   assessment: vaultAssessmentSchema,
   actions: z.array(adaptationActionSchema).max(SETUP_CONTRACT_CAPS.actions),
@@ -362,6 +350,11 @@ const setupPlanSchemaBase = z.object({
     kind: z.enum(["configure-model", "configure-integration"]),
     description: nonEmpty,
   }).strict()).max(SETUP_CONTRACT_CAPS.optionalSteps),
+  deferredSteps: z.array(z.object({
+    kind: z.literal("activate-home"),
+    milestone: z.literal("M6"),
+    description: nonEmpty,
+  }).strict()).length(1),
   recoveryCommands: sortedUnique(nonEmpty).max(SETUP_CONTRACT_CAPS.recoveryCommands),
   warnings: z.array(z.object({ code: nonEmpty, message: nonEmpty }).strict()).max(SETUP_CONTRACT_CAPS.warnings),
 }).strict();
@@ -396,6 +389,10 @@ export const setupPlanSchema = setupPlanSchemaBase.superRefine((plan, context) =
     if (action.kind === "initialize-git" && action.repositoryPath !== plan.assessment.target.path) {
       context.addIssue({ code: "custom", path: [...path, "repositoryPath"], message: "must equal the assessed vault path" });
     }
+    if (action.kind === "commit-owner-baseline" &&
+      JSON.stringify(action.paths) !== JSON.stringify(plan.assessment.repository.baselineTracked)) {
+      context.addIssue({ code: "custom", path: [...path, "paths"], message: "must exactly match the assessed owner baseline" });
+    }
     if (action.kind === "ensure-scaffold-directory") {
       const expected = action.id === "dome-directory" ? { path: ".dome", mode: "0755" } :
         { path: ".dome/state", mode: "0700" };
@@ -416,7 +413,6 @@ export const setupPlanSchema = setupPlanSchemaBase.superRefine((plan, context) =
         context.addIssue({ code: "custom", path: [...path, "scope"], message: "must match the proposed Markdown scope" });
       }
     }
-    if (action.kind === "activate-home") validateHomeActivation(plan.assessment, action, path, context);
   }
   if (new Set(writePaths).size !== writePaths.length) {
     context.addIssue({ code: "custom", path: ["actions"], message: "must not write the same path twice" });
@@ -439,36 +435,13 @@ function expectedSetupActionIds(assessment: VaultAssessment): ReadonlyArray<Adap
   const ids: AdaptationAction["id"][] = [];
   if (assessment.target.state === "missing") ids.push("vault-directory");
   if (assessment.git.state === "absent") ids.push("git-repository");
+  if (assessment.git.state === "absent" && assessment.repository.baselineTracked.length > 0) ids.push("owner-baseline");
   if (assessment.dome.state !== "configured") {
     ids.push("dome-directory", "dome-state-directory", "agents-orientation", "gitignore", "vault-config");
   } else if (assessment.dome.contentScope === "absent") {
     ids.push("vault-config");
   }
-  ids.push("home-activation");
   return ids;
-}
-
-function validateHomeActivation(
-  assessment: VaultAssessment,
-  action: Extract<AdaptationAction, { kind: "activate-home" }>,
-  path: ReadonlyArray<string | number>,
-  context: z.RefinementCtx,
-): void {
-  const candidate = assessment.product.packagedHome;
-  if (action.artifactId !== candidate.artifactId || action.vaultPath !== assessment.target.path ||
-    action.serviceLabel !== homeServiceLabelForVault(assessment.target.path)) {
-    context.addIssue({ code: "custom", path: [...path], message: "must activate the packaged Home for the assessed vault" });
-  }
-  const installedMatchesCandidate = assessment.installedHome.state === "owned" &&
-    assessment.installedHome.artifactId === candidate.artifactId &&
-    assessment.installedHome.productVersion === candidate.productVersion &&
-    assessment.installedHome.buildCommit === candidate.buildCommit &&
-    assessment.installedHome.manifestSha256 === candidate.manifestSha256;
-  const expectedDisposition = installedMatchesCandidate || assessment.installedHome.state === "absent" ?
-    "install-or-resume" : assessment.installedHome.state === "owned" ? "upgrade" : null;
-  if (action.disposition !== expectedDisposition) {
-    context.addIssue({ code: "custom", path: [...path, "disposition"], message: "must match installed Home identity" });
-  }
 }
 
 export function validateVaultAssessment(value: unknown): VaultAssessment {
@@ -479,6 +452,51 @@ export function validateVaultAssessment(value: unknown): VaultAssessment {
 export function validateSetupPlan(value: unknown): SetupPlan {
   const snapshot = passiveSetupContractSnapshot(value, "setup plan");
   return deepFreezeSetupContract(setupPlanSchema.parse(snapshot));
+}
+
+export const setupConsentSchema = z.object({
+  schema: z.literal(SETUP_CONSENT_SCHEMA),
+  planSha256: sha256,
+}).strict();
+export type SetupConsent = z.infer<typeof setupConsentSchema>;
+
+const recoverySchema = z.object({
+  code: z.enum(["plan-blocked", "consent-mismatch", "mutation-conflict", "verification-failed"]),
+  message: nonEmpty,
+  commands: sortedUnique(nonEmpty).max(SETUP_CONTRACT_CAPS.recoveryCommands),
+}).strict();
+
+export const setupApplyResultSchema = z.discriminatedUnion("status", [
+  z.object({
+    schema: z.literal(SETUP_APPLY_RESULT_SCHEMA),
+    status: z.literal("completed"),
+    planSha256: sha256,
+    targetPath: absolutePath,
+    commits: z.object({ baseline: sha1.nullable(), configuration: sha1.nullable() }).strict(),
+  }).strict(),
+  z.object({
+    schema: z.literal(SETUP_APPLY_RESULT_SCHEMA),
+    status: z.literal("stale"),
+    planSha256: sha256,
+    freshPlan: setupPlanSchema,
+  }).strict(),
+  z.object({
+    schema: z.literal(SETUP_APPLY_RESULT_SCHEMA),
+    status: z.literal("blocked"),
+    planSha256: sha256,
+    recovery: recoverySchema,
+  }).strict(),
+]);
+export type SetupApplyResult = z.infer<typeof setupApplyResultSchema>;
+
+export function validateSetupConsent(value: unknown): SetupConsent {
+  const snapshot = passiveSetupContractSnapshot(value, "setup consent");
+  return deepFreezeSetupContract(setupConsentSchema.parse(snapshot));
+}
+
+export function validateSetupApplyResult(value: unknown): SetupApplyResult {
+  const snapshot = passiveSetupContractSnapshot(value, "setup apply result");
+  return deepFreezeSetupContract(setupApplyResultSchema.parse(snapshot));
 }
 
 function sortedByUniqueKey<T>(

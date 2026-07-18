@@ -2,26 +2,28 @@ import { describe, expect, test } from "bun:test";
 
 import {
   SETUP_PLAN_SCHEMA,
+  SETUP_CONSENT_SCHEMA,
+  SETUP_APPLY_RESULT_SCHEMA,
   VAULT_ASSESSMENT_SCHEMA,
   validateSetupPlan,
   validateVaultAssessment,
+  validateSetupConsent,
+  validateSetupApplyResult,
   type SetupPlan,
   type VaultAssessment,
 } from "../../src/setup/contracts";
-import { homeServiceLabelForVault } from "../../src/core/vault-service-identity";
 
 const HEAD = "1".repeat(40);
 const FINGERPRINT = "2".repeat(64);
 const ARTIFACT = "3".repeat(64);
 const MANIFEST = "4".repeat(64);
-const SERVICE = homeServiceLabelForVault("/Users/example/Vault");
 
 function assessment(): VaultAssessment {
   return validateVaultAssessment({
     schema: VAULT_ASSESSMENT_SCHEMA,
     target: { path: "/Users/example/Vault", state: "existing", kind: "existing-git-vault" },
     revision: { head: HEAD, worktreeFingerprint: FINGERPRINT },
-    host: { platform: "darwin", architecture: "arm64", supported: true },
+    host: { platform: "darwin", architecture: "arm64" },
     product: {
       packageName: "@marktoda/dome",
       packageVersion: "0.4.0",
@@ -62,6 +64,7 @@ function plan(): SetupPlan {
   const assessed = assessment();
   return validateSetupPlan({
     schema: SETUP_PLAN_SCHEMA,
+    scope: "vault-adaptation",
     status: "ready",
     assessment: assessed,
     actions: [
@@ -84,20 +87,16 @@ function plan(): SetupPlan {
           sha256: ARTIFACT, mode: "0644", ifMissing: true,
         },
       },
-      {
-        kind: "activate-home",
-        id: "home-activation",
-        artifactId: ARTIFACT,
-        disposition: "install-or-resume",
-        vaultPath: assessed.target.path,
-        serviceLabel: SERVICE,
-        installServiceIfMissing: true,
-      },
     ],
     optionalSteps: [
       { kind: "configure-integration", description: "Connect an optional source." },
       { kind: "configure-model", description: "Configure a model provider." },
     ],
+    deferredSteps: [{
+      kind: "activate-home",
+      milestone: "M6",
+      description: "Home activation is separately consented.",
+    }],
     recoveryCommands: ["dome setup --dry-run /Users/example/Vault"],
     warnings: [{ code: "review-content-scope", message: "Review the scope." }],
   });
@@ -117,7 +116,7 @@ describe("VaultAssessment contract", () => {
       ...value,
       repository: {
         candidates: [{
-          path: ".env", kind: "file", bytes: 8, tracking: "tracked",
+          path: ".env", kind: "file", bytes: 8, proofSha256: FINGERPRINT, tracking: "tracked",
           disposition: "already-tracked", reason: "safe-owner-file",
         }],
         baselineTracked: [],
@@ -186,10 +185,6 @@ describe("VaultAssessment contract", () => {
     const value = assessment();
     expect(() => validateVaultAssessment({
       ...value,
-      host: { ...value.host, supported: false },
-    })).toThrow("unsupported-host");
-    expect(() => validateVaultAssessment({
-      ...value,
       git: { ...value.git, state: "dirty" },
     })).toThrow("dirty-worktree");
   });
@@ -221,13 +216,14 @@ describe("VaultAssessment contract", () => {
 });
 
 describe("SetupPlan contract", () => {
-  test("keeps one canonical action inventory and one atomic Home activation", () => {
+  test("keeps one canonical vault-adaptation inventory and explicitly defers Home", () => {
     const value = plan();
     expect(validateSetupPlan(JSON.parse(JSON.stringify(value)))).toEqual(value);
     expect(value).not.toHaveProperty("writes");
     expect(value).not.toHaveProperty("commits");
     expect(value).not.toHaveProperty("serviceActions");
-    expect(value.actions.filter((action) => action.kind === "activate-home")).toHaveLength(1);
+    expect(value.scope).toBe("vault-adaptation");
+    expect(value.deferredSteps).toEqual([expect.objectContaining({ kind: "activate-home", milestone: "M6" })]);
     expect(isDeeplyFrozen(value)).toBe(true);
   });
 
@@ -320,20 +316,17 @@ describe("SetupPlan contract", () => {
     })).toThrow("write operation must match config presence");
   });
 
-  test("binds atomic Home activation to exact package, vault, and disposition", () => {
+  test("validates immutable consent and closed apply results", () => {
     const value = plan();
-    const activation = value.actions.find((action) => action.kind === "activate-home")!;
-    for (const changed of [
-      { ...activation, artifactId: MANIFEST },
-      { ...activation, vaultPath: "/Users/example/Other" },
-      { ...activation, serviceLabel: "com.dome.home.forged-label" },
-      { ...activation, disposition: "upgrade" as const },
-    ]) {
-      expect(() => validateSetupPlan({
-        ...value,
-        actions: value.actions.map((action) => action.kind === "activate-home" ? changed : action),
-      })).toThrow();
-    }
+    const consent = validateSetupConsent({ schema: SETUP_CONSENT_SCHEMA, planSha256: FINGERPRINT });
+    expect(consent.planSha256).toBe(FINGERPRINT);
+    expect(validateSetupApplyResult({
+      schema: SETUP_APPLY_RESULT_SCHEMA,
+      status: "stale",
+      planSha256: FINGERPRINT,
+      freshPlan: value,
+    }).status).toBe("stale");
+    expect(() => validateSetupConsent({ ...consent, surprise: true })).toThrow();
   });
 });
 

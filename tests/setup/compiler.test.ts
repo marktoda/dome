@@ -13,6 +13,7 @@ const HEAD = "1".repeat(40);
 const SOURCE_FINGERPRINT = "2".repeat(64);
 const ARTIFACT = "3".repeat(64);
 const MANIFEST = "4".repeat(64);
+const PROOF = "5".repeat(64);
 
 function input(kind: SetupCompilerInput["source"]["kind"]): SetupCompilerInput {
   const gitPresent = kind === "existing-git-vault" || kind === "existing-dome-vault" ||
@@ -20,13 +21,13 @@ function input(kind: SetupCompilerInput["source"]["kind"]): SetupCompilerInput {
   const blocked = kind === "incompatible-active-operation" || kind === "unsafe-or-ambiguous-state";
   const repository = kind === "existing-non-git-vault" ? {
     candidates: [{
-      path: "Journal.md", kind: "file" as const, bytes: 12, tracking: "other" as const,
+      path: "Journal.md", kind: "file" as const, bytes: 12, proofSha256: PROOF, tracking: "other" as const,
       disposition: "baseline" as const, reason: "safe-owner-file" as const,
     }],
     baselineTracked: ["Journal.md"],
   } : gitPresent ? {
     candidates: [{
-      path: "notes/hello.md", kind: "file" as const, bytes: 12, tracking: "tracked" as const,
+      path: "notes/hello.md", kind: "file" as const, bytes: 12, proofSha256: PROOF, tracking: "tracked" as const,
       disposition: "already-tracked" as const, reason: "safe-owner-file" as const,
     }],
     baselineTracked: [],
@@ -146,22 +147,21 @@ describe("setup compiler", () => {
     expect(missing.assessment.prerequisites[0]).toEqual({ id: "bun", status: "missing", version: null });
   });
 
-  test("classifies host and installed Home conflicts before emitting actions", () => {
+  test("keeps host and installed Home evidence observational for vault adaptation", () => {
     const base = input("existing-dome-vault");
     const active = compileSetupPlan({
       ...base,
       installedHome: { ...base.installedHome, state: "upgrade-active" },
     });
-    expect(active.assessment.target.kind).toBe("incompatible-active-operation");
-    expect(active.actions).toEqual([]);
-    expect(active.assessment.blockers.map((row) => row.code)).toEqual(["active-home-upgrade"]);
+    expect(active.assessment.target.kind).toBe("existing-dome-vault");
+    expect(active.assessment.blockers).toEqual([]);
 
     const unsupported = compileSetupPlan({ ...base, host: { platform: "linux", architecture: "x64" } });
-    expect(unsupported.assessment.target.kind).toBe("unsafe-or-ambiguous-state");
-    expect(unsupported.assessment.blockers.map((row) => row.code)).toEqual(["unsupported-host"]);
+    expect(unsupported.assessment.target.kind).toBe("existing-dome-vault");
+    expect(unsupported.assessment.host).toEqual({ platform: "linux", architecture: "x64" });
   });
 
-  test("uses upgrade only for a different exact owned artifact", () => {
+  test("defers Home activation to M6 for every installed artifact state", () => {
     const base = input("existing-dome-vault");
     const installed = {
       state: "owned" as const,
@@ -172,7 +172,8 @@ describe("setup compiler", () => {
       selectedVaultPath: base.source.targetPath,
     };
     const plan = compileSetupPlan({ ...base, installedHome: installed });
-    expect(plan.actions.at(-1)).toMatchObject({ kind: "activate-home", disposition: "upgrade" });
+    expect(plan.actions).toEqual([]);
+    expect(plan.deferredSteps).toEqual([expect.objectContaining({ kind: "activate-home", milestone: "M6" })]);
 
     const exact = compileSetupPlan({
       ...base,
@@ -185,7 +186,7 @@ describe("setup compiler", () => {
         selectedVaultPath: base.source.targetPath,
       },
     });
-    expect(exact.actions.at(-1)).toMatchObject({ kind: "activate-home", disposition: "install-or-resume" });
+    expect(exact.actions).toEqual([]);
   });
 
   test("plans one explicit managed scope migration for a configured pre-scope vault", () => {

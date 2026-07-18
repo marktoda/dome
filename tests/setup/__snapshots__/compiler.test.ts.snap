@@ -4,6 +4,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
 "{
   "new-path": {
     "schema": "dome.setup.plan/v1",
+    "scope": "vault-adaptation",
     "status": "ready",
     "assessment": {
       "schema": "dome.setup.vault-assessment/v1",
@@ -18,8 +19,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "host": {
         "platform": "darwin",
-        "architecture": "arm64",
-        "supported": true
+        "architecture": "arm64"
       },
       "product": {
         "packageName": "@marktoda/dome",
@@ -148,15 +148,6 @@ exports[`setup compiler compiles every closed classification into one exact plan
           "mode": "0644",
           "ifMissing": true
         }
-      },
-      {
-        "kind": "activate-home",
-        "id": "home-activation",
-        "artifactId": "3333333333333333333333333333333333333333333333333333333333333333",
-        "disposition": "install-or-resume",
-        "vaultPath": "/Users/example/Vault",
-        "serviceLabel": "com.dome.home.vault-43ba0b40",
-        "installServiceIfMissing": true
       }
     ],
     "optionalSteps": [
@@ -169,6 +160,13 @@ exports[`setup compiler compiles every closed classification into one exact plan
         "description": "Optionally configure a local model provider after setup."
       }
     ],
+    "deferredSteps": [
+      {
+        "kind": "activate-home",
+        "milestone": "M6",
+        "description": "Install or upgrade Dome Home only through the separately consented Home activation transaction."
+      }
+    ],
     "recoveryCommands": [
       "dome setup --dry-run \\"/Users/example/Vault\\""
     ],
@@ -176,6 +174,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
   },
   "empty-directory": {
     "schema": "dome.setup.plan/v1",
+    "scope": "vault-adaptation",
     "status": "ready",
     "assessment": {
       "schema": "dome.setup.vault-assessment/v1",
@@ -190,8 +189,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "host": {
         "platform": "darwin",
-        "architecture": "arm64",
-        "supported": true
+        "architecture": "arm64"
       },
       "product": {
         "packageName": "@marktoda/dome",
@@ -313,15 +311,6 @@ exports[`setup compiler compiles every closed classification into one exact plan
           "mode": "0644",
           "ifMissing": true
         }
-      },
-      {
-        "kind": "activate-home",
-        "id": "home-activation",
-        "artifactId": "3333333333333333333333333333333333333333333333333333333333333333",
-        "disposition": "install-or-resume",
-        "vaultPath": "/Users/example/Vault",
-        "serviceLabel": "com.dome.home.vault-43ba0b40",
-        "installServiceIfMissing": true
       }
     ],
     "optionalSteps": [
@@ -334,6 +323,13 @@ exports[`setup compiler compiles every closed classification into one exact plan
         "description": "Optionally configure a local model provider after setup."
       }
     ],
+    "deferredSteps": [
+      {
+        "kind": "activate-home",
+        "milestone": "M6",
+        "description": "Install or upgrade Dome Home only through the separately consented Home activation transaction."
+      }
+    ],
     "recoveryCommands": [
       "dome setup --dry-run \\"/Users/example/Vault\\""
     ],
@@ -341,6 +337,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
   },
   "existing-non-git-vault": {
     "schema": "dome.setup.plan/v1",
+    "scope": "vault-adaptation",
     "status": "ready",
     "assessment": {
       "schema": "dome.setup.vault-assessment/v1",
@@ -351,12 +348,11 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "revision": {
         "head": null,
-        "worktreeFingerprint": "4c6b9057f0902c2b5be5d8e946670d7e45fb7818848d207ff4114fbd7cb30776"
+        "worktreeFingerprint": "6bded8aa635bf580272c8775da10f2a313a253cf5b0ef14fc5523aa6d10b6fb2"
       },
       "host": {
         "platform": "darwin",
-        "architecture": "arm64",
-        "supported": true
+        "architecture": "arm64"
       },
       "product": {
         "packageName": "@marktoda/dome",
@@ -420,6 +416,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
             "path": "Journal.md",
             "kind": "file",
             "bytes": 12,
+            "proofSha256": "5555555555555555555555555555555555555555555555555555555555555555",
             "tracking": "other",
             "disposition": "baseline",
             "reason": "safe-owner-file"
@@ -437,6 +434,14 @@ exports[`setup compiler compiles every closed classification into one exact plan
         "id": "git-repository",
         "repositoryPath": "/Users/example/Vault",
         "ifMissing": true
+      },
+      {
+        "kind": "commit-owner-baseline",
+        "id": "owner-baseline",
+        "paths": [
+          "Journal.md"
+        ],
+        "message": "Dome setup: preserve owner baseline"
       },
       {
         "kind": "ensure-scaffold-directory",
@@ -491,15 +496,6 @@ exports[`setup compiler compiles every closed classification into one exact plan
           "mode": "0644",
           "ifMissing": true
         }
-      },
-      {
-        "kind": "activate-home",
-        "id": "home-activation",
-        "artifactId": "3333333333333333333333333333333333333333333333333333333333333333",
-        "disposition": "install-or-resume",
-        "vaultPath": "/Users/example/Vault",
-        "serviceLabel": "com.dome.home.vault-43ba0b40",
-        "installServiceIfMissing": true
       }
     ],
     "optionalSteps": [
@@ -510,6 +506,13 @@ exports[`setup compiler compiles every closed classification into one exact plan
       {
         "kind": "configure-model",
         "description": "Optionally configure a local model provider after setup."
+      }
+    ],
+    "deferredSteps": [
+      {
+        "kind": "activate-home",
+        "milestone": "M6",
+        "description": "Install or upgrade Dome Home only through the separately consented Home activation transaction."
       }
     ],
     "recoveryCommands": [
@@ -524,6 +527,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
   },
   "existing-git-vault": {
     "schema": "dome.setup.plan/v1",
+    "scope": "vault-adaptation",
     "status": "ready",
     "assessment": {
       "schema": "dome.setup.vault-assessment/v1",
@@ -534,12 +538,11 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "revision": {
         "head": "1111111111111111111111111111111111111111",
-        "worktreeFingerprint": "5118decb07dd68321ddd124985e18ab1e161e8220c6c83715fdacae444561a2c"
+        "worktreeFingerprint": "b41d417986c39d7513c42689c176f8e108705c8ff2319fe309db587a8d6aa136"
       },
       "host": {
         "platform": "darwin",
-        "architecture": "arm64",
-        "supported": true
+        "architecture": "arm64"
       },
       "product": {
         "packageName": "@marktoda/dome",
@@ -603,6 +606,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
             "path": "notes/hello.md",
             "kind": "file",
             "bytes": 12,
+            "proofSha256": "5555555555555555555555555555555555555555555555555555555555555555",
             "tracking": "tracked",
             "disposition": "already-tracked",
             "reason": "safe-owner-file"
@@ -666,15 +670,6 @@ exports[`setup compiler compiles every closed classification into one exact plan
           "mode": "0644",
           "ifMissing": true
         }
-      },
-      {
-        "kind": "activate-home",
-        "id": "home-activation",
-        "artifactId": "3333333333333333333333333333333333333333333333333333333333333333",
-        "disposition": "install-or-resume",
-        "vaultPath": "/Users/example/Vault",
-        "serviceLabel": "com.dome.home.vault-43ba0b40",
-        "installServiceIfMissing": true
       }
     ],
     "optionalSteps": [
@@ -685,6 +680,13 @@ exports[`setup compiler compiles every closed classification into one exact plan
       {
         "kind": "configure-model",
         "description": "Optionally configure a local model provider after setup."
+      }
+    ],
+    "deferredSteps": [
+      {
+        "kind": "activate-home",
+        "milestone": "M6",
+        "description": "Install or upgrade Dome Home only through the separately consented Home activation transaction."
       }
     ],
     "recoveryCommands": [
@@ -699,6 +701,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
   },
   "existing-dome-vault": {
     "schema": "dome.setup.plan/v1",
+    "scope": "vault-adaptation",
     "status": "ready",
     "assessment": {
       "schema": "dome.setup.vault-assessment/v1",
@@ -709,12 +712,11 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "revision": {
         "head": "1111111111111111111111111111111111111111",
-        "worktreeFingerprint": "323697ec96c6ca01b4bdfbca97bb11407ba798e5b5699a2ef7f8b70a192c2f1c"
+        "worktreeFingerprint": "31856fcae3abd1796878c94ede0158dbf73659c46dc60cdb7d45833fb2987ffd"
       },
       "host": {
         "platform": "darwin",
-        "architecture": "arm64",
-        "supported": true
+        "architecture": "arm64"
       },
       "product": {
         "packageName": "@marktoda/dome",
@@ -778,6 +780,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
             "path": "notes/hello.md",
             "kind": "file",
             "bytes": 12,
+            "proofSha256": "5555555555555555555555555555555555555555555555555555555555555555",
             "tracking": "tracked",
             "disposition": "already-tracked",
             "reason": "safe-owner-file"
@@ -787,17 +790,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "blockers": []
     },
-    "actions": [
-      {
-        "kind": "activate-home",
-        "id": "home-activation",
-        "artifactId": "3333333333333333333333333333333333333333333333333333333333333333",
-        "disposition": "install-or-resume",
-        "vaultPath": "/Users/example/Vault",
-        "serviceLabel": "com.dome.home.vault-43ba0b40",
-        "installServiceIfMissing": true
-      }
-    ],
+    "actions": [],
     "optionalSteps": [
       {
         "kind": "configure-integration",
@@ -806,6 +799,13 @@ exports[`setup compiler compiles every closed classification into one exact plan
       {
         "kind": "configure-model",
         "description": "Optionally configure a local model provider after setup."
+      }
+    ],
+    "deferredSteps": [
+      {
+        "kind": "activate-home",
+        "milestone": "M6",
+        "description": "Install or upgrade Dome Home only through the separately consented Home activation transaction."
       }
     ],
     "recoveryCommands": [
@@ -820,6 +820,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
   },
   "incompatible-active-operation": {
     "schema": "dome.setup.plan/v1",
+    "scope": "vault-adaptation",
     "status": "blocked",
     "assessment": {
       "schema": "dome.setup.vault-assessment/v1",
@@ -830,12 +831,11 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "revision": {
         "head": "1111111111111111111111111111111111111111",
-        "worktreeFingerprint": "74d32e175a4fc5477e86dabcadc7212982b9f32d87fd76b965f3f0bfbe9c032d"
+        "worktreeFingerprint": "fe1dbf7e08bca1d885462a785d705ae5af973b3ccba3adde8a5e50b80ec5526f"
       },
       "host": {
         "platform": "darwin",
-        "architecture": "arm64",
-        "supported": true
+        "architecture": "arm64"
       },
       "product": {
         "packageName": "@marktoda/dome",
@@ -899,6 +899,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
             "path": "notes/hello.md",
             "kind": "file",
             "bytes": 12,
+            "proofSha256": "5555555555555555555555555555555555555555555555555555555555555555",
             "tracking": "tracked",
             "disposition": "already-tracked",
             "reason": "safe-owner-file"
@@ -916,6 +917,13 @@ exports[`setup compiler compiles every closed classification into one exact plan
     },
     "actions": [],
     "optionalSteps": [],
+    "deferredSteps": [
+      {
+        "kind": "activate-home",
+        "milestone": "M6",
+        "description": "Install or upgrade Dome Home only through the separately consented Home activation transaction."
+      }
+    ],
     "recoveryCommands": [
       "dome setup --dry-run \\"/Users/example/Vault\\""
     ],
@@ -923,6 +931,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
   },
   "unsafe-or-ambiguous-state": {
     "schema": "dome.setup.plan/v1",
+    "scope": "vault-adaptation",
     "status": "blocked",
     "assessment": {
       "schema": "dome.setup.vault-assessment/v1",
@@ -933,12 +942,11 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "revision": {
         "head": "1111111111111111111111111111111111111111",
-        "worktreeFingerprint": "89028feb83472715803636e9ba06d8ea49b6abf818a7d7593ba150f6020d4c53"
+        "worktreeFingerprint": "a292f6add7347fc260d4513ac9ce5779cfa0fbd76b206b6d423c0571c16109d7"
       },
       "host": {
         "platform": "darwin",
-        "architecture": "arm64",
-        "supported": true
+        "architecture": "arm64"
       },
       "product": {
         "packageName": "@marktoda/dome",
@@ -1002,6 +1010,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
             "path": "notes/hello.md",
             "kind": "file",
             "bytes": 12,
+            "proofSha256": "5555555555555555555555555555555555555555555555555555555555555555",
             "tracking": "tracked",
             "disposition": "already-tracked",
             "reason": "safe-owner-file"
@@ -1019,6 +1028,13 @@ exports[`setup compiler compiles every closed classification into one exact plan
     },
     "actions": [],
     "optionalSteps": [],
+    "deferredSteps": [
+      {
+        "kind": "activate-home",
+        "milestone": "M6",
+        "description": "Install or upgrade Dome Home only through the separately consented Home activation transaction."
+      }
+    ],
     "recoveryCommands": [
       "dome setup --dry-run \\"/Users/example/Vault\\""
     ],
@@ -1030,21 +1046,22 @@ exports[`setup compiler compiles every closed classification into one exact plan
 exports[`setup compiler renders human and JSON forms from the same validated plan 1`] = `
 "Dome setup preview
 Vault: /Users/example/Vault
+Scope: vault-adaptation
 Status: ready
 Classification: existing-non-git-vault
-Revision: no Git HEAD / 4c6b9057f0902c2b5be5d8e946670d7e45fb7818848d207ff4114fbd7cb30776
+Revision: no Git HEAD / 6bded8aa635bf580272c8775da10f2a313a253cf5b0ef14fc5523aa6d10b6fb2
 
 Proposed owner baseline:
 - Journal.md
 
 Planned actions:
 - Initialize Git at /Users/example/Vault
+- Commit 1 owner baseline file
 - Ensure .dome
 - Ensure .dome/state
 - Create AGENTS.md if missing
 - Create .gitignore if missing
 - Configure Markdown scope in .dome/config.yaml
-- Install or resume packaged Dome Home and activate com.dome.home.vault-43ba0b40
 
 Optional after setup:
 - Optionally connect calendar or Slack sources after setup.
@@ -1052,6 +1069,9 @@ Optional after setup:
 
 Warnings:
 - Review the proposed Markdown scope before applying setup to existing owner content.
+
+Deferred (not applied by this plan):
+- Install or upgrade Dome Home only through the separately consented Home activation transaction. (M6)
 
 No changes were made."
 `;

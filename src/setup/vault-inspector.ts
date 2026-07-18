@@ -380,8 +380,8 @@ export function validateSetupVaultSourceInspection(value: unknown): SetupVaultSo
     throw new Error("setup source baseline inventory disagrees with repository candidates");
   }
   const blockerCodes = [
-    "unsupported-host", "missing-prerequisite", "dirty-worktree", "active-git-operation", "active-home-upgrade",
-    "conflicting-home-owner", "symlink-ambiguity", "unsafe-path", "ambiguous-state", "detached-head",
+    "missing-prerequisite", "dirty-worktree", "active-git-operation",
+    "symlink-ambiguity", "unsafe-path", "ambiguous-state", "detached-head",
     "unborn-repository", "unsupported-prerequisite",
   ] as const;
   if (!Array.isArray(source["blockers"]) || source["blockers"].length > 12) {
@@ -481,7 +481,7 @@ function validatedRepositoryCandidates(value: unknown, gitDirect: boolean): Read
   const candidates: SetupRepositoryCandidate[] = [];
   for (const raw of value) {
     const candidate = exactObject(raw, "setup source repository candidate", [
-      "path", "kind", "bytes", "tracking", "disposition", "reason",
+      "path", "kind", "bytes", "proofSha256", "tracking", "disposition", "reason",
     ]);
     const path = candidate["path"];
     if (typeof path !== "string" || !safeRelativePath(path) || path <= previous) {
@@ -491,7 +491,8 @@ function validatedRepositoryCandidates(value: unknown, gitDirect: boolean): Read
       !SETUP_REPOSITORY_DISPOSITIONS.includes(candidate["disposition"] as SetupRepositoryCandidate["disposition"]) ||
       !SETUP_REPOSITORY_REASONS.includes(candidate["reason"] as SetupRepositoryCandidate["reason"]) ||
       !["tracked", "untracked", "ignored", "other"].includes(String(candidate["tracking"])) ||
-      !Number.isSafeInteger(candidate["bytes"]) || (candidate["bytes"] as number) < 0) {
+      !Number.isSafeInteger(candidate["bytes"]) || (candidate["bytes"] as number) < 0 ||
+      typeof candidate["proofSha256"] !== "string" || !/^[0-9a-f]{64}$/.test(candidate["proofSha256"])) {
       throw new Error("setup source repository candidate is invalid");
     }
     const normalized = candidate as SetupRepositoryCandidate;
@@ -1036,10 +1037,24 @@ function repositoryInventory(tree: ReadonlyArray<FileEvidence>, gitDirect: boole
     path: entry.path,
     kind: entry.kind,
     bytes: entry.bytes,
+    proofSha256: repositoryEntryProof(entry),
     tracking: entry.tracking,
     gitDirect,
     observedReason: entry.safetyReason,
   })).sort((left, right) => compareStrings(left.path, right.path));
+}
+
+function repositoryEntryProof(entry: FileEvidence): string {
+  return hashJson({
+    path: entry.path,
+    kind: entry.kind,
+    mode: entry.mode,
+    bytes: entry.bytes,
+    sha256: entry.sha256,
+    gitBlobId: entry.gitBlobId,
+    filesystemIdentitySha256: entry.filesystemIdentitySha256,
+    linkTarget: entry.linkTarget,
+  });
 }
 
 type NonGitIgnorePolicy = Readonly<{

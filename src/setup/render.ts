@@ -10,6 +10,7 @@ export function renderSetupPlanHuman(input: SetupPlan): string {
   const lines = [
     "Dome setup preview",
     `Vault: ${plan.assessment.target.path}`,
+    `Scope: ${plan.scope}`,
     `Status: ${plan.status}`,
     `Classification: ${plan.assessment.target.kind}`,
     `Revision: ${plan.assessment.revision.head ?? "no Git HEAD"} / ${plan.assessment.revision.worktreeFingerprint}`,
@@ -40,6 +41,8 @@ export function renderSetupPlanHuman(input: SetupPlan): string {
     lines.push("", "Warnings:");
     for (const warning of plan.warnings) lines.push(`- ${warning.message}`);
   }
+  lines.push("", "Deferred (not applied by this plan):");
+  for (const step of plan.deferredSteps) lines.push(`- ${step.description} (${step.milestone})`);
   const excluded = plan.assessment.repository.candidates.filter((candidate) => candidate.disposition !== "baseline");
   if (excluded.length > 0) {
     lines.push("", "Repository inventory not proposed for the owner baseline:");
@@ -54,8 +57,13 @@ export function renderSetupPlanHuman(input: SetupPlan): string {
 function describeAction(action: SetupPlan["actions"][number]): string {
   if (action.kind === "create-vault-directory") return `Create vault directory ${action.path}`;
   if (action.kind === "initialize-git") return `Initialize Git at ${action.repositoryPath}`;
+  if (action.kind === "commit-owner-baseline") return `Commit ${action.paths.length} owner baseline file${action.paths.length === 1 ? "" : "s"}`;
   if (action.kind === "ensure-scaffold-directory") return `Ensure ${action.path}`;
   if (action.kind === "write-scaffold-file") return `Create ${action.path} if missing`;
   if (action.kind === "set-content-scope") return `Configure Markdown scope in ${action.write.path}`;
-  return `${action.disposition === "upgrade" ? "Upgrade" : "Install or resume"} packaged Dome Home and activate ${action.serviceLabel}`;
+  return assertNever(action);
+}
+
+function assertNever(value: never): never {
+  throw new Error(`unknown setup action: ${String(value)}`);
 }

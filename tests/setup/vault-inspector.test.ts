@@ -9,6 +9,11 @@ import {
   sameExactFilesystemObject,
   type SetupGitRunner,
 } from "../../src/setup/vault-inspector";
+import type { SetupRepositoryCandidate } from "../../src/setup/repository-policy";
+
+function withoutRepositoryProofs(rows: ReadonlyArray<SetupRepositoryCandidate>) {
+  return rows.map(({ proofSha256: _proof, ...row }) => row);
+}
 import {
   VAULT_ASSESSMENT_SCHEMA,
   validateVaultAssessment,
@@ -362,10 +367,10 @@ content_scope:
 
     const inspected = await inspectSetupVaultSource(root);
     expect(inspected.blockers.map((blocker) => blocker.code)).toEqual(["unsafe-path"]);
-    expect(inspected.repository.candidates.find(({ path }) => path === "ignored.bin")).toEqual({
+    expect(inspected.repository.candidates.find(({ path }) => path === "ignored.bin")).toEqual(expect.objectContaining({
       path: "ignored.bin", kind: "file", bytes: 15, tracking: "ignored",
       disposition: "blocked", reason: "hard-linked-file",
-    });
+    }));
   });
 
   test("fails closed for active Git operations", async () => {
@@ -423,7 +428,7 @@ content_scope:
 
     expect(inspected.blockers).toEqual([]);
     expect(inspected.repository.baselineTracked).toEqual(["notes/safe.md"]);
-    expect(inspected.repository.candidates).toEqual([
+    expect(withoutRepositoryProofs(inspected.repository.candidates)).toEqual([
       {
         path: ".env.production", kind: "file", bytes: 28, tracking: "other",
         disposition: "preserve-untracked", reason: "sensitive-name",
@@ -476,10 +481,10 @@ content_scope:
 
     const clean = await inspectSetupVaultSource(root);
     expect(clean.git.state).toBe("clean");
-    expect(clean.repository.candidates.find((candidate) => candidate.path === ".env")).toEqual({
+    expect(clean.repository.candidates.find((candidate) => candidate.path === ".env")).toEqual(expect.objectContaining({
       path: ".env", kind: "file", bytes: 18, tracking: "tracked",
       disposition: "already-tracked", reason: "sensitive-name",
-    });
+    }));
     expect(JSON.stringify(clean.repository)).not.toContain("owner-only");
 
     await writeFile(join(root, ".env"), "SECRET=changed!!!\n");
@@ -565,7 +570,7 @@ content_scope:
       });
       expect(gitCommands).toBe(0);
       expect(inspected.blockers.map((blocker) => blocker.code)).toContain("unsafe-path");
-      expect(inspected.repository.candidates).toEqual(alias === ".dome/STATE" ? [{
+      expect(withoutRepositoryProofs(inspected.repository.candidates)).toEqual(alias === ".dome/STATE" ? [{
         path: ".dome", kind: "directory", bytes: 0, tracking: "other",
         disposition: "preserve-untracked", reason: "directory-not-tracked",
       }, {
@@ -784,7 +789,7 @@ function validateInspectionAssessment(
     schema: VAULT_ASSESSMENT_SCHEMA,
     target: { path: inspected.targetPath, state: inspected.targetState, kind: inspected.kind },
     revision: { head: inspected.git.head, worktreeFingerprint: inspected.worktreeFingerprint },
-    host: { platform: "darwin", architecture: "arm64", supported: true },
+    host: { platform: "darwin", architecture: "arm64" },
     product: {
       packageName: "@marktoda/dome",
       packageVersion: "0.4.0",

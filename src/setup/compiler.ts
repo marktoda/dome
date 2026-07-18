@@ -7,7 +7,6 @@ import {
   type ContentScopeConfig,
 } from "../core/content-scope";
 import { compareStrings } from "../core/compare";
-import { homeServiceLabelForVault } from "../core/vault-service-identity";
 import { parseCapabilityPolicy } from "../engine/core/capability-policy";
 import {
   SETUP_PLAN_SCHEMA,
@@ -65,21 +64,15 @@ export function compileSetupAssessment(input: SetupCompilerInput): VaultAssessme
   validateSetupVaultSourceInspection(input.source);
   const contentScope = canonicalContentScopeSchema.parse(input.contentScope);
   assertScaffoldBindsScope(input.scaffold, contentScope);
-  const host = Object.freeze({
-    ...input.host,
-    supported: input.host.platform === "darwin" && input.host.architecture === "arm64",
-  });
+  // Host is observation only in the vault-adaptation slice. Product-host
+  // admission belongs to the deferred Home activation milestone.
+  const host = Object.freeze({ ...input.host });
   const prerequisites = Object.freeze([
     prerequisite("bun", input.prerequisites.bun),
     prerequisite("git", input.prerequisites.git),
   ]);
   const blockers = new Map<VaultAssessment["blockers"][number]["code"], VaultAssessment["blockers"][number]>();
   for (const blocker of input.source.blockers) blockers.set(blocker.code, blocker);
-  if (!host.supported) addBlocker(blockers, {
-    code: "unsupported-host",
-    message: `Dome Home does not support ${host.platform}/${host.architecture}.`,
-    nextAction: "Use a macOS arm64 host, then reassess.",
-  });
   if (prerequisites.some((entry) => entry.status === "missing")) addBlocker(blockers, {
     code: "missing-prerequisite",
     message: "Bun and Git must both be installed before Dome setup.",
@@ -90,7 +83,6 @@ export function compileSetupAssessment(input: SetupCompilerInput): VaultAssessme
     message: `Dome setup requires Bun ${SETUP_PREREQUISITE_POLICY.bun} and Git ${SETUP_PREREQUISITE_POLICY.git}.`,
     nextAction: "Upgrade the unsupported prerequisite, then reassess.",
   });
-  addHomeBlocker(blockers, input.installedHome);
 
   const blockerRows = [...blockers.values()].sort((left, right) => compareStrings(left.code, right.code));
   const kind = classifySetupVault({
@@ -99,7 +91,6 @@ export function compileSetupAssessment(input: SetupCompilerInput): VaultAssessme
     gitDirect: input.source.git.direct,
     domeState: input.source.dome.state,
     blockerCodes: blockerRows.map((blocker) => blocker.code),
-    installedHomeState: input.installedHome.state,
   });
 
   return validateVaultAssessment({
@@ -169,6 +160,7 @@ export function compileSetupPlan(input: SetupCompilerInput): SetupPlan {
   });
   return validateSetupPlan({
     schema: SETUP_PLAN_SCHEMA,
+    scope: "vault-adaptation",
     status: blocked ? "blocked" : "ready",
     assessment,
     actions,
@@ -176,6 +168,11 @@ export function compileSetupPlan(input: SetupCompilerInput): SetupPlan {
       { kind: "configure-integration", description: "Optionally connect calendar or Slack sources after setup." },
       { kind: "configure-model", description: "Optionally configure a local model provider after setup." },
     ],
+    deferredSteps: [{
+      kind: "activate-home",
+      milestone: "M6",
+      description: "Install or upgrade Dome Home only through the separately consented Home activation transaction.",
+    }],
     recoveryCommands: [`dome setup --dry-run ${JSON.stringify(assessment.target.path)}`],
     warnings,
   });
@@ -186,27 +183,6 @@ function prerequisite(id: "bun" | "git", version: string | null): VaultAssessmen
   const range = SETUP_PREREQUISITE_POLICY[id];
   const supported = valid(version) !== null && satisfies(version, range, { includePrerelease: true });
   return Object.freeze({ id, status: supported ? "available" as const : "unsupported" as const, version });
-}
-
-function addHomeBlocker(
-  blockers: Map<VaultAssessment["blockers"][number]["code"], VaultAssessment["blockers"][number]>,
-  home: SetupInstalledHomeEvidence,
-): void {
-  if (home.state === "upgrade-active") addBlocker(blockers, {
-    code: "active-home-upgrade",
-    message: "A Dome Home upgrade is active.",
-    nextAction: "Complete or recover the Home upgrade, then reassess.",
-  });
-  if (home.state === "foreign-owner") addBlocker(blockers, {
-    code: "conflicting-home-owner",
-    message: "Dome Home is selected for a different vault owner.",
-    nextAction: "Resolve the existing Home vault selection, then reassess.",
-  });
-  if (home.state === "ambiguous") addBlocker(blockers, {
-    code: "ambiguous-state",
-    message: "Installed Dome Home evidence is incomplete or inconsistent.",
-    nextAction: "Repair or remove the ambiguous Home installation, then reassess.",
-  });
 }
 
 function addBlocker(
@@ -225,6 +201,12 @@ function adaptationActions(input: SetupCompilerInput): AdaptationAction[] {
   });
   if (input.source.git.state === "absent") actions.push({
     kind: "initialize-git", id: "git-repository", repositoryPath: target, ifMissing: true,
+  });
+  if (input.source.git.state === "absent" && input.source.repository.baselineTracked.length > 0) actions.push({
+    kind: "commit-owner-baseline",
+    id: "owner-baseline",
+    paths: [...input.source.repository.baselineTracked],
+    message: "Dome setup: preserve owner baseline",
   });
   if (needsDomeScaffold) {
     actions.push(
@@ -247,23 +229,6 @@ function adaptationActions(input: SetupCompilerInput): AdaptationAction[] {
       write: fileWrite(".dome/config.yaml", input.scaffold.contentScopeConfig, "merge-managed-config"),
     });
   }
-  const candidate = input.product.packagedHome;
-  const sameCandidate = input.installedHome.state === "owned" &&
-    input.installedHome.artifactId === candidate.artifactId &&
-    input.installedHome.productVersion === candidate.productVersion &&
-    input.installedHome.buildCommit === candidate.buildCommit &&
-    input.installedHome.manifestSha256 === candidate.manifestSha256;
-  const disposition = input.installedHome.state === "owned" && !sameCandidate ? "upgrade" as const : "install-or-resume" as const;
-  const serviceLabel = homeServiceLabelForVault(target);
-  actions.push({
-    kind: "activate-home",
-    id: "home-activation",
-    artifactId: candidate.artifactId,
-    disposition,
-    vaultPath: target,
-    serviceLabel,
-    installServiceIfMissing: true,
-  });
   return actions;
 }
 

@@ -27,6 +27,8 @@ export type SetupRepositoryCandidate = Readonly<{
   path: string;
   kind: typeof SETUP_REPOSITORY_CANDIDATE_KINDS[number];
   bytes: number;
+  /** Opaque, content-safe identity from the bounded source inspection. */
+  proofSha256: string;
   tracking: "tracked" | "untracked" | "ignored" | "other";
   disposition: typeof SETUP_REPOSITORY_DISPOSITIONS[number];
   reason: typeof SETUP_REPOSITORY_REASONS[number];
@@ -36,6 +38,7 @@ export type SetupRepositoryObservation = Readonly<{
   path: string;
   kind: SetupRepositoryCandidate["kind"];
   bytes: number;
+  proofSha256: string;
   tracking: SetupRepositoryCandidate["tracking"];
   gitDirect: boolean;
   observedReason: SetupRepositoryCandidate["reason"];
@@ -48,6 +51,7 @@ export function deriveSetupRepositoryCandidate(
   if (!SETUP_REPOSITORY_CANDIDATE_KINDS.includes(observation.kind) ||
     !["tracked", "untracked", "ignored", "other"].includes(observation.tracking) ||
     !Number.isSafeInteger(observation.bytes) || observation.bytes < 0 ||
+    !/^[0-9a-f]{64}$/.test(observation.proofSha256) ||
     !SETUP_REPOSITORY_REASONS.includes(observation.observedReason)) {
     throw new Error("repository candidate observation is invalid");
   }
@@ -56,6 +60,7 @@ export function deriveSetupRepositoryCandidate(
     path: observation.path,
     kind: observation.kind,
     bytes: observation.bytes,
+    proofSha256: observation.proofSha256,
     tracking: observation.tracking,
     disposition: canonicalDisposition({ ...observation, reason }),
     reason,
@@ -76,6 +81,7 @@ export function validateSetupRepositoryCandidate(
     path: candidate.path,
     kind: candidate.kind,
     bytes: candidate.bytes,
+    proofSha256: candidate.proofSha256,
     tracking: candidate.tracking,
     gitDirect,
     observedReason: candidate.reason,

@@ -7,6 +7,8 @@ import {
   validateSetupRepositoryCandidate,
 } from "../../src/setup/repository-policy";
 
+const PROOF = "a".repeat(64);
+
 describe("setup repository policy", () => {
   test("uses a closed case-insensitive sensitive-component policy without broad env false positives", () => {
     for (const path of [
@@ -21,7 +23,7 @@ describe("setup repository policy", () => {
   test("derives exact baseline, tracked, ignored, private, and unsafe dispositions", () => {
     const candidate = (overrides: Partial<Parameters<typeof deriveSetupRepositoryCandidate>[0]> = {}) =>
       deriveSetupRepositoryCandidate({
-        path: "Owner.md", kind: "file", bytes: 8, tracking: "other", gitDirect: false,
+        path: "Owner.md", kind: "file", bytes: 8, proofSha256: PROOF, tracking: "other", gitDirect: false,
         observedReason: "safe-owner-file", ...overrides,
       });
     expect(candidate()).toMatchObject({ disposition: "baseline", reason: "safe-owner-file" });
@@ -45,7 +47,7 @@ describe("setup repository policy", () => {
 
   test("rejects forged sensitive baselines and every inconsistent public tuple", () => {
     const forged = {
-      path: ".envrc", kind: "file" as const, bytes: 3, tracking: "other" as const,
+      path: ".envrc", kind: "file" as const, bytes: 3, proofSha256: PROOF, tracking: "other" as const,
       disposition: "baseline" as const, reason: "safe-owner-file" as const,
     };
     expect(() => validateSetupRepositoryCandidate(forged, false)).toThrow("canonical policy");
