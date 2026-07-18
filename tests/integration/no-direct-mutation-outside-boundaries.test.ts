@@ -25,6 +25,10 @@ const ALLOWED_DIRS = [
 const ALLOWED_FILES = new Set([
   "src/engine-commit.ts",
   "src/git.ts",
+  // Private crash-recovery implementation of src/git.ts's existing mutation
+  // boundary. Only git.ts imports this Module; it owns exact Git lock
+  // candidates and witnesses, not a second public write path.
+  "src/git-owned-lock.ts",
   "src/cli/commands/init.ts",
   // Preview-first, plan-digest-consented pre-runtime vault adaptation. This
   // deep Module owns only the closed setup action inventory, exact tree
@@ -174,6 +178,16 @@ describe("no direct mutation outside engine boundaries", () => {
     }
 
     expect(violations).toEqual([]);
+  });
+
+  test("the private owned-lock implementation stays behind the Git boundary", async () => {
+    const consumers: string[] = [];
+    for await (const file of new Glob("src/**/*.ts").scan(".")) {
+      const text = await readFile(file, "utf8");
+      if (text.includes("git-owned-lock")) consumers.push(file);
+    }
+
+    expect(consumers.sort()).toEqual(["src/git.ts"]);
   });
 });
 
