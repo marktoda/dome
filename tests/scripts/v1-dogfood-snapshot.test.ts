@@ -4,9 +4,24 @@ import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
+import {
+  ROOT_TEST_SHUTDOWN_GRACE_MS,
+  spawnRootTestProcess,
+  superviseRootTestChild,
+} from "../../scripts/test-root";
+import {
+  DOGFOOD_SNAPSHOT_PROCESS_BUDGET_MS,
+} from "../../scripts/v1-dogfood-snapshot";
+import { runSync } from "../../src/cli/commands/sync";
+import { commit } from "../../src/git";
+import { discoverInitProduct } from "../../src/setup/init-product";
+import { adaptVault } from "../../src/setup/vault-adaptation";
+
 const REPO_ROOT = resolve(import.meta.dir, "..", "..");
-const DOME_BIN = join(REPO_ROOT, "bin", "dome");
 const SNAPSHOT_SCRIPT = join(REPO_ROOT, "scripts", "v1-dogfood-snapshot.ts");
+const SNAPSHOT_PROCESS_TIMEOUT_MS =
+  DOGFOOD_SNAPSHOT_PROCESS_BUDGET_MS + ROOT_TEST_SHUTDOWN_GRACE_MS;
+const SCENARIO_TIMEOUT_MS = 120_000;
 
 const fixtures: string[] = [];
 
@@ -31,19 +46,26 @@ describe("v1 dogfood snapshot script", () => {
     const vaultPath = mkdtempSync(join(tmpdir(), "dome-v1-dogfood-"));
     fixtures.push(vaultPath);
 
-    expect((await runDome(["init", vaultPath])).exitCode).toBe(0);
+    const initialized = await adaptVault(
+      { mode: "compatibility-init", targetPath: vaultPath },
+      { discoverProduct: discoverInitProduct },
+    );
+    expect(initialized.mode).toBe("compatibility-init");
+    if (initialized.mode !== "compatibility-init") {
+      throw new Error("fixture initialization returned an invalid adaptation mode");
+    }
+    expect(initialized.result.status).toBe("completed");
     mkdirSync(join(vaultPath, "notes"), { recursive: true });
     writeFileSync(
       join(vaultPath, "notes", "broken-link.md"),
       "# Broken link\n\nSee [[missing thing]] for follow-up.\n",
     );
-    expect((await runGit(vaultPath, ["add", "notes/broken-link.md"])).exitCode)
-      .toBe(0);
-    expect((await runGit(vaultPath, ["commit", "-m", "add broken link"])).exitCode)
-      .toBe(0);
-    const sync = await runDome(["sync", "--vault", vaultPath, "--json"]);
-    expect(sync.exitCode).toBe(0);
-    expect(sync.stderr).toBe("");
+    await commit({
+      path: vaultPath,
+      files: ["notes/broken-link.md"],
+      message: "add broken link",
+    });
+    expect(await runSync({ vault: vaultPath, quiet: true })).toBe(0);
 
     const result = await runSnapshot([
       "--vault",
@@ -87,7 +109,7 @@ describe("v1 dogfood snapshot script", () => {
     expect(result.stdout).toContain(
       "M10 status: this snapshot is supporting evidence only",
     );
-  }, { timeout: 30_000 });
+  }, { timeout: SCENARIO_TIMEOUT_MS });
 });
 
 type ProcessResult = {
@@ -96,45 +118,25 @@ type ProcessResult = {
   readonly stderr: string;
 };
 
-async function runDome(args: ReadonlyArray<string>): Promise<ProcessResult> {
-  return await runProcess([DOME_BIN, ...args]);
-}
-
-async function runGit(
-  cwd: string,
-  args: ReadonlyArray<string>,
-): Promise<ProcessResult> {
-  return await runProcess([
-    "git",
-    "-C",
-    cwd,
-    "-c",
-    "user.name=Dome Test",
-    "-c",
-    "user.email=dome@example.invalid",
-    "-c",
-    "commit.gpgsign=false",
-    ...args,
-  ]);
-}
-
 async function runSnapshot(args: ReadonlyArray<string>): Promise<ProcessResult> {
-  return await runProcess([process.execPath, SNAPSHOT_SCRIPT, ...args]);
-}
-
-async function runProcess(cmd: ReadonlyArray<string>): Promise<ProcessResult> {
-  const proc = Bun.spawn({
-    cmd: [...cmd],
+  const proc = spawnRootTestProcess([process.execPath, SNAPSHOT_SCRIPT, ...args], {
     cwd: REPO_ROOT,
+    stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
-    timeout: 20_000,
-    killSignal: "SIGKILL",
   });
-  const [stdout, stderr, exitCode] = await Promise.all([
+  const [stdout, stderr, outcome] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
-    proc.exited,
+    superviseRootTestChild(proc, {
+      timeoutMs: SNAPSHOT_PROCESS_TIMEOUT_MS,
+      shutdownGraceMs: ROOT_TEST_SHUTDOWN_GRACE_MS,
+    }),
   ]);
-  return { exitCode, stdout, stderr };
+  if (outcome.kind !== "exited") {
+    throw new Error(
+      `snapshot process exceeded ${SNAPSHOT_PROCESS_TIMEOUT_MS}ms; cleanup ${outcome.termination}`,
+    );
+  }
+  return { exitCode: outcome.exitCode, stdout, stderr };
 }

@@ -17,6 +17,12 @@ type CommandRun = {
 };
 
 const repoRoot = resolve(import.meta.dir, "..");
+export const DOGFOOD_SNAPSHOT_COMMAND_TIMEOUT_MS = 20_000;
+// status, check, query, and export-context execute serially. Keep the process
+// contract available to its end-to-end test so an outer watchdog never races
+// one valid final child command.
+export const DOGFOOD_SNAPSHOT_PROCESS_BUDGET_MS =
+  4 * DOGFOOD_SNAPSHOT_COMMAND_TIMEOUT_MS;
 
 async function main(): Promise<void> {
   const args = Bun.argv.slice(2);
@@ -265,7 +271,7 @@ async function domeJson<T>(
     cwd: repoRoot,
     stdout: "pipe",
     stderr: "pipe",
-    timeout: 20_000,
+    timeout: DOGFOOD_SNAPSHOT_COMMAND_TIMEOUT_MS,
     killSignal: "SIGKILL",
   });
   const [stdout, stderr, exitCode] = await Promise.all([
@@ -502,8 +508,10 @@ function nodeWrite(text: string): void {
   process.stdout.write(text);
 }
 
-main().catch((error) => {
-  const message = error instanceof Error ? error.message : String(error);
-  console.error(`v1-dogfood-snapshot: ${message}`);
-  process.exit(1);
-});
+if (import.meta.main) {
+  main().catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`v1-dogfood-snapshot: ${message}`);
+    process.exit(1);
+  });
+}
