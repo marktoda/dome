@@ -78,7 +78,10 @@ export type HarnessOpts = {
   /**
    * Pre-seeded files to write into the vault's working tree before the
    * initial commit. Useful for scenarios that need a non-empty baseline.
-   * Paths are vault-relative.
+   * Paths are vault-relative. When this declares `.dome/config.yaml`, the
+   * harness adds `engine.processor_timeout_ms: 5000` unless the fixture sets
+   * an explicit cap; this keeps processor deadlines inside the scenario
+   * watchdog without changing config-less compatibility fixtures.
    */
   readonly initialFiles?: Record<string, string>;
 

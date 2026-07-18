@@ -17,6 +17,49 @@ scenario(
   async (h) => {
     await h.expectRef("refs/heads/main").toExist();
     await h.expectRef("refs/dome/adopted/main").toNotExist();
+    await h.expectFile(".dome/config.yaml").toBeAbsent();
+  },
+);
+
+scenario(
+  {
+    name: "self-test: configured fixtures inherit the harness processor deadline",
+    tags: [{ kind: "group", group: "regression" }],
+    harness: {
+      initialFiles: {
+        ".dome/config.yaml": "extensions: {}\n",
+      },
+    },
+  },
+  async (h) => {
+    await h
+      .expectFile(".dome/config.yaml")
+      .toContain("processor_timeout_ms: 5000");
+  },
+);
+
+scenario(
+  {
+    name: "self-test: configured fixtures preserve an explicit processor deadline",
+    tags: [{ kind: "group", group: "regression" }],
+    harness: {
+      initialFiles: {
+        ".dome/config.yaml": [
+          "engine:",
+          "  processor_timeout_ms: 17",
+          "extensions: {}",
+          "",
+        ].join("\n"),
+      },
+    },
+  },
+  async (h) => {
+    await h
+      .expectFile(".dome/config.yaml")
+      .toContain("processor_timeout_ms: 17");
+    await h
+      .expectFile(".dome/config.yaml")
+      .toNotContain("processor_timeout_ms: 5000");
   },
 );
 

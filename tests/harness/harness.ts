@@ -35,6 +35,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import git from "isomorphic-git";
+import { isMap, parseDocument } from "yaml";
 
 import { adoptedRefName, getAdoptedRef } from "../../src/adopted-ref";
 import { runCli as runCliDispatch } from "../../src/cli/index";
@@ -98,6 +99,8 @@ const DEFAULT_AUTHOR = {
   name: "dome-test",
   email: "test@local",
 } as const;
+const HARNESS_PROCESSOR_TIMEOUT_MS = 5_000;
+const VAULT_CONFIG_PATH = ".dome/config.yaml";
 
 // ----- Public class --------------------------------------------------------
 
@@ -139,6 +142,7 @@ export class HarnessImpl implements Harness {
   static async create(opts: HarnessOpts = {}): Promise<HarnessImpl> {
     const vaultPath = mkdtempSync(join(tmpdir(), "dome-harness-"));
     const branch = opts.branch ?? DEFAULT_BRANCH;
+    const initialFiles = withHarnessProcessorTimeout(opts.initialFiles);
     // H1 only accepts a `TestClock` instance for `opts.clock`. The
     // `TestClockHandle` interface allows other implementations, but
     // none exist yet — schedule triggers (and their alternate clocks)
@@ -165,8 +169,8 @@ export class HarnessImpl implements Harness {
     // Write initialFiles + the initial commit. The initial commit is
     // structurally important — most scenarios assume HEAD exists, and
     // `dome sync` short-circuits to `no-commits` otherwise.
-    if (opts.initialFiles !== undefined) {
-      for (const [p, content] of Object.entries(opts.initialFiles)) {
+    if (initialFiles !== undefined) {
+      for (const [p, content] of Object.entries(initialFiles)) {
         if (content === null) continue;
         await mkdir(dirname(join(vaultPath, p)), { recursive: true });
         await writeFile(join(vaultPath, p), content, "utf8");
@@ -179,8 +183,8 @@ export class HarnessImpl implements Harness {
       // empty, we drop a `.dome/.gitkeep` file so the repo has a HEAD
       // and the adopted-ref substrate can operate.
       const filesArg: string[] =
-        opts.initialFiles !== undefined
-          ? Object.keys(opts.initialFiles)
+        initialFiles !== undefined
+          ? Object.keys(initialFiles)
           : [];
       if (filesArg.length === 0) {
         await mkdir(join(vaultPath, ".dome"), { recursive: true });
@@ -663,6 +667,36 @@ async function openRuntime(
   return result.value;
 }
 
+/**
+ * Keep processor-owned deadlines inside the harness's 30s scenario watchdog.
+ * The harness only decorates a config the scenario already declared: absence
+ * remains the real config-less compatibility mode, and an explicit fixture cap
+ * remains byte-for-byte authoritative.
+ */
+function withHarnessProcessorTimeout(
+  initialFiles: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+  const source = initialFiles?.[VAULT_CONFIG_PATH];
+  if (source === undefined) return initialFiles;
+
+  const document = parseDocument(source);
+  if (document.errors.length > 0) return initialFiles;
+  if (document.hasIn(["engine", "processor_timeout_ms"])) return initialFiles;
+
+  const hasEngine = document.hasIn(["engine"]);
+  const engine = hasEngine ? document.getIn(["engine"], true) : undefined;
+  // Preserve valid YAML with a product-invalid engine scalar/sequence/null.
+  // The fixture is testing the product loader's rejection, so the harness must
+  // not repair it into a map while adding its own execution deadline.
+  if (hasEngine && !isMap(engine)) return initialFiles;
+
+  document.setIn(
+    ["engine", "processor_timeout_ms"],
+    HARNESS_PROCESSOR_TIMEOUT_MS,
+  );
+
+  return { ...initialFiles, [VAULT_CONFIG_PATH]: document.toString() };
+}
 
 // ----- Read surfaces -------------------------------------------------------
 
