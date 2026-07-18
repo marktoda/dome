@@ -4,9 +4,15 @@ import { resolve } from "node:path";
 import {
   createRootTestPlan,
   discoverRootTestFiles,
+  ROOT_TEST_FILE_TIMEOUT_MS,
   ROOT_TEST_AREA_ORDER,
+  ROOT_TEST_TIMEOUT_EXIT_CODE,
   rootTestCommand,
   rootTestSignalExitCode,
+  rootTestTimeoutDiagnostic,
+  superviseRootTestChild,
+  type RootTestChild,
+  type RootTestWaitWithin,
 } from "../../scripts/test-root";
 
 const REPO_ROOT = resolve(import.meta.dir, "..", "..");
@@ -55,6 +61,90 @@ describe("root test runner", () => {
   test("maps owned cancellation to conventional nonzero process status", () => {
     expect(rootTestSignalExitCode("SIGINT")).toBe(130);
     expect(rootTestSignalExitCode("SIGTERM")).toBe(143);
+  });
+
+  test("preserves a prompt child exit without sending a signal", async () => {
+    const signals: number[] = [];
+    const child: RootTestChild = {
+      exited: Promise.resolve(7),
+      kill: (signal = 15) => { signals.push(signal); },
+    };
+
+    expect(await superviseRootTestChild(child, { timeoutMs: 1, shutdownGraceMs: 1 }))
+      .toEqual({ kind: "exited", exitCode: 7 });
+    expect(signals).toEqual([]);
+  });
+
+  test("escalates a deadline from TERM to KILL and observes the killed child", async () => {
+    let resolveExit!: (exitCode: number) => void;
+    const exited = new Promise<number>((resolve) => { resolveExit = resolve; });
+    const signals: number[] = [];
+    const child: RootTestChild = {
+      exited,
+      kill: (signal = 15) => {
+        signals.push(signal);
+        if (signal === 9) resolveExit(137);
+      },
+    };
+    let waitCount = 0;
+    const waitWithin: RootTestWaitWithin = async <T>(promise: Promise<T>) => {
+      waitCount += 1;
+      if (waitCount <= 2) return { kind: "timeout" };
+      return { kind: "settled", value: await promise };
+    };
+
+    expect(await superviseRootTestChild(child, {
+      timeoutMs: 300_000,
+      shutdownGraceMs: 5_000,
+      waitWithin,
+    })).toEqual({
+      kind: "timed-out",
+      termination: "sigkill",
+      observedExitCode: 137,
+    });
+    expect(signals).toEqual([15, 9]);
+    expect(waitCount).toBe(3);
+  });
+
+  test("turns an owner interruption into bounded graceful child cleanup", async () => {
+    let resolveExit!: (exitCode: number) => void;
+    const signals: number[] = [];
+    const child: RootTestChild = {
+      exited: new Promise<number>((resolve) => { resolveExit = resolve; }),
+      kill: (signal = 15) => {
+        signals.push(signal);
+        if (signal === 15) resolveExit(143);
+      },
+    };
+
+    expect(await superviseRootTestChild(child, {
+      interrupted: Promise.resolve("SIGTERM"),
+      waitWithin: async <T>(promise: Promise<T>) => ({
+        kind: "settled",
+        value: await promise,
+      }),
+    })).toEqual({
+      kind: "interrupted",
+      signal: "SIGTERM",
+      termination: "sigterm",
+      observedExitCode: 143,
+    });
+    expect(signals).toEqual([15]);
+  });
+
+  test("renders the exact timed-out file and bounded cleanup result", () => {
+    expect(ROOT_TEST_FILE_TIMEOUT_MS).toBe(300_000);
+    expect(ROOT_TEST_TIMEOUT_EXIT_CODE).toBe(124);
+    expect(rootTestTimeoutDiagnostic({
+      area: "product",
+      file: "tests/product/product-host.test.ts",
+      completedFiles: 211,
+      totalFiles: 440,
+      termination: "sigkill",
+    })).toBe(
+      "root tests · product timed out · tests/product/product-host.test.ts · exceeded "
+        + "300000ms · cleanup sigkill · 211/440 files completed",
+    );
   });
 
   test("the live inventory is a lossless, duplicate-free plan", async () => {

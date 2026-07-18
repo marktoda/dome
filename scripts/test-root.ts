@@ -23,8 +23,55 @@ export type RootTestAreaPlan = Readonly<{
 
 export type RootTestSignal = "SIGINT" | "SIGTERM";
 
+export const ROOT_TEST_FILE_TIMEOUT_MS = 5 * 60_000;
+export const ROOT_TEST_SHUTDOWN_GRACE_MS = 5_000;
+export const ROOT_TEST_TIMEOUT_EXIT_CODE = 124;
+
+export type RootTestChild = Readonly<{
+  exited: Promise<number>;
+  kill: (signal?: number) => void;
+}>;
+
+export type RootTestTermination = "sigterm" | "sigkill" | "unobserved";
+
+export type RootTestChildOutcome =
+  | Readonly<{ kind: "exited"; exitCode: number }>
+  | Readonly<{
+      kind: "timed-out";
+      termination: RootTestTermination;
+      observedExitCode: number | null;
+    }>
+  | Readonly<{
+      kind: "interrupted";
+      signal: RootTestSignal;
+      termination: RootTestTermination;
+      observedExitCode: number | null;
+    }>;
+
+export type RootTestWaitResult<T> =
+  | Readonly<{ kind: "settled"; value: T }>
+  | Readonly<{ kind: "timeout" }>;
+
+export type RootTestWaitWithin = <T>(
+  promise: Promise<T>,
+  milliseconds: number,
+) => Promise<RootTestWaitResult<T>>;
+
 export function rootTestSignalExitCode(signal: RootTestSignal): 130 | 143 {
   return signal === "SIGINT" ? 130 : 143;
+}
+
+export function rootTestTimeoutDiagnostic(input: Readonly<{
+  area: RootTestAreaName;
+  file: string;
+  completedFiles: number;
+  totalFiles: number;
+  timeoutMs?: number;
+  termination: RootTestTermination;
+}>): string {
+  return `root tests · ${input.area} timed out · ${canonicalTestPath(input.file)} · exceeded `
+    + `${input.timeoutMs ?? ROOT_TEST_FILE_TIMEOUT_MS}ms · cleanup ${input.termination} · `
+    + `${input.completedFiles}/${input.totalFiles} files completed`;
 }
 
 export function rootTestCommand(
@@ -32,6 +79,66 @@ export function rootTestCommand(
   bunExecutable: string = process.execPath,
 ): [string, "test", string] {
   return [bunExecutable, "test", canonicalTestPath(path)];
+}
+
+/**
+ * Bound one fresh test process without changing its assertions or exit code.
+ * A deadline or owner interruption first requests graceful shutdown, then
+ * escalates to SIGKILL after one bounded grace period. The caller retains the
+ * exact current-file context needed for a useful diagnostic.
+ */
+export async function superviseRootTestChild(
+  child: RootTestChild,
+  options: Readonly<{
+    timeoutMs?: number;
+    shutdownGraceMs?: number;
+    interrupted?: Promise<RootTestSignal>;
+    waitWithin?: RootTestWaitWithin;
+  }> = {},
+): Promise<RootTestChildOutcome> {
+  const timeoutMs = positiveInteger(
+    options.timeoutMs,
+    ROOT_TEST_FILE_TIMEOUT_MS,
+    "timeoutMs",
+  );
+  const shutdownGraceMs = positiveInteger(
+    options.shutdownGraceMs,
+    ROOT_TEST_SHUTDOWN_GRACE_MS,
+    "shutdownGraceMs",
+  );
+  const waitWithin = options.waitWithin ?? waitWithinDeadline;
+  const exitObservation = child.exited.then((exitCode) => ({
+    kind: "exited" as const,
+    exitCode,
+  }));
+  const firstObservation = options.interrupted === undefined
+    ? exitObservation
+    : Promise.race([
+        exitObservation,
+        options.interrupted.then((signal) => ({ kind: "interrupted" as const, signal })),
+      ]);
+  const first = await waitWithin(firstObservation, timeoutMs);
+  if (first.kind === "settled") {
+    if (first.value.kind === "exited") return first.value;
+    const termination = await terminateRootTestChild(
+      child,
+      exitObservation,
+      shutdownGraceMs,
+      waitWithin,
+    );
+    return Object.freeze({
+      kind: "interrupted" as const,
+      signal: first.value.signal,
+      ...termination,
+    });
+  }
+  const termination = await terminateRootTestChild(
+    child,
+    exitObservation,
+    shutdownGraceMs,
+    waitWithin,
+  );
+  return Object.freeze({ kind: "timed-out" as const, ...termination });
 }
 
 /** Discover the complete current root test inventory without crossing into nested packages. */
@@ -83,18 +190,12 @@ export async function runRootTests(repoRoot: string = REPO_ROOT): Promise<number
   console.log(
     `root tests · ${files.length} files · ${nonempty.length} areas · one fresh process per file`,
   );
-  type ActiveChild = Readonly<{
-    exited: Promise<number>;
-    kill: (signal?: number) => void;
-  }>;
-  let activeChild: ActiveChild | null = null;
-  let signaledChild: ActiveChild | null = null;
+  let activeChild: RootTestChild | null = null;
+  let interruptActive: ((signal: RootTestSignal) => void) | null = null;
   let requestedSignal: RootTestSignal | null = null;
   const forwardSignal = (signal: RootTestSignal): void => {
     requestedSignal ??= signal;
-    if (activeChild === null || signaledChild === activeChild) return;
-    signaledChild = activeChild;
-    try { activeChild.kill(requestedSignal === "SIGINT" ? 2 : 15); } catch {}
+    interruptActive?.(requestedSignal);
   };
   const onSigint = (): void => forwardSignal("SIGINT");
   const onSigterm = (): void => forwardSignal("SIGTERM");
@@ -109,6 +210,11 @@ export async function runRootTests(repoRoot: string = REPO_ROOT): Promise<number
       for (const file of area.files) {
         if (requestedSignal !== null) return rootTestSignalExitCode(requestedSignal);
         console.log(`root tests · ${completedFiles + 1}/${files.length} · ${file}`);
+        let interrupt!: (signal: RootTestSignal) => void;
+        const interrupted = new Promise<RootTestSignal>((resolveInterrupt) => {
+          interrupt = resolveInterrupt;
+        });
+        interruptActive = interrupt;
         const child = Bun.spawn(rootTestCommand(file), {
           cwd: repoRoot,
           stdin: "inherit",
@@ -116,17 +222,29 @@ export async function runRootTests(repoRoot: string = REPO_ROOT): Promise<number
           stderr: "inherit",
         });
         activeChild = child;
-        if (requestedSignal !== null) forwardSignal(requestedSignal);
-        const exitCode = await child.exited;
+        if (requestedSignal !== null) interrupt(requestedSignal);
+        const outcome = await superviseRootTestChild(child, { interrupted });
         activeChild = null;
-        signaledChild = null;
-        if (requestedSignal !== null) return rootTestSignalExitCode(requestedSignal);
-        if (exitCode !== 0) {
+        interruptActive = null;
+        if (outcome.kind === "interrupted") {
+          return rootTestSignalExitCode(outcome.signal);
+        }
+        if (outcome.kind === "timed-out") {
+          console.error(rootTestTimeoutDiagnostic({
+            area: area.name,
+            file,
+            completedFiles,
+            totalFiles: files.length,
+            termination: outcome.termination,
+          }));
+          return ROOT_TEST_TIMEOUT_EXIT_CODE;
+        }
+        if (outcome.exitCode !== 0) {
           console.error(
-            `root tests · ${area.name} failed · ${file} · exit ${exitCode} · `
+            `root tests · ${area.name} failed · ${file} · exit ${outcome.exitCode} · `
               + `${completedFiles}/${files.length} files completed`,
           );
-          return exitCode;
+          return outcome.exitCode;
         }
         completedFiles += 1;
       }
@@ -134,16 +252,80 @@ export async function runRootTests(repoRoot: string = REPO_ROOT): Promise<number
   } finally {
     process.off("SIGINT", onSigint);
     process.off("SIGTERM", onSigterm);
+    interruptActive = null;
     if (activeChild !== null) {
-      if (signaledChild !== activeChild) {
-        try { activeChild.kill(15); } catch {}
-      }
-      await activeChild.exited.catch(() => {});
+      const exitObservation = activeChild.exited.then((exitCode) => ({
+        kind: "exited" as const,
+        exitCode,
+      }));
+      await terminateRootTestChild(
+        activeChild,
+        exitObservation,
+        ROOT_TEST_SHUTDOWN_GRACE_MS,
+        waitWithinDeadline,
+      );
     }
   }
 
   console.log(`\nroot tests · complete · ${completedFiles}/${files.length} files`);
   return 0;
+}
+
+async function terminateRootTestChild(
+  child: RootTestChild,
+  exitObservation: Promise<Readonly<{ kind: "exited"; exitCode: number }>>,
+  shutdownGraceMs: number,
+  waitWithin: RootTestWaitWithin,
+): Promise<Readonly<{
+  termination: RootTestTermination;
+  observedExitCode: number | null;
+}>> {
+  try { child.kill(15); } catch {}
+  const terminated = await waitWithin(exitObservation, shutdownGraceMs);
+  if (terminated.kind === "settled") {
+    return Object.freeze({
+      termination: "sigterm" as const,
+      observedExitCode: terminated.value.exitCode,
+    });
+  }
+
+  try { child.kill(9); } catch {}
+  const killed = await waitWithin(exitObservation, shutdownGraceMs);
+  if (killed.kind === "settled") {
+    return Object.freeze({
+      termination: "sigkill" as const,
+      observedExitCode: killed.value.exitCode,
+    });
+  }
+  return Object.freeze({ termination: "unobserved" as const, observedExitCode: null });
+}
+
+async function waitWithinDeadline<T>(
+  promise: Promise<T>,
+  milliseconds: number,
+): Promise<RootTestWaitResult<T>> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise.then((value) => Object.freeze({ kind: "settled" as const, value })),
+      new Promise<Readonly<{ kind: "timeout" }>>((resolveTimeout) => {
+        timer = setTimeout(
+          () => resolveTimeout(Object.freeze({ kind: "timeout" as const })),
+          milliseconds,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+function positiveInteger(value: number | undefined, fallback: number, name: string): number {
+  const resolved = value ?? fallback;
+  if (!Number.isInteger(resolved) || resolved <= 0) {
+    throw new RangeError(`${name} must be a positive integer`);
+  }
+  return resolved;
 }
 
 function areaFor(path: string): RootTestAreaName {
