@@ -158,9 +158,6 @@ export type ScenarioGroup =
   | "capabilities"
   | "external-actions"
   | "lifecycle"
-  | "out-of-band"
-  | "accumulation"
-  | "multi-bundle"
   | "cli-surface"
   | "garden-cascade"
   | "v1-acceptance"
@@ -195,9 +192,10 @@ export type ScenarioTag =
 
 /**
  * The shape `scenario(spec, fn)` accepts. The runtime wrapper in `./index.ts`
- * registers the scenario into the global index (for coverage-matrix
- * verification) and wraps `fn` in a `bun:test` `test()` call that creates
- * a fresh Harness, runs the body, and cleans up.
+ * registers the scenario into the module-local index and normally wraps `fn`
+ * in a `bun:test` `test()` call that creates a fresh Harness, runs the body,
+ * and cleans up. The isolated catalog collector does not install executable
+ * test bodies and publishes only name + tags to the matrix process.
  */
 export type ScenarioSpec = {
   /** Human-readable name; used as the test name in `bun test` output. */
@@ -558,12 +556,13 @@ export type AlwaysTrueInvariant = {
 // ============================================================================
 
 /**
- * Each `scenario(...)` call registers into this in-memory index. The
- * coverage-matrix meta-test reads from this index to verify that every
- * effect kind / trigger / phase / capability has at least one scenario.
+ * Each `scenario(...)` call registers into this in-memory index. The isolated
+ * catalog collector reads the index and sends metadata to the coverage-matrix
+ * meta-test, which verifies that every effect kind / trigger / phase /
+ * capability has at least one scenario without executing scenario bodies.
  *
- * The index is module-scoped to `./index.ts`; this type is exported
- * here so the meta-test can read it.
+ * The index is module-scoped to `./index.ts`; this type is exported for the
+ * collector boundary.
  */
 export type ScenarioRegistryEntry = {
   readonly spec: ScenarioSpec;

@@ -1,11 +1,10 @@
 // tests/harness/meta/coverage-matrix.test.ts — coverage-matrix meta-test
 // (Phase H3 full enforcement).
 //
-// H1 surfaced the registry shape + verified the registration plumbing.
-// H2 extended with two coverage-light sanity checks. H3 enforces the
-// full effect/trigger/phase/capability/route matrix: every union member in the
-// closed-set source-of-truth arrays below must have a covering scenario
-// OR be listed in the matching DEFERRED set with a written justification.
+// Catalog-integrity checks verify registration metadata. The closed-set matrix
+// enforces the full effect/trigger/phase/capability/route surface: every union
+// member in the source-of-truth arrays below must have a covering scenario OR
+// be listed in the matching DEFERRED set with a written justification.
 //
 // Adding a new EffectKind / TriggerKind / Capability / ProcessorPhase /
 // RouteKind requires either:
@@ -18,168 +17,141 @@
 // the "closed-set arrays match union members" exhaustiveness check at
 // the bottom of this file.
 //
-// Registry population: bun:test loads every `*.test.ts` file in the
-// suite into the same process before executing any test body. The
-// explicit `import "..."` lines below ensure the scenario modules are
-// loaded into THIS process — necessary because `meta/` lives in its own
-// subdirectory and bun's test loader doesn't traverse upward
-// automatically. Loading runs the top-level `scenario(...)` calls,
-// populating the module-scoped registry. The meta-test's assertions run
-// inside `test(...)` bodies, so they observe the fully-populated
-// registry regardless of which file bun loaded first.
+// Registry population is metadata-only. An isolated collector child discovers
+// every scenario module and imports it with test-body installation disabled.
+// This file therefore verifies the catalog without rerunning the executable
+// scenarios that the root test runner executes in their own files. Parent-side
+// ownership and a shorter child-side watchdog bound both normal and orphaned
+// collector lifetimes.
 
 import { describe, expect, test } from "bun:test";
+import { resolve } from "node:path";
 
-import { getRegistry } from "../index";
 import type {
   CapabilityKind,
   EffectKind,
   RouteKind,
-  ScenarioRegistryEntry,
+  ScenarioGroup,
+  ScenarioSpec,
   TriggerKind,
 } from "../types";
 import type { ProcessorPhase } from "../../../src/core/processor";
 
-// ----- Scenario imports (side-effectful: each registers itself) -----
-import "../scenarios/phase-12c-regression.scenario.test";
-import "../scenarios/basic-adoption/empty-diff-init.scenario.test";
-import "../scenarios/basic-adoption/non-markdown-commit.scenario.test";
-import "../scenarios/basic-adoption/idempotent-resync.scenario.test";
-import "../scenarios/basic-adoption/multi-file-commit.scenario.test";
-import "../scenarios/convergence/normalize-frontmatter-idempotency.scenario.test";
-import "../scenarios/convergence/validate-wikilinks-no-duplicate-diagnostics.scenario.test";
-import "../scenarios/convergence/diagnostics-auto-resolve.scenario.test";
-import "../scenarios/convergence/blocked-adoption-preserves-projections.scenario.test";
-import "../scenarios/cli-surface/init-claude-boot.scenario.test";
-import "../scenarios/cli-surface/answer-question.scenario.test";
-import "../scenarios/cli-surface/doctor-health.scenario.test";
-import "../scenarios/cli-surface/query-adopted-state.scenario.test";
-import "../scenarios/cli-surface/lint-report.scenario.test";
-import "../scenarios/cli-surface/rebuild-projection.scenario.test";
-import "../scenarios/cli-surface/sync-rebuilds-stale-projections.scenario.test";
-import "../scenarios/cli-surface/view-command-failure.scenario.test";
-import "../scenarios/cli-surface/structured-view-contract.scenario.test";
-import "../scenarios/cli-surface/task-backlog.scenario.test";
-import "../scenarios/cli-surface/today-task-view.scenario.test";
-import "../scenarios/cli-surface/prep-view.scenario.test";
-import "../scenarios/cli-surface/export-context.scenario.test";
-import "../scenarios/cli-surface/json-fixtures.scenario.test";
-import "../scenarios/v1-acceptance/claude-code-vault-loop.scenario.test";
-import "../scenarios/v1-acceptance/compiler-host-modes.scenario.test";
-import "../scenarios/v1-acceptance/recovery-gauntlet.scenario.test";
-import "../scenarios/effect-kinds/diagnostic-effect-lands.scenario.test";
-import "../scenarios/effect-kinds/patch-effect-applies.scenario.test";
-import "../scenarios/effect-kinds/patch-and-diagnostic-same-cycle.scenario.test";
-import "../scenarios/effect-kinds/multiple-processors-same-commit.scenario.test";
-import "../scenarios/effect-kinds/snapshot-reads-candidate-not-working-tree.scenario.test";
-import "../scenarios/effect-kinds/lint-frontmatter-diagnostics.scenario.test";
-import "../scenarios/effect-kinds/page-type-schema-diagnostics.scenario.test";
-import "../scenarios/effect-kinds/bundle-page-type-schema.scenario.test";
-import "../scenarios/effect-kinds/graph-links-emits-facts.scenario.test";
-import "../scenarios/effect-kinds/graph-tag-index-emits-facts.scenario.test";
-import "../scenarios/effect-kinds/daily-task-index-facts.scenario.test";
-import "../scenarios/effect-kinds/broken-images-diagnostics.scenario.test";
-import "../scenarios/effect-kinds/wikilink-ambiguity-questions.scenario.test";
-import "../scenarios/effect-kinds/stale-dates-diagnostics.scenario.test";
-import "../scenarios/effect-kinds/view-effect-via-dome-run.scenario.test";
-import "../scenarios/effect-kinds/sources-subscription-fetch.scenario.test";
-import "../scenarios/effect-routing/outbox-recovery-answer.scenario.test";
-import "../scenarios/effect-routing/health-outbox-recovery.scenario.test";
-import "../scenarios/effect-routing/health-quarantine-recovery.scenario.test";
-import "../scenarios/effect-routing/health-orphan-run-recovery.scenario.test";
-import "../scenarios/effect-routing/daily-create-carry-forward.scenario.test";
-import "../scenarios/effect-routing/daily-reconcile-tasks.scenario.test";
-import "../scenarios/effect-routing/preference-promotion.scenario.test";
-import "../scenarios/effect-routing/model-provider-failure.scenario.test";
-import "../scenarios/capabilities/read-capability-filters-snapshot.scenario.test";
-import "../scenarios/capabilities/projection-read-scope.scenario.test";
-import "../scenarios/capabilities/model-invoke-scheduled.scenario.test";
-import "../scenarios/capabilities/model-write-provenance.scenario.test";
-import "../scenarios/capabilities/scheduled-execution-cap.scenario.test";
-import "../scenarios/triggers/file-created-fires.scenario.test";
-import "../scenarios/triggers/document-changed-fires.scenario.test";
-import "../scenarios/lifecycle/crash-and-restart-mid-stream.scenario.test";
-import "../scenarios/lifecycle/bundle-uninstall-reinstall.scenario.test";
-import "../scenarios/lifecycle/throwing-processor-blocks-adoption.scenario.test";
-import "../scenarios/garden-cascade/sub-proposal-frame-correctness.scenario.test";
-import "../scenarios/garden-cascade/multiple-garden-patches.scenario.test";
-import "../scenarios/garden-cascade/sub-proposal-max-iterations.scenario.test";
-import "../scenarios/garden-cascade/bundle-id-trailers.scenario.test";
+type ScenarioCatalogEntry = Readonly<Pick<ScenarioSpec, "name" | "tags">>;
 
-describe("coverage matrix (Phase H2 mini-version)", () => {
-  test("registry is non-empty", () => {
-    const registry = getRegistry();
-    expect(registry.length).toBeGreaterThan(0);
-  });
+const CATALOG_TIMEOUT_MS = 10_000;
+const CATALOG = await loadScenarioCatalog();
 
-  test("every scenario has at least one group tag", () => {
-    for (const entry of getRegistry()) {
-      const hasGroupTag = entry.spec.tags.some((t) => t.kind === "group");
-      expect(
-        hasGroupTag,
-        `scenario ${JSON.stringify(entry.spec.name)} has no group tag`,
-      ).toBe(true);
+async function loadScenarioCatalog(): Promise<ReadonlyArray<ScenarioCatalogEntry>> {
+  const signal = AbortSignal.timeout(CATALOG_TIMEOUT_MS);
+  let child: Bun.Subprocess<"ignore", "pipe", "pipe"> | null = null;
+  const killActiveChild = (): void => {
+    if (child === null || child.exitCode !== null) return;
+    try { child.kill("SIGKILL"); } catch {}
+  };
+  process.once("exit", killActiveChild);
+  try {
+    child = Bun.spawn([
+      process.execPath,
+      resolve(import.meta.dir, "collect-scenario-catalog.ts"),
+    ], {
+      cwd: resolve(import.meta.dir, "..", "..", ".."),
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+      signal,
+      killSignal: "SIGKILL",
+    });
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+    const detail = stderr.trim();
+    if (signal.aborted) {
+      throw new Error(
+        `scenario catalog collector timed out after ${CATALOG_TIMEOUT_MS}ms${detail === "" ? "" : `: ${detail}`}`,
+      );
     }
+    if (exitCode !== 0) {
+      throw new Error(`scenario catalog collector exited ${exitCode}${detail === "" ? "" : `: ${detail}`}`);
+    }
+    const parsed: unknown = JSON.parse(stdout);
+    if (!Array.isArray(parsed)) throw new Error("scenario catalog collector returned a non-array");
+    return Object.freeze(parsed.map((entry, index) => {
+      if (
+        entry === null || typeof entry !== "object" ||
+        !("name" in entry) || typeof entry.name !== "string" ||
+        !("tags" in entry) || !Array.isArray(entry.tags)
+      ) {
+        throw new Error(`scenario catalog entry ${index} is invalid`);
+      }
+      return Object.freeze({
+        name: entry.name,
+        tags: Object.freeze([...entry.tags]) as ScenarioSpec["tags"],
+      });
+    }));
+  } finally {
+    process.off("exit", killActiveChild);
+    if (child !== null && child.exitCode === null) {
+      killActiveChild();
+      await child.exited.catch(() => {});
+    }
+  }
+}
+
+describe("coverage matrix catalog integrity", () => {
+  test("registry is non-empty", () => {
+    const registry = CATALOG;
+    expect(registry.length).toBeGreaterThan(0);
   });
 
   test("scenario names are unique", () => {
     const names = new Set<string>();
-    for (const entry of getRegistry()) {
+    for (const entry of CATALOG) {
       expect(
-        names.has(entry.spec.name),
-        `duplicate scenario name: ${JSON.stringify(entry.spec.name)}`,
+        names.has(entry.name),
+        `duplicate scenario name: ${JSON.stringify(entry.name)}`,
       ).toBe(false);
-      names.add(entry.spec.name);
+      names.add(entry.name);
     }
   });
 
-  // H2 additions ----------------------------------------------------------
-
-  test("every shipped processor's phase has at least one scenario", () => {
-    // First-party bundles now ship processors in adoption, garden, and
-    // view phases. Keep this explicit until the meta-test reads the
-    // loaded processor registry directly.
-    const shippedPhases: ReadonlyArray<string> = [
-      "adoption",
-      "garden",
-      "view",
-    ];
-    const registry = getRegistry();
-    for (const phase of shippedPhases) {
-      const covered = registry.some((entry) =>
-        entry.spec.tags.some(
-          (t) => t.kind === "phase" && t.phase === phase,
-        ),
-      );
-      expect(
-        covered,
-        `phase ${JSON.stringify(phase)} has no scenario covering it`,
-      ).toBe(true);
-    }
-  });
-
-  test("every scenario in the registry is uniquely tagged with a known group", () => {
-    // Sanity: group tags must be from the `ScenarioGroup` union; bun:test
-    // can't verify the literal union at runtime, but we can verify the
-    // tag shape and ensure at least one scenario per expected group is
-    // present (catches the "added a scenario but forgot to add its
-    // group" mistake).
-    const knownGroups: ReadonlyArray<string> = [
+  test("every scenario uses known groups and every catalog group is represented", () => {
+    const knownGroups = [
       "basic-adoption",
       "convergence",
       "effect-kinds",
       "triggers",
       "capabilities",
+      "external-actions",
       "lifecycle",
       "cli-surface",
       "garden-cascade",
       "v1-acceptance",
       "regression",
-    ];
-    const registry = getRegistry();
+    ] as const satisfies ReadonlyArray<ScenarioGroup>;
+    const known = new Set<string>(knownGroups);
+    for (const entry of CATALOG) {
+      const groups = entry.tags.filter((tag) => tag.kind === "group");
+      expect(
+        groups.length > 0,
+        `scenario ${JSON.stringify(entry.name)} must have at least one group tag`,
+      ).toBe(true);
+      expect(
+        new Set(groups.map((tag) => tag.group)).size,
+        `scenario ${JSON.stringify(entry.name)} has a duplicate group tag`,
+      ).toBe(groups.length);
+      for (const group of groups) {
+        expect(
+          known.has(group.group),
+          `scenario ${JSON.stringify(entry.name)} has unknown group ${JSON.stringify(group.group)}`,
+        ).toBe(true);
+      }
+    }
     for (const group of knownGroups) {
-      const covered = registry.some((entry) =>
-        entry.spec.tags.some(
+      const covered = CATALOG.some((entry) =>
+        entry.tags.some(
           (t) => t.kind === "group" && t.group === group,
         ),
       );
@@ -295,7 +267,7 @@ describe("coverage matrix (Phase H3 enforcement)", () => {
   for (const kind of EFFECT_KINDS_ALL) {
     test(`effect kind '${kind}' has at least one scenario`, () => {
       if (DEFERRED_EFFECTS.has(kind)) return;
-      const tagged = getRegistry().filter((e) =>
+      const tagged = CATALOG.filter((e) =>
         hasTag(e, (t) => t.kind === "effect" && t.effect === kind),
       );
       expect(
@@ -311,7 +283,7 @@ describe("coverage matrix (Phase H3 enforcement)", () => {
   for (const kind of TRIGGER_KINDS_ALL) {
     test(`trigger kind '${kind}' has at least one scenario`, () => {
       if (DEFERRED_TRIGGERS.has(kind)) return;
-      const tagged = getRegistry().filter((e) =>
+      const tagged = CATALOG.filter((e) =>
         hasTag(e, (t) => t.kind === "trigger" && t.trigger === kind),
       );
       expect(
@@ -327,7 +299,7 @@ describe("coverage matrix (Phase H3 enforcement)", () => {
   for (const kind of CAPABILITY_KINDS_ALL) {
     test(`capability kind '${kind}' has at least one scenario`, () => {
       if (DEFERRED_CAPABILITIES.has(kind)) return;
-      const tagged = getRegistry().filter((e) =>
+      const tagged = CATALOG.filter((e) =>
         hasTag(e, (t) => t.kind === "capability" && t.capability === kind),
       );
       expect(
@@ -343,7 +315,7 @@ describe("coverage matrix (Phase H3 enforcement)", () => {
   for (const phase of PHASES_ALL) {
     test(`processor phase '${phase}' has at least one scenario`, () => {
       if (DEFERRED_PHASES.has(phase)) return;
-      const tagged = getRegistry().filter((e) =>
+      const tagged = CATALOG.filter((e) =>
         hasTag(e, (t) => t.kind === "phase" && t.phase === phase),
       );
       expect(
@@ -358,7 +330,7 @@ describe("coverage matrix (Phase H3 enforcement)", () => {
 
   for (const route of ROUTES_ALL) {
     test(`engine route '${route}' has at least one scenario`, () => {
-      const tagged = getRegistry().filter((e) =>
+      const tagged = CATALOG.filter((e) =>
         hasTag(e, (t) => t.kind === "route" && t.route === route),
       );
       expect(
@@ -376,7 +348,7 @@ describe("coverage matrix (Phase H3 enforcement)", () => {
 
   test("DEFERRED_EFFECTS contains no entries with covering scenarios", () => {
     for (const kind of DEFERRED_EFFECTS) {
-      const tagged = getRegistry().filter((e) =>
+      const tagged = CATALOG.filter((e) =>
         hasTag(e, (t) => t.kind === "effect" && t.effect === kind),
       );
       expect(
@@ -389,7 +361,7 @@ describe("coverage matrix (Phase H3 enforcement)", () => {
 
   test("DEFERRED_TRIGGERS contains no entries with covering scenarios", () => {
     for (const kind of DEFERRED_TRIGGERS) {
-      const tagged = getRegistry().filter((e) =>
+      const tagged = CATALOG.filter((e) =>
         hasTag(e, (t) => t.kind === "trigger" && t.trigger === kind),
       );
       expect(
@@ -402,7 +374,7 @@ describe("coverage matrix (Phase H3 enforcement)", () => {
 
   test("DEFERRED_CAPABILITIES contains no entries with covering scenarios", () => {
     for (const kind of DEFERRED_CAPABILITIES) {
-      const tagged = getRegistry().filter((e) =>
+      const tagged = CATALOG.filter((e) =>
         hasTag(e, (t) => t.kind === "capability" && t.capability === kind),
       );
       expect(
@@ -415,7 +387,7 @@ describe("coverage matrix (Phase H3 enforcement)", () => {
 
   test("DEFERRED_PHASES contains no entries with covering scenarios", () => {
     for (const phase of DEFERRED_PHASES) {
-      const tagged = getRegistry().filter((e) =>
+      const tagged = CATALOG.filter((e) =>
         hasTag(e, (t) => t.kind === "phase" && t.phase === phase),
       );
       expect(
@@ -430,10 +402,10 @@ describe("coverage matrix (Phase H3 enforcement)", () => {
 // ----- Tag-search helper ----------------------------------------------------
 
 function hasTag(
-  entry: ScenarioRegistryEntry,
-  pred: (t: ScenarioRegistryEntry["spec"]["tags"][number]) => boolean,
+  entry: ScenarioCatalogEntry,
+  pred: (t: ScenarioCatalogEntry["tags"][number]) => boolean,
 ): boolean {
-  return entry.spec.tags.some(pred);
+  return entry.tags.some(pred);
 }
 
 // ----- Closed-set exhaustiveness checks ------------------------------------

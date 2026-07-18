@@ -2,14 +2,14 @@
 // registry + public surface.
 //
 // Importing `scenario` and calling it at module top-level registers the
-// scenario into the in-memory registry (for coverage-matrix verification)
-// AND wraps the body in a `bun:test` `test()` call that constructs a
-// fresh Harness, runs the body, and cleans up — including on throw.
+// scenario into the in-memory registry and normally wraps the body in a
+// `bun:test` `test()` call that constructs a fresh Harness, runs the body, and
+// cleans up — including on throw. The isolated coverage collector enables
+// catalog-only mode before importing scenarios, so it records metadata without
+// installing duplicate executable tests.
 //
-// The registry is module-scoped: the coverage-matrix meta-test reads it
-// after importing every `*.scenario.test.ts` file. Future phases (H3)
-// will assert the matrix; H1 only verifies the registry is populated and
-// that every scenario has at least one group tag.
+// The registry is module-scoped: the catalog collector reads it after importing
+// every `*.scenario.test.ts` file, then sends the metadata to the matrix test.
 
 import { test } from "bun:test";
 
@@ -24,6 +24,19 @@ const DEFAULT_SCENARIO_TIMEOUT_MS = 30_000;
 
 // Module-scoped registry for coverage-matrix verification.
 const SCENARIO_REGISTRY: ScenarioRegistryEntry[] = [];
+let catalogOnly = false;
+
+/**
+ * Collect scenario metadata without installing Bun test bodies. This switch is
+ * module-local and must be enabled before scenario modules load; the coverage
+ * collector uses it in an isolated child process.
+ */
+export function enableScenarioCatalogOnlyMode(): void {
+  if (SCENARIO_REGISTRY.length > 0) {
+    throw new Error("scenario catalog-only mode must be enabled before registration");
+  }
+  catalogOnly = true;
+}
 
 /**
  * Register a scenario and wrap it as a `bun:test` `test()` call.
@@ -33,6 +46,7 @@ const SCENARIO_REGISTRY: ScenarioRegistryEntry[] = [];
  */
 export function scenario(spec: ScenarioSpec, body: ScenarioBody): void {
   SCENARIO_REGISTRY.push({ spec });
+  if (catalogOnly) return;
 
   const runner = spec.skip !== undefined ? test.skip : test;
   const handler = async (): Promise<void> => {
@@ -47,7 +61,7 @@ export function scenario(spec: ScenarioSpec, body: ScenarioBody): void {
   runner(spec.name, handler, spec.timeoutMs ?? DEFAULT_SCENARIO_TIMEOUT_MS);
 }
 
-/** Read-only access to the registry; consumed by the coverage-matrix meta-test. */
+/** Read-only access to the registry; consumed by the isolated catalog collector. */
 export function getRegistry(): ReadonlyArray<ScenarioRegistryEntry> {
   return SCENARIO_REGISTRY;
 }
