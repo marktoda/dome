@@ -31,6 +31,7 @@ import {
   HOME_CREDENTIAL_HELPER_PROTOCOL,
   HOME_SHIPPED_MODEL_PROVIDER_PATH,
   HOME_WRITER_BARRIER_PROTOCOL,
+  MAX_HOME_ARTIFACT_MANIFEST_BYTES,
   PINNED_AGE_ARCHIVE_SHA256,
   PINNED_AGE_ARCHIVE_URL,
   PINNED_AGE_BINARY_SHA256,
@@ -56,12 +57,17 @@ import {
 import { parsePwaShellHashedAssetPath } from "./home-pwa-shell";
 import { reconstructHomePredecessorArtifact } from "./home-predecessor-artifact";
 import { readFrozenN1Manifest } from "../tests/fixtures/home-upgrade/n-1/freeze-n1";
+import {
+  createNormalizedHomeArtifactTarHeader,
+  MAX_HOME_ARTIFACT_ENTRIES,
+  materializeHomeArtifactArchive,
+} from "../src/product-host/home-artifact-archive";
 
 export {
   inspectHomeArtifactTar,
   MAX_HOME_ARTIFACT_TAR_BYTES,
   type HomeArtifactTarEntry,
-} from "./home-artifact-tar";
+} from "../src/product-host/home-artifact-archive";
 
 export {
   HOME_ARTIFACT_SCHEMA,
@@ -849,6 +855,9 @@ async function writeArtifactMetadataWithClaim(
     entries: Object.freeze(entries.map((entry) => Object.freeze(entry))),
   });
   const manifestText = `${JSON.stringify(manifest, null, 2)}\n`;
+  if (Buffer.byteLength(manifestText) > MAX_HOME_ARTIFACT_MANIFEST_BYTES) {
+    throw new Error("Home artifact manifest exceeds its size budget");
+  }
   await writeFile(join(artifactRoot, "manifest.json"), manifestText);
   const checksumEntries = [
     ...fileEntries.map((entry) => ({ path: entry.path, sha256: entry.sha256 })),
@@ -911,15 +920,16 @@ export async function normalizeArtifactModes(artifactRoot: string): Promise<void
 export async function rehearseHomeArtifact(archivePath: string): Promise<void> {
   const temporary = await mkdtemp(join(tmpdir(), "dome-home-rehearsal-"));
   try {
-    const extracted = join(temporary, "archive extraction");
-    await mkdir(extracted, { recursive: true });
-    await run(["tar", "-xzf", resolve(archivePath), "-C", extracted], temporary);
     const artifactName = basename(archivePath).replace(/\.tar\.gz$/, "");
-    const extractedRoot = join(extracted, artifactName);
-    if (!existsSync(extractedRoot)) throw new Error(`artifact archive did not contain ${artifactName}`);
+    const materialized = await materializeHomeArtifactArchive({
+      archive: resolve(archivePath),
+      temporaryParent: temporary,
+      expected: { artifactRoot: artifactName },
+    });
     const installed = join(temporary, "Installed Dome Home", artifactName);
     await mkdir(dirname(installed), { recursive: true });
-    await rename(extractedRoot, installed);
+    await rename(materialized.root, installed);
+    await materialized.dispose();
     await verifyHomeArtifact(installed);
     const dome = join(installed, "bin", "dome");
     const help = await run([dome, "--help"], temporary, offlineEnvironment());
@@ -970,9 +980,15 @@ export async function rehearseHomeArtifact(archivePath: string): Promise<void> {
 export async function createDeterministicTar(root: string, prefix = ""): Promise<Buffer> {
   const chunks: Buffer[] = [];
   if (prefix !== "") {
-    chunks.push(tarHeader(`${prefix}/`, { mode: 0o755, size: 0, type: "5", link: "" }));
+    chunks.push(createNormalizedHomeArtifactTarHeader(
+      `${prefix}/`,
+      { mode: 0o755, size: 0, type: "5", link: "" },
+    ));
   }
   const entries = await archiveEntries(root);
+  if (entries.length + (prefix === "" ? 0 : 1) > MAX_HOME_ARTIFACT_ENTRIES) {
+    throw new Error("Home artifact inventory exceeds its archive entry budget");
+  }
   const aliasIndex = entries.indexOf(HOME_RUNTIME_LAUNCH_ALIAS_PATH);
   const runtimeIndex = entries.indexOf(HOME_RUNTIME_PATH);
   if (aliasIndex >= 0) {
@@ -997,7 +1013,7 @@ export async function createDeterministicTar(root: string, prefix = ""): Promise
       ? `${prefix === "" ? "" : `${prefix}/`}${HOME_RUNTIME_PATH}`
       : info.isSymbolicLink() ? await readlink(absolute) : "";
     const archivePath = `${prefix === "" ? "" : `${prefix}/`}${path}${info.isDirectory() ? "/" : ""}`;
-    chunks.push(tarHeader(archivePath, {
+    chunks.push(createNormalizedHomeArtifactTarHeader(archivePath, {
       mode: info.mode & 0o777,
       size: body.length,
       type,
@@ -1115,55 +1131,6 @@ async function archiveEntries(root: string): Promise<string[]> {
   }
   await visit(root);
   return found.sort(compareStrings);
-}
-
-function tarHeader(
-  path: string,
-  values: { readonly mode: number; readonly size: number; readonly type: string; readonly link: string },
-): Buffer {
-  const header = Buffer.alloc(512);
-  const { name, prefix } = splitTarPath(path);
-  field(header, 0, 100, name);
-  octal(header, 100, 8, values.mode);
-  octal(header, 108, 8, 0);
-  octal(header, 116, 8, 0);
-  octal(header, 124, 12, values.size);
-  octal(header, 136, 12, 0);
-  header.fill(0x20, 148, 156);
-  field(header, 156, 1, values.type);
-  field(header, 157, 100, values.link);
-  field(header, 257, 6, "ustar\0");
-  field(header, 263, 2, "00");
-  field(header, 265, 32, "root");
-  field(header, 297, 32, "wheel");
-  field(header, 345, 155, prefix);
-  const checksum = header.reduce((sum, byte) => sum + byte, 0);
-  const encoded = checksum.toString(8).padStart(6, "0");
-  field(header, 148, 8, `${encoded}\0 `);
-  return header;
-}
-
-function splitTarPath(path: string): { readonly name: string; readonly prefix: string } {
-  if (Buffer.byteLength(path) <= 100) return { name: path, prefix: "" };
-  const directorySuffix = path.endsWith("/") ? "/" : "";
-  const candidate = directorySuffix === "" ? path : path.slice(0, -1);
-  for (let index = candidate.lastIndexOf("/"); index > 0; index = candidate.lastIndexOf("/", index - 1)) {
-    const prefix = candidate.slice(0, index);
-    const name = `${candidate.slice(index + 1)}${directorySuffix}`;
-    if (Buffer.byteLength(prefix) <= 155 && Buffer.byteLength(name) <= 100) return { name, prefix };
-  }
-  throw new Error(`artifact path exceeds ustar limits: ${path}`);
-}
-
-function field(buffer: Buffer, offset: number, length: number, value: string): void {
-  const encoded = Buffer.from(value);
-  if (encoded.length > length) throw new Error(`tar field exceeds ${length} bytes: ${value}`);
-  encoded.copy(buffer, offset);
-}
-
-function octal(buffer: Buffer, offset: number, length: number, value: number): void {
-  const encoded = `${value.toString(8).padStart(length - 1, "0")}\0`;
-  field(buffer, offset, length, encoded);
 }
 
 function sha256(content: Uint8Array): string {

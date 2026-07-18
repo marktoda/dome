@@ -90,6 +90,16 @@ describe("Home predecessor artifact provenance", () => {
     }, receipt)).toThrow("differs from its immutable receipt");
   });
 
+  test("routes reconstructed archive admission through the shipped Product Host boundary", async () => {
+    const source = await readFile(
+      join(import.meta.dir, "..", "..", "scripts", "home-predecessor-artifact.ts"),
+      "utf8",
+    );
+    expect(source).toContain("materializeHomeArtifactArchive({");
+    expect(source).not.toContain('requireSuccess(["tar", "-x');
+    expect(source).not.toContain('requireSuccess(["tar", "-t');
+  });
+
   test("orchestrates exactly two independent builds, compare, then publish", async () => {
     const root = await mkdtemp(join(tmpdir(), "dome-predecessor-test-"));
     try {

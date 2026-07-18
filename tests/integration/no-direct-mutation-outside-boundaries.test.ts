@@ -35,6 +35,10 @@ const ALLOWED_FILES = new Set([
   // restores. This is a host filesystem boundary, not a vault content writer.
   "src/platform/exclusive-rename.ts",
   "src/product-host/home-lifecycle.ts",
+  // Strict Home archive materialization writes and removes only one private
+  // mode-0700 temp workspace after bounded read, normalized USTAR inspection,
+  // and full artifact verification. It never mutates vault knowledge/state.
+  "src/product-host/home-artifact-archive.ts",
   // Private SQLite-backed Product Host lifecycle ownership and suspension
   // journal. Its schema migration preserves active operational recovery truth;
   // it never writes the vault's Git or Markdown substrate.

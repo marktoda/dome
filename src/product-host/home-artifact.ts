@@ -27,6 +27,7 @@ export const PINNED_AGE_ARCHIVE_URL =
 export const PINNED_AGE_ARCHIVE_SHA256 = "01120ea2cbf0463d4c6bd767f99f3271bbed1cdc8a9aa718a76ba1fe4f01998b";
 export const PINNED_AGE_BINARY_SHA256 = "0e3ea0b1bed2b30aa2dc46eef4e1723864d626c80f37319c20d9b73ca045f56f";
 export const PINNED_AGE_KEYGEN_BINARY_SHA256 = "37c4b509d86f233d8dd065f5a905e11d2e1d5549d59445a9bc52da9235a622ad";
+export const MAX_HOME_ARTIFACT_MANIFEST_BYTES = 16 * 1024 * 1024;
 export const PINNED_AGE_LICENSE_SHA256 = "afbdb4e07a359499db587ae632815809b1fc1670a92d5449af112ce9a67833a2";
 export const PINNED_BUN_DEVELOPER_ID_TEAM_ID = "7FRXF46ZSN";
 export const HOME_RUNTIME_PATH = "runtime/bun" as const;
@@ -173,7 +174,7 @@ export async function verifyHomeArtifactEvidence(
   const artifactRoot = resolve(artifactRootInput);
   const manifestPath = join(artifactRoot, "manifest.json");
   const manifestInfo = await lstat(manifestPath);
-  if (!manifestInfo.isFile() || manifestInfo.size > 16 * 1024 * 1024) {
+  if (!manifestInfo.isFile() || manifestInfo.size > MAX_HOME_ARTIFACT_MANIFEST_BYTES) {
     throw new Error("artifact manifest is missing, not a file, or exceeds its size budget");
   }
   const manifestBytes = await readFile(manifestPath);

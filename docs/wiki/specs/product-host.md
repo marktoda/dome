@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-07-11
-updated: 2026-07-17
+updated: 2026-07-18
 sources:
   - "[[cohesive/plans/2026-07-11-pwa-first-product]]"
   - "[[wiki/concepts/client-model]]"
@@ -349,6 +349,19 @@ hardlink is admitted. The alias is an ordinary checksummed manifest file, not
 a new schema capability or code-signing inventory row. Installed publication
 may materialize the two paths as separate ordinary files, but their manifest
 bytes, hash, mode, and executable intent remain identical.
+
+`src/product-host/home-artifact-archive.ts` is the single archive-admission
+and materialization boundary shared by release tooling and the installed
+upgrade gate. It reads one stable bounded regular file, binds any expected
+compressed size/digest before admission, caps gzip expansion, limits the
+archive to 16,384 entries and the raw manifest to 16 MiB, validates the exact
+builder-owned USTAR header encoding before extraction, and admits exactly one
+private artifact root. Traversal, escaping or nested symlinks, unsupported
+special files, noncanonical modes/metadata, and noncanonical hardlinks are
+refused. The raw archived manifest is bound to the post-extraction manifest
+and the shipped `verifyHomeArtifact` evidence before the root is returned;
+optional receipt identity is checked at the same seam, and failed
+materialization removes its private workspace.
 
 Managed publication copies that verified twin once to the direct, host-wide
 path `~/Library/Application Support/Dome/Home/runtime/Dome Home` while holding

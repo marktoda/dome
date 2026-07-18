@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 
 import {
-  assertBoundedArchiveStatForTests,
   assertInstalledBackupRestoreCanaryForTests,
   assertPredecessorReadyObserverForTests,
   awaitPredecessorInstallForTests,
@@ -23,7 +22,6 @@ import {
   removeInstalledScenarioRootForTests,
   removeInstalledTemporaryRootForTests,
   retainedCheckpointOwnershipSummaryForTests,
-  resolveContainedArtifactRootForTests,
   type InstalledHomeUpgradeRehearsalInput,
   type InstalledHomeUpgradeScenario,
 } from "../../scripts/home-installed-upgrade-rehearsal";
@@ -972,13 +970,6 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
     }
   });
 
-  test("refuses non-files, oversize input, and predecessor size drift before archive reads", () => {
-    expect(() => assertBoundedArchiveStatForTests({ isFile: true, size: 10 }, 10, 10)).not.toThrow();
-    expect(() => assertBoundedArchiveStatForTests({ isFile: false, size: 10 }, 10)).toThrow("bounded regular file");
-    expect(() => assertBoundedArchiveStatForTests({ isFile: true, size: 11 }, 10)).toThrow("bounded regular file");
-    expect(() => assertBoundedArchiveStatForTests({ isFile: true, size: 9 }, 10, 10)).toThrow("immutable receipt");
-  });
-
   test("requires the launchd label, Home port, and Product Host ownership to drain", () => {
     expect(classifyInstalledHomeDrainForTests(0, 0, false, false)).toBe("pending");
     expect(classifyInstalledHomeDrainForTests(0, 113, false, false)).toBe("pending");
@@ -1063,30 +1054,6 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
       ...committed,
       upgrade: { ...committed.upgrade, nextAction: "retry-recovery" },
     }, "committed", transactionId)).toBeFalse();
-  });
-
-  test("canonicalizes an aliased extraction destination and still rejects a sibling escape", async () => {
-    const root = await mkdtemp(join(tmpdir(), "dome-installed-extraction-alias-"));
-    try {
-      const destination = join(root, "destination");
-      const alias = join(root, "destination-alias");
-      const artifact = join(destination, "artifact");
-      await mkdir(artifact, { recursive: true });
-      await symlink(destination, alias, "dir");
-      const canonicalDestination = await realpath(alias);
-
-      expect(await resolveContainedArtifactRootForTests(canonicalDestination, "artifact"))
-        .toBe(await realpath(artifact));
-
-      await rm(artifact, { recursive: true });
-      const sibling = join(root, "sibling");
-      await mkdir(sibling);
-      await symlink("../sibling", artifact, "dir");
-      await expect(resolveContainedArtifactRootForTests(canonicalDestination, "artifact"))
-        .rejects.toThrow("escaped extraction directory");
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
   });
 
   test("installs the exact pre-fix predecessor through cwd discovery without nested --vault", () => {

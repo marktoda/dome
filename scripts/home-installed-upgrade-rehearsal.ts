@@ -13,13 +13,12 @@ import { Database } from "bun:sqlite";
 import { createHash, randomUUID } from "node:crypto";
 import { createServer } from "node:net";
 import {
-  cp, lstat, mkdir, mkdtemp, open, readFile, readdir, readlink, realpath, rm,
+  cp, lstat, mkdir, mkdtemp, readFile, readdir, readlink, realpath, rm,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { gunzipSync } from "node:zlib";
 
 import { inspectExclusiveFileLock } from "../src/engine/host/file-lock";
 import { verifyHomeArtifact, type HomeArtifactManifest } from "../src/product-host/home-artifact";
@@ -29,8 +28,8 @@ import { homeServiceLabelForVault } from "../src/product-host/home-lifecycle";
 import { isHomePairingReadiness } from "../src/product-host/home-readiness";
 import { HOME_STORE_MIGRATIONS } from "../src/product-host/home-store-migrations";
 import { isHomeUpgradeVersionAdvance } from "../src/product-host/home-upgrade-version";
+import { materializeHomeArtifactArchive } from "../src/product-host/home-artifact-archive";
 import { readHomePredecessorReceipt } from "./home-predecessor-artifact";
-import { inspectHomeArtifactTar, MAX_HOME_ARTIFACT_TAR_BYTES } from "./home-artifact-tar";
 import { runHomePwaChromiumAcceptance } from "./home-pwa-chromium-acceptance";
 import { runHomePwaUpdateRehearsal } from "./home-pwa-update-rehearsal";
 import { parsePwaShellHashedAssetPath } from "./home-pwa-shell";
@@ -52,7 +51,6 @@ import {
 
 const HOST = "127.0.0.1";
 const PORT = 3663;
-const MAX_COMPRESSED_ARTIFACT_BYTES = 256 * 1024 * 1024;
 const PREDECESSOR_INSTALL_TIMEOUT_MS = 60_000;
 const PREDECESSOR_LATE_READINESS_TIMEOUT_MS = 30_000;
 const INSTALLED_TEMPORARY_CLEANUP_TIMEOUT_MS = 120_000;
@@ -196,20 +194,6 @@ export function classifyInstalledHomeDrainForTests(
     else if (printExitCode !== 0) throw new Error(`launchctl print failed (${printExitCode})`);
   }
   return labelDrained && portFree && ownershipFree ? "drained" : "pending";
-}
-
-/** Portable pre-read archive allocation gate; it emits no installed evidence. */
-export function assertBoundedArchiveStatForTests(
-  input: Readonly<{ isFile: boolean; size: number }>,
-  maxBytes: number,
-  expectedBytes?: number,
-): void {
-  if (!input.isFile || !Number.isSafeInteger(input.size) || input.size < 1 || input.size > maxBytes) {
-    throw new Error("archive is not a bounded regular file");
-  }
-  if (expectedBytes !== undefined && input.size !== expectedBytes) {
-    throw new Error("archive size differs from its immutable receipt");
-  }
 }
 
 type PreparedArtifacts = Readonly<{
@@ -387,62 +371,38 @@ async function prepareRealArtifacts(input: InstalledHomeUpgradeRehearsalInput): 
 
   const temporary = await mkdtemp(join(tmpdir(), "dome-installed-upgrade-"));
   try {
-    const stagedInputs = join(temporary, "inputs");
-    await mkdir(stagedInputs, { mode: 0o700 });
-    const stagedPredecessor = join(stagedInputs, "predecessor.tar.gz");
-    const stagedCandidate = join(stagedInputs, "candidate.tar.gz");
-    const predecessorStage = await stageBoundedArchive(
-      predecessorArchive,
-      stagedPredecessor,
-      MAX_COMPRESSED_ARTIFACT_BYTES,
-      receipt.archive.bytes,
-    );
-    if (predecessorStage.sha256 !== receipt.archive.sha256) {
-      throw new Error("predecessor archive differs from its immutable receipt");
-    }
-    const candidateStage = await stageBoundedArchive(
-      candidateArchive,
-      stagedCandidate,
-      MAX_COMPRESSED_ARTIFACT_BYTES,
-    );
-    const predecessorArchiveSha256 = predecessorStage.sha256;
-    const candidateArchiveSha256 = candidateStage.sha256;
-    const receiptManifest = await readArchiveMember(
-      stagedPredecessor,
-      `${receipt.archive.root}/manifest.json`,
-      temporary,
-    );
-    if (receiptManifest.byteLength !== receipt.manifest.bytes ||
-      sha256(receiptManifest) !== receipt.manifest.sha256) {
-      throw new Error("predecessor raw manifest differs from its immutable receipt before extraction");
-    }
-    const predecessorRoot = await extractOneSafeArtifact(stagedPredecessor, join(temporary, "predecessor"));
-    const rawPredecessorManifest = await readFile(join(predecessorRoot, "manifest.json"));
-    if (rawPredecessorManifest.byteLength !== receipt.manifest.bytes ||
-      sha256(rawPredecessorManifest) !== receipt.manifest.sha256) {
-      throw new Error("predecessor raw manifest differs from its immutable receipt");
-    }
-    const predecessor = await verifyHomeArtifact(predecessorRoot);
-    if (basename(predecessorRoot) !== receipt.archive.root ||
-      predecessor.artifact.id !== receipt.manifest.artifactId ||
-      predecessor.product.version !== receipt.manifest.productVersion) {
-      throw new Error("predecessor artifact identity differs from its immutable receipt");
-    }
-
-    const candidateRoot = await extractOneSafeArtifact(stagedCandidate, join(temporary, "candidate"));
-    const candidateManifestSha256 = await fileSha256(join(candidateRoot, "manifest.json"));
-    const candidate = await verifyHomeArtifact(candidateRoot);
+    const predecessorMaterialization = await materializeHomeArtifactArchive({
+      archive: predecessorArchive,
+      temporaryParent: temporary,
+      expected: {
+        compressedBytes: receipt.archive.bytes,
+        compressedSha256: receipt.archive.sha256,
+        artifactRoot: receipt.archive.root,
+        manifestBytes: receipt.manifest.bytes,
+        manifestSha256: receipt.manifest.sha256,
+        artifactId: receipt.manifest.artifactId,
+        productVersion: receipt.manifest.productVersion,
+      },
+    });
+    const candidateMaterialization = await materializeHomeArtifactArchive({
+      archive: candidateArchive,
+      temporaryParent: temporary,
+    });
+    const predecessorRoot = predecessorMaterialization.root;
+    const predecessor = predecessorMaterialization.manifest;
+    const candidateRoot = candidateMaterialization.root;
+    const candidate = candidateMaterialization.manifest;
     assertCandidateContract(predecessor, candidate);
     return Object.freeze({
       temporary,
       predecessorRoot,
       predecessor,
-      predecessorArchiveSha256,
-      predecessorManifestSha256: receipt.manifest.sha256,
+      predecessorArchiveSha256: predecessorMaterialization.archiveSha256,
+      predecessorManifestSha256: predecessorMaterialization.manifestSha256,
       candidateRoot,
       candidate,
-      candidateArchiveSha256,
-      candidateManifestSha256,
+      candidateArchiveSha256: candidateMaterialization.archiveSha256,
+      candidateManifestSha256: candidateMaterialization.manifestSha256,
       fixtureRoot,
       fixtureManifest,
     });
@@ -631,22 +591,6 @@ async function pathStillExists(path: string, scope: "temporary" | "scenario"): P
   }
 }
 
-async function readArchiveMember(archive: string, member: string, cwd: string): Promise<Uint8Array> {
-  const child = Bun.spawn(["/usr/bin/tar", "-xOzf", archive, member], {
-    cwd,
-    env: process.env,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const [exitCode, stdout, stderr] = await Promise.all([
-    child.exited,
-    new Response(child.stdout).arrayBuffer(),
-    new Response(child.stderr).text(),
-  ]);
-  if (exitCode !== 0) throw new Error(`could not read ${member} from predecessor archive\n${stderr}`);
-  return new Uint8Array(stdout);
-}
-
 function assertCandidateContract(predecessor: HomeArtifactManifest, candidate: HomeArtifactManifest): void {
   const oldVersion = predecessor.product.version;
   const newVersion = candidate.product.version;
@@ -682,85 +626,6 @@ export async function assertInstalledHomeUpgradeHostPreconditions(): Promise<voi
   if (uid === undefined) throw new Error("installed upgrade rehearsal requires a Unix user session");
   await runRaw(["/bin/launchctl", "print", `gui/${uid}`], process.cwd(), process.env);
   await assertPortFree();
-}
-
-async function stageBoundedArchive(
-  source: string,
-  destination: string,
-  maxBytes: number,
-  expectedBytes?: number,
-): Promise<Readonly<{ bytes: number; sha256: string }>> {
-  const input = await open(source, "r");
-  let bytes: Buffer;
-  try {
-    const before = await input.stat();
-    assertBoundedArchiveStatForTests({ isFile: before.isFile(), size: before.size }, maxBytes, expectedBytes);
-    bytes = Buffer.allocUnsafe(before.size);
-    let offset = 0;
-    while (offset < bytes.length) {
-      const read = await input.read(bytes, offset, bytes.length - offset, offset);
-      if (read.bytesRead <= 0) throw new Error("archive changed or truncated during its bounded read");
-      offset += read.bytesRead;
-    }
-    const extra = Buffer.alloc(1);
-    if ((await input.read(extra, 0, 1, bytes.length)).bytesRead !== 0) {
-      throw new Error("archive grew during its bounded read");
-    }
-    const after = await input.stat();
-    if (after.dev !== before.dev || after.ino !== before.ino || after.size !== before.size ||
-      after.mtimeMs !== before.mtimeMs || after.ctimeMs !== before.ctimeMs) {
-      throw new Error("archive changed during its bounded read");
-    }
-  } finally {
-    await input.close();
-  }
-
-  const output = await open(destination, "wx", 0o600);
-  try {
-    let offset = 0;
-    while (offset < bytes.length) {
-      const written = await output.write(bytes, offset, bytes.length - offset, offset);
-      if (written.bytesWritten <= 0) throw new Error("staged archive write made no progress");
-      offset += written.bytesWritten;
-    }
-    await output.chmod(0o400);
-    await output.sync();
-  } finally {
-    await output.close();
-  }
-  return Object.freeze({ bytes: bytes.length, sha256: sha256(bytes) });
-}
-
-async function extractOneSafeArtifact(archive: string, destination: string): Promise<string> {
-  await mkdir(destination, { mode: 0o700 });
-  const canonicalDestination = await realpath(destination);
-  const tar = gunzipSync(await readFile(archive), { maxOutputLength: MAX_HOME_ARTIFACT_TAR_BYTES });
-  const inspected = inspectHomeArtifactTar(tar);
-  const validatedTar = join(canonicalDestination, ".validated-artifact.tar");
-  await writeFile(validatedTar, tar, { flag: "wx", mode: 0o600 });
-  try {
-    await runRaw(
-      ["/usr/bin/tar", "-xf", validatedTar, "-C", canonicalDestination],
-      canonicalDestination,
-      process.env,
-    );
-  } finally {
-    await rm(validatedTar, { force: true });
-  }
-  return await resolveContainedArtifactRootForTests(canonicalDestination, inspected.root);
-}
-
-/** Resolve an extracted root against one canonical containment boundary. */
-export async function resolveContainedArtifactRootForTests(
-  canonicalDestination: string,
-  artifactRoot: string,
-): Promise<string> {
-  const extracted = await realpath(join(canonicalDestination, artifactRoot));
-  const contained = relative(canonicalDestination, extracted);
-  if (contained === ".." || contained.startsWith(`..${sep}`) || isAbsolute(contained)) {
-    throw new Error("artifact root escaped extraction directory");
-  }
-  return extracted;
 }
 
 type LiveDevice = Readonly<{ deviceId: string; cookie: string }>;

@@ -10,7 +10,7 @@ import {
   stageAndPublishHomeArtifactCandidate,
   type HomeArtifactActivationIdentityBinding,
 } from "../../scripts/home-artifact";
-import { inspectHomeArtifactTar as inspectHomeArtifactTarFromLeaf } from "../../scripts/home-artifact-tar";
+import { inspectHomeArtifactTar as inspectHomeArtifactTarFromLeaf } from "../../src/product-host/home-artifact-archive";
 
 const identityMutations: ReadonlyArray<readonly [string, (value: MutableBinding) => void]> = [
   ["predecessor.artifactId", (value) => { value.predecessor.artifactId = "changed"; }],
@@ -217,12 +217,12 @@ describe("Dome Home 0.3 activation", () => {
     expect(pkg.version).toBe(homeArtifactReleaseClaimForTests().version);
   });
 
-  test("the installed rehearsal consumes only the shared tar leaf, not its gated builder", async () => {
+  test("the installed rehearsal consumes the shipped archive boundary, not its gated builder", async () => {
     const installed = await readFile(
       join(import.meta.dir, "..", "..", "scripts", "home-installed-upgrade-rehearsal.ts"),
       "utf8",
     );
-    expect(installed).toContain('from "./home-artifact-tar"');
+    expect(installed).toContain('from "../src/product-host/home-artifact-archive"');
     expect(installed).not.toContain('from "./home-artifact"');
     expect(inspectHomeArtifactTarFromBuilder).toBe(inspectHomeArtifactTarFromLeaf);
   });
@@ -237,6 +237,12 @@ describe("Dome Home 0.3 activation", () => {
       "export async function rehearseHomeArtifact",
       "export async function createDeterministicTar",
     );
+    expect(ordinary).toContain("materializeHomeArtifactArchive({");
+    expect(ordinary).not.toContain('run(["tar", "-xzf"');
+    expect(ordinary.indexOf("await rename(materialized.root, installed)"))
+      .toBeLessThan(ordinary.indexOf("await materialized.dispose()"));
+    expect(ordinary.indexOf("await materialized.dispose()"))
+      .toBeLessThan(ordinary.indexOf("await verifyHomeArtifact(installed)"));
     expect(ordinary).toContain('"backup", "keygen"');
     expect(ordinary).toContain('"backup", "restore", "--help"');
     expect(ordinary).not.toContain('"backup", "create"');

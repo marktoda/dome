@@ -1,11 +1,10 @@
 #!/usr/bin/env bun
 
-import { createHash } from "node:crypto";
 import { constants } from "node:fs";
-import { copyFile, lstat, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
-import { verifyHomeArtifact } from "../src/product-host/home-artifact";
+import { materializeHomeArtifactArchive } from "../src/product-host/home-artifact-archive";
 
 const RECEIPT_SCHEMA = "dome.home-predecessor-artifact/v1" as const;
 const DEFAULT_RECEIPT = resolve(
@@ -227,55 +226,45 @@ async function buildHistoricalClone(input: {
 }
 
 async function observeArchive(path: string, receipt: HomePredecessorReceipt): Promise<HomePredecessorObservation> {
-  const info = await lstat(path);
-  const archive = await readFile(path);
-  if (!info.isFile() || info.size !== receipt.archive.bytes || sha(archive) !== receipt.archive.sha256) {
-    throw new Error("reconstructed predecessor archive bytes differ from its immutable receipt");
-  }
-  const listing = await requireSuccess(["tar", "-tzf", path], process.cwd());
-  const names = listing.stdout.trimEnd().split("\n");
-  if (names.length === 0 || names.some((name) => name !== `${receipt.archive.root}/` && !name.startsWith(`${receipt.archive.root}/`))) {
-    throw new Error("predecessor archive root changed");
-  }
-  const member = `${receipt.archive.root}/manifest.json`;
-  if (names.filter((name) => name === member).length !== 1) throw new Error("predecessor archive manifest entry changed");
-  const extraction = await mkdtemp(join(tmpdir(), "dome-home-predecessor-verify-"));
-  try {
-    await requireSuccess(["tar", "-xzf", path, "-C", extraction], process.cwd());
-    await verifyHomeArtifact(join(extraction, receipt.archive.root));
-  } finally { await rm(extraction, { recursive: true, force: true }); }
-  const extracted = await requireSuccess(["tar", "-xOzf", path, member], process.cwd(), undefined, true);
-  const manifestBytes = Buffer.from(extracted.stdout, "binary");
-  const manifest = JSON.parse(manifestBytes.toString("utf8")) as {
-    schema: string;
-    product: { version: string };
-    target: { os: string; arch: string };
-    build: { gitCommit: string };
-    artifact: { id: string };
-  };
-  return Object.freeze({
-    archivePath: path,
-    archiveBytes: info.size,
-    archiveSha256: sha(archive),
-    archiveRoot: receipt.archive.root,
-    manifestBytes: manifestBytes.byteLength,
-    manifestSha256: sha(manifestBytes),
-    manifest: Object.freeze({
-      schema: manifest.schema,
-      productVersion: manifest.product.version,
-      targetOs: manifest.target.os,
-      targetArch: manifest.target.arch,
-      buildCommit: manifest.build.gitCommit,
-      artifactId: manifest.artifact.id,
-    }),
+  const materialized = await materializeHomeArtifactArchive({
+    archive: path,
+    expected: {
+      compressedBytes: receipt.archive.bytes,
+      compressedSha256: receipt.archive.sha256,
+      artifactRoot: receipt.archive.root,
+      manifestBytes: receipt.manifest.bytes,
+      manifestSha256: receipt.manifest.sha256,
+      artifactId: receipt.manifest.artifactId,
+      productVersion: receipt.manifest.productVersion,
+    },
   });
+  try {
+    const manifest = materialized.manifest;
+    return Object.freeze({
+      archivePath: path,
+      archiveBytes: materialized.archiveBytes,
+      archiveSha256: materialized.archiveSha256,
+      archiveRoot: receipt.archive.root,
+      manifestBytes: materialized.manifestBytes,
+      manifestSha256: materialized.manifestSha256,
+      manifest: Object.freeze({
+        schema: manifest.schema,
+        productVersion: manifest.product.version,
+        targetOs: manifest.target.os,
+        targetArch: manifest.target.arch,
+        buildCommit: manifest.build.gitCommit,
+        artifactId: manifest.artifact.id,
+      }),
+    });
+  } finally {
+    await materialized.dispose();
+  }
 }
 
 async function command(
   args: readonly string[],
   cwd: string,
   environment?: Readonly<Record<string, string>>,
-  binary = false,
 ): Promise<{ readonly exitCode: number; readonly stdout: string; readonly stderr: string }> {
   const child = Bun.spawn([...args], {
     cwd,
@@ -285,12 +274,12 @@ async function command(
   });
   const [exitCode, stdout, stderr] = await Promise.all([
     child.exited,
-    binary ? new Response(child.stdout).arrayBuffer() : new Response(child.stdout).text(),
+    new Response(child.stdout).text(),
     new Response(child.stderr).text(),
   ]);
   return {
     exitCode,
-    stdout: typeof stdout === "string" ? stdout : Buffer.from(stdout).toString("binary"),
+    stdout,
     stderr,
   };
 }
@@ -299,9 +288,8 @@ async function requireSuccess(
   args: readonly string[],
   cwd: string,
   environment?: Readonly<Record<string, string>>,
-  binary = false,
 ): Promise<{ readonly stdout: string; readonly stderr: string }> {
-  const result = await command(args, cwd, environment, binary);
+  const result = await command(args, cwd, environment);
   if (result.exitCode !== 0) throw new Error(`${args[0]} failed (${result.exitCode}): ${result.stderr}`);
   return result;
 }
@@ -326,10 +314,6 @@ function exactKeys(value: Record<string, unknown>, expected: readonly string[], 
   if (JSON.stringify(Object.keys(value).sort()) !== JSON.stringify([...expected].sort())) {
     throw new Error(`${label} has unknown or missing fields`);
   }
-}
-
-function sha(value: Uint8Array): string {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function escapeRegExp(value: string): string {
