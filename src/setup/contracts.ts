@@ -1,4 +1,11 @@
 import { z } from "zod";
+import {
+  canonicalContentScopeSchema,
+  CONTENT_SCOPE_MAX_GLOBS,
+  type ContentScopeConfig,
+} from "../core/content-scope";
+
+export type { ContentScopeConfig };
 
 export const VAULT_ASSESSMENT_SCHEMA = "dome.setup.vault-assessment/v1" as const;
 export const SETUP_PLAN_SCHEMA = "dome.setup.plan/v1" as const;
@@ -43,7 +50,7 @@ export const ADAPTATION_ACTION_IDS = [
 
 export const SETUP_CONTRACT_CAPS = Object.freeze({
   markdownPaths: 100_000,
-  scopeGlobs: 64,
+  scopeGlobs: CONTENT_SCOPE_MAX_GLOBS,
   writes: 256,
   writeBytes: 1024 * 1024,
   warnings: 64,
@@ -64,7 +71,6 @@ const relativePath = nonEmpty.refine(
   "must be a normalized relative path",
 );
 const markdownPath = relativePath.refine((value) => value.toLowerCase().endsWith(".md"), "must identify Markdown");
-const scopeGlob = nonEmpty.refine((value) => !value.startsWith("/") && !value.includes("\\") && !value.includes(".."), "must be a relative glob");
 
 function sortedUnique<T extends z.ZodType<string>>(item: T) {
   return z.array(item).superRefine((values, context) => {
@@ -74,12 +80,7 @@ function sortedUnique<T extends z.ZodType<string>>(item: T) {
   });
 }
 
-const contentScopeSchema = z.object({
-  version: z.literal(1),
-  include: sortedUnique(scopeGlob).min(1).max(SETUP_CONTRACT_CAPS.scopeGlobs),
-  exclude: sortedUnique(scopeGlob).max(SETUP_CONTRACT_CAPS.scopeGlobs),
-}).strict();
-export type ContentScopeConfig = z.infer<typeof contentScopeSchema>;
+const contentScopeSchema = canonicalContentScopeSchema;
 
 const scaffoldFileId = z.enum(["gitignore", "agents-orientation"]);
 const scaffoldDirectoryId = z.enum(["dome-directory", "dome-state-directory"]);

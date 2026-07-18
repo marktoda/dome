@@ -43,7 +43,7 @@ Cycles are permitted *within* a layer (e.g. `apply-effect` ↔ `diagnostics` in 
 | `diff3` | `core` | Line-level 3-way merge primitive backing garden-patch convergence (see [[wiki/specs/proposals]] §"Garden-emitted Proposals") |
 | `effect-capability-use` | `core` | Canonical run-ledger audit labels for effect capability enforcement |
 | `finalize-journal` | `core` | Finalize-intent journal — crash-safety for adoption finalization |
-| `glob-cache` | `core` | Cached Bun.Glob compilation |
+| `glob-cache` | `core` | Compatibility re-export of the neutral cached Bun.Glob matcher in `src/core/glob-match.ts` |
 | `model-invoke` | `core` | Provider-neutral `ctx.modelInvoke` seam (types + envelope) |
 | `path-capabilities` | `core` | Path-bearing capability helpers |
 | `runner-contract` | `core` | Neutral home for the engine's outbound runner contracts |

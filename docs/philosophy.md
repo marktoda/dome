@@ -39,8 +39,8 @@ the `codebase-design` skill. For the domain vocabulary, see [[glossary]].
   the same; keep a consumer's unique concern in the consumer.
 
 - **Reuse the one shared mechanism; never build a parallel impl.** When a
-  capability already exists (e.g. `globMatch` from
-  `src/engine/core/glob-cache.ts`), route through it. A second glob matcher, a
+  mechanism already exists (e.g. `globMatch` from
+  `src/core/glob-match.ts`), route through it. A second glob matcher, a
   second schema-hash reader, a second store opener is a divergence bug waiting
   to happen — two copies drift, and the drift is silent.
 

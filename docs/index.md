@@ -44,6 +44,7 @@ Working in the codebase? [[philosophy]] is the house style — pure-decide + thi
 - [[wiki/specs/http-surface]] — HTTP surface: the shipped `dome http` read+capture adapter (bearer-token; loopback/Tailscale) — POST /capture implements the remote-capture seam; status/query/tasks/doc/questions/resolve read routes.
 - [[wiki/specs/product-host]] — shipped Dome Home host contract: one owner/one vault/many paired clients; authority, readiness, operation classes, lifecycle, backup, and upgrade recovery.
 - [[wiki/specs/setup]] — versioned, read-only `VaultAssessment` and `SetupPlan` contracts for revision-bound additive onboarding previews.
+- [[wiki/specs/content-scope]] — versioned, deterministic policy Module for the owner Markdown in Dome's compiled knowledge universe; exclusions and private floors bound every later consumer.
 - [[wiki/specs/controlled-mutation]] — recovery-backed seam for Dome-mediated commits: expected bytes, bounded host coordination, crash journal, and conservative checkout repair.
 - [[wiki/specs/harnesses]] — How agentic harnesses (Claude Code, Cursor, OpenCode, Codex, future agents) interact with Dome via the compiler-boundary contract (AGENTS.md + CLI + compiler host + git-native writes).
 - [[wiki/specs/agent-host]] — The replaceable foreground-agent host: session protocol, agent workspace, and the seam between agents and the background compiler.
@@ -64,6 +65,7 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 - [[wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE]] — *(shipped default)* Vault root carries AGENTS.md as the canonical agent-orientation surface; richer templated-section refresh remains planned.
 - [[wiki/invariants/AGENT_WORK_IS_DERIVED]] — *(shipped default)* agent work is compiled from open questions and owns no queue, claim, retry, or job store.
 - [[wiki/invariants/ALL_MUTATION_GOES_THROUGH_ADOPTION]] — *(axiom)* Every vault state change — agent native write, vim save, garden-emitted patch, scheduled job — eventually flows through the engine's adoption loop.
+- [[wiki/invariants/CONTENT_SCOPE_BOUNDS_OWNER_MARKDOWN]] — *(axiom)* ContentScope is the deterministic upper bound on owner Markdown; exclusions and the Dome/Git private floor cannot be overridden, and scope grants no capability.
 - [[wiki/invariants/EMBEDDINGS_ARE_A_RECOMPUTABLE_CACHE]] — *(deferred)* Vectors in `embeddings.db` never hold truth, only acceleration; the cache may be deleted at any time with no correctness impact; no processor may read embeddings as facts.
 - [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]] — *(axiom)* Every engine-produced commit carries `Dome-Run`, `Dome-Extension`, `Dome-Base`, `Dome-Source-Head` trailers in the message body; user out-of-band commits do not.
 - [[wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] — *(axiom)* the `@marktoda/dome` root entrypoint's static import graph does not reach `@ai-sdk/anthropic`, `ai`, or `@modelcontextprotocol/sdk`.

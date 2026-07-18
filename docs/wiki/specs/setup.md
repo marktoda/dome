@@ -179,7 +179,9 @@ one exact `vault-config` write: its path, create-or-merge operation, bytes,
 hash, mode, and missing-file behavior are bound in the assessment and must be
 identical in the plan. `ContentScopeConfig.version` is the literal `1`, so a
 future matching-language change cannot silently reinterpret an accepted
-setup payload. A plan cannot express a second config write or two
+setup payload. The shape and matching semantics are owned by
+[[wiki/specs/content-scope]]; setup embeds that canonical contract rather than
+defining a second glob language. A plan cannot express a second config write or two
 writes to the same path. Whenever writes apply, one configuration commit must
 name exactly those paths—never an unrelated owner file.
 
