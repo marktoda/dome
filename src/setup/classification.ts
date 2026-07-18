@@ -28,7 +28,7 @@ export function classifySetupVault(evidence: SetupClassificationEvidence): Vault
     return "incompatible-active-operation";
   }
   if (evidence.blockerCodes.length > 0) return "unsafe-or-ambiguous-state";
-  if (evidence.domeState === "configured") return "existing-dome-vault";
+  if (evidence.domeState === "configured" && evidence.gitDirect) return "existing-dome-vault";
   if (evidence.gitDirect) return "existing-git-vault";
   if (evidence.targetState === "missing") return "new-path";
   if (evidence.targetState === "empty-directory") return "empty-directory";

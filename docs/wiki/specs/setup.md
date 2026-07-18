@@ -58,8 +58,10 @@ as blockers instead of implicit choices.
 
 `src/setup/classification.ts` owns the one deterministic evidence-to-kind
 mapping used by the inspector, compiler, and public validators. Configuration
-evidence produces `existing-dome-vault`; a Git or Home active operation alone
-produces `incompatible-active-operation`; other blockers produce
+evidence produces `existing-dome-vault` only at a direct Git boundary;
+configured non-Git content remains `existing-non-git-vault` until setup creates
+its repository. A Git or Home active operation alone produces
+`incompatible-active-operation`; other blockers produce
 `unsafe-or-ambiguous-state`; the remaining ready kinds follow direct Git and
 observed target state. A supplied kind that disagrees with that evidence is
 invalid rather than a caller-controlled label.
@@ -189,9 +191,10 @@ non-canonical arrays fail validation.
 Public assessment and plan validators first compile untrusted values into a
 bounded passive snapshot. Proxies are rejected before their traps run,
 accessor-backed properties are never invoked, and array lengths are checked
-against field-specific caps before any element traversal. Zod sees only that
-inert snapshot. Successful values are recursively frozen, so renderers and a
-future apply implementation consume one immutable canonical contract.
+against field-specific caps before any element traversal. One aggregate node
+budget counts objects, arrays, primitive elements, and holes. Zod sees only
+that inert snapshot. Successful values are recursively frozen, so renderers
+and a future apply implementation consume one immutable canonical contract.
 
 Write actions bind their exact path, create-or-merge operation, bytes, hash,
 mode, and missing-file behavior. `ContentScopeConfig.version` is the literal

@@ -43,10 +43,10 @@ function snapshotValue(
   depth: number,
   budget: { nodes: number },
 ): unknown {
+  if (budget.nodes-- <= 0) throw new Error("exceeds the passive data budget");
   if (typeof input !== "object" || input === null) return input;
   if (utilTypes.isProxy(input)) throw new Error(`${formatPath(path)} must not be a Proxy`);
   if (depth > MAX_DEPTH) throw new Error(`${formatPath(path)} exceeds the nesting budget`);
-  if (budget.nodes-- <= 0) throw new Error("exceeds the passive data budget");
   return Array.isArray(input)
     ? snapshotArray(input, path, depth, budget)
     : snapshotObject(input, path, depth, budget);
@@ -76,7 +76,7 @@ function snapshotArray(
   for (let index = 0; index < length; index += 1) {
     const descriptor = Object.getOwnPropertyDescriptor(input, String(index));
     if (descriptor === undefined) {
-      output.push(undefined);
+      output.push(snapshotValue(undefined, [...path, index], depth + 1, budget));
       continue;
     }
     if (descriptor.get !== undefined || descriptor.set !== undefined) {

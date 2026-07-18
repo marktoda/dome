@@ -190,6 +190,19 @@ describe("VaultAssessment contract", () => {
       target: { ...value.target, kind: "incompatible-active-operation" },
     })).toThrow("must equal existing-git-vault");
   });
+
+  test("configured non-Git content remains an existing non-Git vault", () => {
+    const value = assessment();
+    const configuredNonGit = validateVaultAssessment({
+      ...value,
+      target: { ...value.target, kind: "existing-non-git-vault" },
+      revision: { ...value.revision, head: null },
+      git: { state: "absent", branch: null },
+      dome: { state: "configured", contentScope: "configured" },
+      markdown: { ...value.markdown, tracked: [], untracked: ["notes/hello.md"] },
+    });
+    expect(configuredNonGit.target.kind).toBe("existing-non-git-vault");
+  });
 });
 
 describe("SetupPlan contract", () => {
@@ -212,6 +225,23 @@ describe("SetupPlan contract", () => {
     });
     expect(() => validateSetupPlan({ ...plan(), actions: oversized })).toThrow("must contain at most 8 entries");
     expect(elementCount).toBe(0);
+  });
+
+  test("enforces one aggregate budget across primitive elements and holes", () => {
+    for (const populated of [true, false]) {
+      const first = populated ? new Array(100_000).fill("same.md") : new Array(100_000);
+      const second = populated ? new Array(100_000).fill("same.md") : new Array(100_000);
+      const third = populated ? new Array(100_000).fill("same.md") : new Array(100_000);
+      const value = plan();
+      expect(() => validateSetupPlan({
+        ...value,
+        assessment: {
+          ...value.assessment,
+          markdown: { ...value.assessment.markdown, tracked: first, untracked: second },
+        },
+        surplus: { tracked: third },
+      })).toThrow("exceeds the passive data budget");
+    }
   });
 
   test("a blocked plan carries no applicable action", () => {
