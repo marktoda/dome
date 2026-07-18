@@ -7,10 +7,11 @@ updated: 2026-07-18
 
 # Setup assessment and plan
 
-`dome setup` is the planned public onboarding grammar. Before it is allowed to
-change a vault or the host, it produces one read-only `VaultAssessment` and one
-`SetupPlan`. This page defines those two payloads. It does not define an
-installer workflow, a persisted setup record, or a setup state machine.
+`dome setup --dry-run` is the first public onboarding grammar. Before a later
+slice is allowed to change a vault or the host, this command produces one
+read-only `VaultAssessment` and one `SetupPlan`. This page defines those two
+payloads. It does not define an installer workflow, a persisted setup record,
+or a setup state machine.
 
 The pure TypeScript contract lives in `src/setup/contracts.ts`. It is
 deliberately not exported from the SDK root: setup is a product boundary, not a
@@ -28,8 +29,10 @@ vault path. It contains:
   installed-Home classifications. Packaged Home identity (artifact ID,
   version, build commit, and manifest hash) is distinct from installed Home
   identity and vault-selector truth;
-- sorted tracked and untracked Markdown path inventories plus the proposed
-  versioned content scope (the matching policy itself is specified in M4);
+- sorted tracked and untracked lowercase-`.md` path inventories plus the
+  proposed versioned content scope. Case-variant `.MD` files remain ordinary
+  source bytes for revision binding but are outside version 1's owner-Markdown
+  universe; `.dome/**` and `.git/**` remain the non-overridable private floor;
 - a closed, canonically ordered union of additive adaptation actions; and
 - zero or more canonically ordered blockers, each with exactly one next action.
 
@@ -129,7 +132,15 @@ snapshot against a malicious process racing individual syscalls; apply must
 still repeat revision validation immediately before mutation.
 
 Package, prerequisite, and installed-Home discovery remain separate injected
-adapters. Git subprocesses use only `rev-parse`, `symbolic-ref`, `ls-files`,
+adapters. Packaged identity delegates to the read-only closed-package layer of
+the installed-product verifier rather than weakening that trust boundary in
+setup or invoking its full Home extraction/admission layer. The pure compiler applies a
+closed minimum-version policy to observed tools: Bun `>=1.2.13 <2` and Git
+`>=2.45.0`. Git 2.45 is the first release carrying the
+`GIT_NO_LAZY_FETCH` boundary used below. The final fingerprint composes the
+vault-source fingerprint with host, prerequisite, packaged-product,
+installed-Home, content-scope, and scaffold evidence, so a relevant injected
+evidence change invalidates the plan. Git subprocesses use only `rev-parse`, `symbolic-ref`, `ls-files`,
 and `ls-tree` under a minimal allowlisted environment with system/global
 configuration, prompts, optional locks, hooks, filesystem monitors, pagers,
 external excludes, and external attributes disabled. Staged and worktree
@@ -181,9 +192,14 @@ identical in the plan. `ContentScopeConfig.version` is the literal `1`, so a
 future matching-language change cannot silently reinterpret an accepted
 setup payload. The shape and matching semantics are owned by
 [[wiki/specs/content-scope]]; setup embeds that canonical contract rather than
-defining a second glob language. A plan cannot express a second config write or two
-writes to the same path. Whenever writes apply, one configuration commit must
-name exactly those paths—never an unrelated owner file.
+defining a second glob language. Both the in-memory proposal and the
+`content_scope` decoded from the exact rendered YAML pass through
+`canonicalContentScopeSchema`; unsorted, duplicate, unsupported, or malformed
+policies fail closed. The setup scaffold renderer refuses a base config that
+already owns `content_scope`, so it cannot append a second policy seam. A plan
+cannot express a second config write or two writes to the same path. Whenever
+writes apply, one configuration commit must name exactly those paths—never an
+unrelated owner file.
 
 Home plan evidence projects the assessed artifact ID, selected vault path,
 service label, and missing-service guard rather than replacing them with prose.
@@ -206,9 +222,19 @@ mutate this payload or persist it as a workflow record.
 
 Assessment is allowed to inspect bounded local metadata and content needed to
 produce the contract. It performs no writes, credential reads, service
-changes, model calls, or network calls. Rendering performs no further
+changes, model calls, or network calls. The read-only installed-product proof
+hashes the closed tree and compressed Home archive without extracting or
+executing it; full Home admission remains a later apply concern. Rendering performs no further
 discovery. Human output and `--json` therefore describe the same validated
 plan rather than independently reconstructing setup policy.
 
+The implemented root command requires `--dry-run`; it has no `--apply` flag.
+A ready preview exits zero, a valid blocked preview exits one, and a usage
+error exits 64. Both presentations explicitly state that no changes were made.
+
 Exact JSON fixtures for all seven vault classifications and adversarial
-validator coverage live in `tests/setup/contracts.test.ts`.
+validator coverage live in `tests/setup/contracts.test.ts` and
+`tests/setup/compiler.test.ts`. CLI adapter coverage proves that omission of
+`--dry-run` cannot invoke discovery and JSON is the exact validated plan. The
+case-sensitive inventory fixture and generated-config round trip pin setup to
+the same versioned ContentScope interface used by the setup contract.

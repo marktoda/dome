@@ -112,16 +112,18 @@ and one matcher cache.
 ## Rollout status
 
 The version-1 policy Module and setup-contract binding ship in the first M4
-checkpoint. Vault-config parsing, runtime enumeration, processor migration,
-scope inference during setup, explicit migration consent, and projection
-rebuild behavior are later M4 checkpoints. Until those land, this contract
-does not claim that existing processors already consume ContentScope.
+checkpoint. The read-only setup compiler now validates both its in-memory
+proposal and the generated YAML `content_scope` through the canonical schema;
+its inspector inventories only lowercase-`.md` candidates. Runtime vault-config
+parsing, processor enumeration, scope inference for arbitrary layouts,
+explicit migration consent, and projection rebuild behavior remain later M4
+checkpoints. Until those land, this contract does not claim that existing
+processors already consume ContentScope.
 
-Checkpoint 2 must add an exact setup fixture containing both `lowercase.md`
-and `case-variant.MD`. The assessment, proposal, and preview tests must prove
-that the lowercase file is a member and the uppercase variant is visibly
-excluded; setup must not inventory `.MD` as scoped owner Markdown merely
-because the earlier inspector used a case-insensitive suffix check.
+The setup inspector fixture contains both `lowercase.md` and
+`case-variant.MD`: only the former enters its tracked or untracked Markdown
+inventory. Later scope-preview work must preserve that distinction when it
+adds covered/excluded counts and representative evidence.
 
 The engine-local `glob-cache` compatibility re-export is temporary. The final
 M4 checkpoint must migrate every source and test import to

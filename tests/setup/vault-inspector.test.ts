@@ -152,6 +152,7 @@ describe("read-only setup vault inspector", () => {
   test("changes for untracked bytes while keeping Markdown inventory exact", async () => {
     const root = await gitFixture();
     await writeFile(join(root, "Scratch.md"), "one\n");
+    await writeFile(join(root, "CaseVariant.MD"), "outside the version-1 Markdown universe\n");
     const first = await inspectSetupVaultSource(root);
     expect(first.markdown.untracked).toEqual(["Scratch.md"]);
 
@@ -159,6 +160,20 @@ describe("read-only setup vault inspector", () => {
     const changed = await inspectSetupVaultSource(root);
     expect(changed.worktreeFingerprint).not.toBe(first.worktreeFingerprint);
     expect(changed.markdown.untracked).toEqual(["Scratch.md"]);
+  });
+
+  test("inventories only lowercase-suffix Markdown for tracked and non-Git vaults", async () => {
+    const tracked = await gitFixture();
+    await writeFile(join(tracked, "lowercase.md"), "included\n");
+    await writeFile(join(tracked, "case-variant.MD"), "excluded\n");
+    await git(tracked, "add", "lowercase.md", "case-variant.MD");
+    await git(tracked, "commit", "-m", "Add case-sensitive inventory fixture");
+    expect((await inspectSetupVaultSource(tracked)).markdown.tracked).toEqual(["README.md", "lowercase.md"]);
+
+    const nonGit = await temporary();
+    await writeFile(join(nonGit, "lowercase.md"), "included\n");
+    await writeFile(join(nonGit, "case-variant.MD"), "excluded\n");
+    expect((await inspectSetupVaultSource(nonGit)).markdown.untracked).toEqual(["lowercase.md"]);
   });
 
   test("binds ignore behavior and direct info/exclude bytes", async () => {

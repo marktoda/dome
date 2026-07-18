@@ -56,7 +56,8 @@ Dome.
 
 ## Try it from source
 
-You need Apple Silicon macOS, Bun 1.2.13 or newer within Bun 1.x, Git, and a
+You need Apple Silicon macOS, Bun 1.2.13 or newer within Bun 1.x, Git 2.45 or
+newer, and a
 current stable Google Chrome.
 The artifact builder uses Chrome for its installed-product acceptance gate and
 requires a clean checkout.
@@ -91,12 +92,14 @@ The planned no-checkout installation is:
 
 ```sh
 bun install -g @marktoda/dome
-dome setup
+dome setup --dry-run ~/Vault
 ```
 
 That package is **not published yet**. The current source-built path above is
 the only documented installation path; the registry command is the next
-distribution milestone.
+distribution milestone. The setup command currently provides a safe,
+revision-bound preview only. It makes no vault or host changes; setup apply
+remains the next onboarding milestone.
 
 ## How it works
 

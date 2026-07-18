@@ -123,6 +123,7 @@ import {
 import {
   CLAUDE_MD_TEMPLATE,
   CORE_MD_TEMPLATE,
+  DEFAULT_AGENTS_MD,
   DEFAULT_GITIGNORE,
   INITIAL_COMMIT_MESSAGE,
   SIGNALS_MD_TEMPLATE,
@@ -662,7 +663,7 @@ async function ensureAgentsMd(opts: {
   readonly refresh: boolean;
 }): Promise<StepOutcome> {
   if (!existsSync(opts.path)) {
-    await writeFile(opts.path, AGENTS_MD_TEMPLATE, "utf8");
+    await writeFile(opts.path, DEFAULT_AGENTS_MD, "utf8");
     return "created";
   }
   if (!opts.refresh) return "skipped (already present)";
@@ -878,7 +879,7 @@ function summaryToJson(s: InitSummary): InitJsonResult {
 // initial commit message) live in ./init-templates.ts — still in code, not
 // under assets/, so a single-file `bun build` CLI stays self-contained; see
 // that module's header. Only the user-prose delimiter constants and the
-// composed AGENTS_MD_TEMPLATE stay here (the lockstep test
+// user-prose composition stay here (the lockstep test
 // tests/invariants/agents-md-is-orientation-surface.test.ts greps this file
 // for the delimiters).
 
@@ -904,5 +905,3 @@ managed orientation while preserving this block.)
 
 ${USER_PROSE_END}
 `;
-
-const AGENTS_MD_TEMPLATE = renderAgentsMd(USER_PROSE_SECTION);

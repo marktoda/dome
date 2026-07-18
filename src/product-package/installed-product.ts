@@ -22,6 +22,21 @@ export type InstalledProductEvidence = Readonly<{
   home: Readonly<{ artifactId: string; archiveSha256: string; manifestSha256: string; buildCommit: string }>;
 }>;
 
+/** Closed installed-package proof that performs reads only. */
+export type ReadOnlyInstalledProductEvidence = Readonly<{
+  manifest: ProductPackageManifest;
+  manifestSha256: string;
+  filesVerified: number;
+  pwaFilesVerified: number;
+  /** Identity declared by the verified package, not an extracted Home proof. */
+  declaredHome: Readonly<{
+    artifactId: string;
+    archiveSha256: string;
+    manifestSha256: string;
+    buildCommit: string;
+  }>;
+}>;
+
 export type InstalledProductVerifierDependencies = Readonly<{
   materializeHome(input: Parameters<typeof materializeHomeArtifactArchive>[0]): Promise<MaterializedHomeArtifact>;
 }>;
@@ -33,24 +48,9 @@ export async function verifyInstalledProduct(input: Readonly<{
 }>, dependencies: InstalledProductVerifierDependencies = {
   materializeHome: async (archiveInput) => await materializeHomeArtifactArchive(archiveInput),
 }): Promise<InstalledProductEvidence> {
-  const requestedRoot = resolve(input.packageRoot);
-  const lexicalRoot = await lstat(requestedRoot);
-  if (!lexicalRoot.isDirectory() || lexicalRoot.isSymbolicLink()) throw new Error("installed product root is not a direct directory");
-  const packageRoot = await realpath(requestedRoot);
-  const rootInfo = await lstat(packageRoot);
-  if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink() || rootInfo.dev !== lexicalRoot.dev || rootInfo.ino !== lexicalRoot.ino) {
-    throw new Error("installed product root identity is inconsistent");
-  }
-  const manifestPath = join(packageRoot, "product", "manifest.json");
-  const manifestRead = await readBoundedStableFile(packageRoot, manifestPath, PRODUCT_PACKAGE_CAPS.manifestBytes);
-  if (manifestRead.mode !== 0o644) throw new Error("installed product manifest mode is not 0644");
-  const manifestBytes = manifestRead.bytes;
-  const manifest = validateProductPackageManifest(JSON.parse(manifestBytes.toString("utf8")));
-  await verifyClosedTree(packageRoot, [...manifest.files.map((entry) => entry.path), "product/manifest.json"]);
-  for (const evidence of manifest.files) {
-    await verifyFile(packageRoot, evidence);
-  }
-  const homeArchive = join(packageRoot, ...manifest.home.path.split("/"));
+  const verified = await verifyInstalledProductPackageRoot(input.packageRoot);
+  const { manifest } = verified.evidence;
+  const homeArchive = join(verified.packageRoot, ...manifest.home.path.split("/"));
   const materialized = await dependencies.materializeHome({
     archive: homeArchive,
     ...(input.temporaryParent === undefined ? {} : { temporaryParent: input.temporaryParent }),
@@ -72,10 +72,10 @@ export async function verifyInstalledProduct(input: Readonly<{
       throw new Error("installed Home provenance differs from product package identity");
     }
     return Object.freeze({
-      manifest,
-      manifestSha256: sha256(manifestBytes),
-      filesVerified: manifest.files.length,
-      pwaFilesVerified: manifest.pwa.entries.length,
+      manifest: verified.evidence.manifest,
+      manifestSha256: verified.evidence.manifestSha256,
+      filesVerified: verified.evidence.filesVerified,
+      pwaFilesVerified: verified.evidence.pwaFilesVerified,
       home: Object.freeze({
         artifactId: materialized.manifest.artifact.id,
         archiveSha256: materialized.archiveSha256,
@@ -95,6 +95,55 @@ export async function verifyInstalledProduct(input: Readonly<{
       throw cleanup;
     }
   }
+}
+
+/**
+ * Verify the closed installed package tree, exact file bytes/modes, and the
+ * compressed Home archive hash without extracting, executing, or writing.
+ * Full Home admission composes this proof in `verifyInstalledProduct`.
+ */
+export async function verifyInstalledProductReadOnly(input: Readonly<{
+  packageRoot: string;
+}>): Promise<ReadOnlyInstalledProductEvidence> {
+  return (await verifyInstalledProductPackageRoot(input.packageRoot)).evidence;
+}
+
+async function verifyInstalledProductPackageRoot(packageRootInput: string): Promise<Readonly<{
+  packageRoot: string;
+  evidence: ReadOnlyInstalledProductEvidence;
+}>> {
+  const requestedRoot = resolve(packageRootInput);
+  const lexicalRoot = await lstat(requestedRoot);
+  if (!lexicalRoot.isDirectory() || lexicalRoot.isSymbolicLink()) throw new Error("installed product root is not a direct directory");
+  const packageRoot = await realpath(requestedRoot);
+  const rootInfo = await lstat(packageRoot);
+  if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink() || rootInfo.dev !== lexicalRoot.dev || rootInfo.ino !== lexicalRoot.ino) {
+    throw new Error("installed product root identity is inconsistent");
+  }
+  const manifestPath = join(packageRoot, "product", "manifest.json");
+  const manifestRead = await readBoundedStableFile(packageRoot, manifestPath, PRODUCT_PACKAGE_CAPS.manifestBytes);
+  if (manifestRead.mode !== 0o644) throw new Error("installed product manifest mode is not 0644");
+  const manifestBytes = manifestRead.bytes;
+  const manifest = validateProductPackageManifest(JSON.parse(manifestBytes.toString("utf8")));
+  await verifyClosedTree(packageRoot, [...manifest.files.map((entry) => entry.path), "product/manifest.json"]);
+  for (const evidence of manifest.files) {
+    await verifyFile(packageRoot, evidence);
+  }
+  return Object.freeze({
+    packageRoot,
+    evidence: Object.freeze({
+      manifest,
+      manifestSha256: sha256(manifestBytes),
+      filesVerified: manifest.files.length,
+      pwaFilesVerified: manifest.pwa.entries.length,
+      declaredHome: Object.freeze({
+        artifactId: manifest.home.artifactId,
+        archiveSha256: manifest.home.sha256,
+        manifestSha256: manifest.home.manifestSha256,
+        buildCommit: manifest.home.buildCommit,
+      }),
+    }),
+  });
 }
 
 async function verifyFile(root: string, evidence: ProductPackageFile): Promise<void> {

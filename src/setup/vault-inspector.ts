@@ -6,7 +6,7 @@ import { dirname, join, parse, resolve } from "node:path";
 import { compareStrings } from "../core/compare";
 import { parseCapabilityPolicy } from "../engine/core/capability-policy";
 import { findGitRoot } from "../git";
-import type { VaultAssessment } from "./contracts";
+import { SETUP_CONTRACT_CAPS, VAULT_KINDS, type VaultAssessment } from "./contracts";
 
 export const SETUP_VAULT_INSPECTION_SCHEMA = "dome.setup.vault-source-inspection/v1" as const;
 
@@ -182,7 +182,7 @@ export async function inspectSetupVaultSource(
   const trackedMarkdown = markdownPaths(git.tracked);
   const untrackedMarkdown = git.direct
     ? markdownPaths(git.untracked)
-    : tree.filter((entry) => entry.kind !== "directory" && entry.path.toLowerCase().endsWith(".md"))
+    : tree.filter((entry) => entry.kind !== "directory" && entry.path.endsWith(".md"))
       .map((entry) => entry.path).sort(compareStrings);
   if (trackedMarkdown.length > caps.entries || untrackedMarkdown.length > caps.entries) {
     addBlocker("unsafe-path", "Markdown inventory exceeds the setup assessment budget.",
@@ -223,7 +223,7 @@ export async function inspectSetupVaultSource(
     external,
   });
 
-  return Object.freeze({
+  return validateSetupVaultSourceInspection(Object.freeze({
     schema: SETUP_VAULT_INSPECTION_SCHEMA,
     targetPath,
     kind,
@@ -242,7 +242,124 @@ export async function inspectSetupVaultSource(
     }),
     blockers: blockerList,
     worktreeFingerprint: fingerprint,
-  });
+  }));
+}
+
+/** Validate injected discovery evidence before the setup compiler trusts it. */
+export function validateSetupVaultSourceInspection(value: unknown): SetupVaultSourceInspection {
+  const source = exactObject(value, "setup source inspection", [
+    "schema", "targetPath", "kind", "git", "dome", "markdown", "blockers", "worktreeFingerprint",
+  ]);
+  if (source["schema"] !== SETUP_VAULT_INSPECTION_SCHEMA) throw new Error("setup source inspection schema is invalid");
+  const targetPath = normalizedAbsolutePath(source["targetPath"], "setup source target path");
+  if (!VAULT_KINDS.includes(source["kind"] as typeof VAULT_KINDS[number])) {
+    throw new Error("setup source classification is invalid");
+  }
+  const kind = source["kind"] as SetupVaultSourceInspection["kind"];
+  const git = exactObject(source["git"], "setup source Git evidence", [
+    "state", "head", "branch", "direct", "ancestorRoot", "operationMarkers",
+  ]);
+  const gitStates = ["absent", "clean", "dirty", "operation-active", "detached", "unborn", "ambiguous"] as const;
+  if (!gitStates.includes(git["state"] as typeof gitStates[number]) || typeof git["direct"] !== "boolean") {
+    throw new Error("setup source Git state is invalid");
+  }
+  const state = git["state"] as SetupVaultSourceInspection["git"]["state"];
+  const head = git["head"];
+  if (head !== null && (typeof head !== "string" || !/^[0-9a-f]{40}$/.test(head))) {
+    throw new Error("setup source Git head is invalid");
+  }
+  const branch = git["branch"];
+  if (branch !== null && !boundedText(branch)) throw new Error("setup source Git branch is invalid");
+  const ancestorRoot = git["ancestorRoot"] === null ? null :
+    normalizedAbsolutePath(git["ancestorRoot"], "setup source ancestor root");
+  const markers = sortedUniqueStrings(git["operationMarkers"], "setup source Git operation markers", 64);
+  if (git["direct"] && ancestorRoot !== null || !git["direct"] && state !== "absent" && state !== "ambiguous") {
+    throw new Error("setup source Git boundary evidence is inconsistent");
+  }
+  if ((state === "operation-active") !== (markers.length > 0) && state !== "ambiguous") {
+    throw new Error("setup source Git operation evidence is inconsistent");
+  }
+  const shape = head === null ? branch === null ? "none" : "branch" : branch === null ? "head" : "both";
+  const expectedShape = state === "absent" ? "none" : state === "unborn" ? "branch" :
+    state === "detached" ? "head" : state === "ambiguous" ? shape : "both";
+  if (shape !== expectedShape) throw new Error("setup source Git revision evidence is inconsistent");
+
+  const dome = exactObject(source["dome"], "setup source Dome evidence", ["state"]);
+  const domeStates = ["absent", "partial", "configured", "incompatible"] as const;
+  if (!domeStates.includes(dome["state"] as typeof domeStates[number])) throw new Error("setup source Dome state is invalid");
+  const markdown = exactObject(source["markdown"], "setup source Markdown evidence", ["tracked", "untracked"]);
+  const tracked = validatedMarkdownPaths(markdown["tracked"], "tracked Markdown");
+  const untracked = validatedMarkdownPaths(markdown["untracked"], "untracked Markdown");
+  const blockerCodes = [
+    "unsupported-host", "missing-prerequisite", "dirty-worktree", "active-git-operation", "active-home-upgrade",
+    "conflicting-home-owner", "symlink-ambiguity", "unsafe-path", "ambiguous-state", "detached-head",
+    "unborn-repository", "unsupported-prerequisite",
+  ] as const;
+  if (!Array.isArray(source["blockers"]) || source["blockers"].length > 12) {
+    throw new Error("setup source blockers are invalid");
+  }
+  let previousCode = "";
+  for (const candidate of source["blockers"]) {
+    const blocker = exactObject(candidate, "setup source blocker", ["code", "message", "nextAction"]);
+    if (!blockerCodes.includes(blocker["code"] as typeof blockerCodes[number]) ||
+      typeof blocker["code"] !== "string" || blocker["code"] <= previousCode ||
+      !boundedText(blocker["message"]) || !boundedText(blocker["nextAction"])) {
+      throw new Error("setup source blocker is invalid or not canonically ordered");
+    }
+    previousCode = blocker["code"];
+  }
+  if (typeof source["worktreeFingerprint"] !== "string" || !/^[0-9a-f]{64}$/.test(source["worktreeFingerprint"])) {
+    throw new Error("setup source fingerprint is invalid");
+  }
+  const requiresGit = kind === "existing-git-vault" || kind === "existing-dome-vault";
+  const forbidsGit = kind === "new-path" || kind === "empty-directory" || kind === "existing-non-git-vault";
+  if (requiresGit && !git["direct"] || forbidsGit && (git["direct"] || state !== "absent") ||
+    kind === "existing-dome-vault" && dome["state"] !== "configured") {
+    throw new Error("setup source classification disagrees with its evidence");
+  }
+  if ((kind === "new-path" || kind === "empty-directory") && (tracked.length > 0 || untracked.length > 0) ||
+    kind === "existing-non-git-vault" && tracked.length > 0) {
+    throw new Error("setup source Markdown inventory disagrees with its classification");
+  }
+  if (targetPath !== source["targetPath"]) throw new Error("setup source target path is not canonical");
+  return value as SetupVaultSourceInspection;
+}
+
+function exactObject(value: unknown, label: string, expectedKeys: ReadonlyArray<string>): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error(`${label} must be an object`);
+  const actual = Object.keys(value).sort(compareStrings);
+  const expected = [...expectedKeys].sort(compareStrings);
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error(`${label} has unknown or missing fields`);
+  return value as Record<string, unknown>;
+}
+
+function normalizedAbsolutePath(value: unknown, label: string): string {
+  if (typeof value !== "string" || !value.startsWith("/") || value.includes("\0") || resolve(value) !== value) {
+    throw new Error(`${label} is not a normalized absolute path`);
+  }
+  return value;
+}
+
+function boundedText(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 8_192 &&
+    value.trim().length > 0 && !value.includes("\0");
+}
+
+function sortedUniqueStrings(value: unknown, label: string, maximum: number): ReadonlyArray<string> {
+  if (!Array.isArray(value) || value.length > maximum || value.some((entry) => !boundedText(entry)) ||
+    value.some((entry, index) => index > 0 && value[index - 1]! >= entry)) {
+    throw new Error(`${label} must be a bounded sorted unique string array`);
+  }
+  return value as ReadonlyArray<string>;
+}
+
+function validatedMarkdownPaths(value: unknown, label: string): ReadonlyArray<string> {
+  const paths = sortedUniqueStrings(value, label, SETUP_CONTRACT_CAPS.markdownPaths);
+  if (paths.some((path) => path.startsWith("/") || path.includes("\\") || path.includes("\0") ||
+    !path.endsWith(".md") || path.split("/").some((part) => part === "" || part === "." || part === ".."))) {
+    throw new Error(`${label} contains an invalid path`);
+  }
+  return paths;
 }
 
 async function inspectTarget(
@@ -674,7 +791,7 @@ function classifyTarget(
 }
 
 function markdownPaths(paths: ReadonlySet<string>): string[] {
-  return [...paths].filter((path) => path.toLowerCase().endsWith(".md")).sort(compareStrings);
+  return [...paths].filter((path) => path.endsWith(".md")).sort(compareStrings);
 }
 
 function trackingFor(path: string, git: GitEvidence): FileEvidence["tracking"] {

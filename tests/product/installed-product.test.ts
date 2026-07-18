@@ -6,6 +6,7 @@ import { join } from "node:path";
 
 import {
   verifyInstalledProduct,
+  verifyInstalledProductReadOnly,
   type InstalledProductVerifierDependencies,
 } from "../../src/product-package/installed-product";
 import {
@@ -18,6 +19,21 @@ import {
 import type { HomeArtifactManifest } from "../../src/product-host/home-artifact";
 
 describe("installed complete-product verifier", () => {
+  test("exposes a read-only closed-package proof without Home materialization", async () => {
+    const fixture = await installedFixture();
+    try {
+      const evidence = await verifyInstalledProductReadOnly({ packageRoot: fixture.root });
+      expect(evidence.filesVerified).toBe(fixture.manifest.files.length);
+      expect(evidence.declaredHome).toEqual({
+        artifactId: fixture.manifest.home.artifactId,
+        archiveSha256: fixture.manifest.home.sha256,
+        manifestSha256: fixture.manifest.home.manifestSha256,
+        buildCommit: fixture.manifest.home.buildCommit,
+      });
+      expect(fixture.materializations()).toBe(0);
+    } finally { await fixture.cleanup(); }
+  });
+
   test("closes the installed tree and Home provenance through one shipped seam", async () => {
     const fixture = await installedFixture();
     try {

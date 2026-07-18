@@ -22,6 +22,7 @@ import { runAudit } from "./commands/audit";
 import { runExplain } from "./commands/explain";
 import { runExportContext } from "./commands/export-context";
 import { runInit } from "./commands/init";
+import { runSetup } from "./commands/setup";
 import { runInstall, runRestart, runUninstall } from "./commands/install";
 import { runDoctor } from "./commands/doctor";
 import { runInspect } from "./commands/inspect";
@@ -207,6 +208,17 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           json: options.json,
         }),
       );
+    });
+
+  program
+    .command("setup")
+    .helpGroup(GROUP_START)
+    .description("Assess a vault and preview additive setup work.")
+    .argument("[path]", "Vault path (defaults to current directory).")
+    .requiredOption("--dry-run", "Preview setup without changing files, Git, Home, or services.")
+    .option("--json", "Emit the versioned setup plan as JSON.")
+    .action(async (path: string | undefined, options: SetupCliOptions) => {
+      setExitCode(await runSetup({ path, dryRun: options.dryRun, json: options.json }));
     });
 
   program
@@ -1329,6 +1341,11 @@ type HomeCliOptions = {
   readonly externalOrigin?: string;
   readonly staticDir?: string;
   readonly upgradeProbation?: boolean;
+};
+
+type SetupCliOptions = {
+  readonly dryRun?: boolean;
+  readonly json?: boolean;
 };
 
 type HomeLifecycleCliOptions = {

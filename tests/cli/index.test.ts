@@ -38,6 +38,7 @@ describe("runCli", () => {
     for (
       const command of [
         "init",
+        "setup",
         "home",
         "devices",
         "capture",
@@ -144,6 +145,19 @@ describe("runCli", () => {
     expect(out).toContain("Usage: dome init");
     expect(out).toContain("--with-model-provider <provider>");
     expect(out).toContain("--json");
+  });
+
+  test("setup is an explicit read-only preview surface", async () => {
+    expect(await runCli(["setup", "--help"])).toBe(0);
+    const help = captured.out.join("\n");
+    expect(help).toContain("Usage: dome setup");
+    expect(help).toContain("--dry-run");
+    expect(help).toContain("--json");
+
+    captured.out = [];
+    captured.err = [];
+    expect(await runCli(["setup", "/tmp/example"])).toBe(64);
+    expect(captured.err.join("\n")).toContain("required option '--dry-run' not specified");
   });
 
   test("init rejects unknown model-provider scaffolds", async () => {

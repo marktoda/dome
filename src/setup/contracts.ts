@@ -70,7 +70,7 @@ const relativePath = nonEmpty.refine(
   (value) => !value.startsWith("/") && !value.includes("\\") && !value.split("/").some((part) => part === "" || part === "." || part === ".."),
   "must be a normalized relative path",
 );
-const markdownPath = relativePath.refine((value) => value.toLowerCase().endsWith(".md"), "must identify Markdown");
+const markdownPath = relativePath.refine((value) => value.endsWith(".md"), "must identify lowercase-suffix Markdown");
 
 function sortedUnique<T extends z.ZodType<string>>(item: T) {
   return z.array(item).superRefine((values, context) => {
