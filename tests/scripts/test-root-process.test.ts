@@ -71,8 +71,32 @@ describe("root test real process supervision", () => {
       import { superviseRootTestChild } from "./scripts/test-root.ts";
       const child = Bun.spawn([process.execPath, "-e", ${JSON.stringify(`
         process.on("SIGTERM", () => {});
+        console.log("ready");
         setInterval(() => {}, 1_000);
-      `)}], { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
+      `)}], { stdin: "ignore", stdout: "pipe", stderr: "ignore" });
+      const reader = child.stdout.getReader();
+      let readinessTimer;
+      let ready;
+      try {
+        ready = await Promise.race([
+          reader.read(),
+          child.exited.then((exitCode) => {
+            throw new Error(\`inner child exited before readiness (\${exitCode})\`);
+          }),
+          new Promise((_, reject) => {
+            readinessTimer = setTimeout(
+              () => reject(new Error("inner child was not ready")),
+              1_000,
+            );
+          }),
+        ]);
+      } finally {
+        clearTimeout(readinessTimer);
+        reader.releaseLock();
+      }
+      if (!new TextDecoder().decode(ready.value).includes("ready")) {
+        throw new Error("inner child emitted malformed readiness");
+      }
       const result = await superviseRootTestChild(child, {
         timeoutMs: 20,
         shutdownGraceMs: 50,

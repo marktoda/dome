@@ -56,7 +56,7 @@ describe("P3 Product Host", () => {
     const pairingCode = await mintPairingCode(vault, "Product test phone", [
       "capture", "converse", "read", "resolve",
     ]);
-    const first = await startProductHost({
+    const first = await startTrackedProductHost({
       vaultPath: vault,
       port: 0,
       pollIntervalMs: 25,
@@ -64,14 +64,10 @@ describe("P3 Product Host", () => {
     });
     expect(first.ok).toBe(true);
     if (!first.ok) return;
-    hosts.push(first.value);
-
     const auth = await pair(first.value.url, pairingCode);
     const externalPairing = await mintPairingCode(vault, "External origin phone", ["read"]);
     await pair(first.value.url, externalPairing, "http://localhost:5173");
-    const ready = await fetch(`${first.value.url}/readyz`, { headers: { cookie: auth.cookie } });
-    expect(ready.status).toBe(200);
-    const readyDocument = await ready.json() as { readonly vault: { readonly id: string } };
+    const readyDocument = await readProductReadiness(first.value.url, auth);
     expect(readyDocument).toMatchObject({
       schema: "dome.product.readiness/v1",
       artifactId: "development",
@@ -84,48 +80,49 @@ describe("P3 Product Host", () => {
         capabilities: ["capture", "converse", "read", "resolve"],
       },
     });
-    expect((await fetch(`${first.value.url}/status`, { headers: { cookie: auth.cookie } })).status).toBe(410);
+    expect((await fetchTextWithin(
+      "retired status route",
+      5_000,
+      `${first.value.url}/status`,
+      { headers: { cookie: auth.cookie } },
+    )).response.status).toBe(410);
 
-    const second = await startProductHost({
+    const second = await startTrackedProductHost({
       vaultPath: vault,
       port: 0,
     });
     expect(second).toMatchObject({ ok: false, error: { kind: "busy" } });
 
-    await first.value.close();
-    hosts.splice(hosts.indexOf(first.value), 1);
-    const restarted = await startProductHost({
+    await closeTrackedProductFixture(first.value, hosts);
+    const restarted = await startTrackedProductHost({
       vaultPath: vault,
       port: 0,
       externalOrigin: "https://dome.tail.example",
     });
     expect(restarted.ok).toBe(true);
     if (restarted.ok) {
-      hosts.push(restarted.value);
-      expect((await restarted.value.readiness()).vault.id).toBe(readyDocument.vault.id);
-      expect((await fetch(`${restarted.value.url}/readyz`, {
-        headers: { cookie: auth.cookie },
-      })).status).toBe(200);
+      const restartedReadiness = await readProductReadiness(restarted.value.url, auth);
+      expect(restartedReadiness.vault.id).toBe(readyDocument.vault.id);
     }
   }, 30_000);
 
   test("readiness resolves current local model state on every read", async () => {
     const vault = await initializedVault();
+    const auth = await bootstrapBrowserAuth(vault, "Readiness browser", ["read"]);
     let modelState: "ready" | "unconfigured" | "unreachable" = "unconfigured";
     let reads = 0;
-    const started = await startProductHost({
+    const started = await startTrackedProductHost({
       vaultPath: vault,
       port: 0,
       resolveModelState: async () => { reads += 1; return modelState; },
     });
     expect(started.ok).toBe(true);
     if (!started.ok) return;
-    hosts.push(started.value);
-    expect((await started.value.readiness()).model.state).toBe("unconfigured");
+    expect((await readProductReadiness(started.value.url, auth)).model.state).toBe("unconfigured");
     modelState = "ready";
-    expect((await started.value.readiness()).model.state).toBe("ready");
+    expect((await readProductReadiness(started.value.url, auth)).model.state).toBe("ready");
     modelState = "unreachable";
-    expect((await started.value.readiness()).model.state).toBe("unreachable");
+    expect((await readProductReadiness(started.value.url, auth)).model.state).toBe("unreachable");
     expect(reads).toBe(3);
   }, 30_000);
 
@@ -138,7 +135,7 @@ describe("P3 Product Host", () => {
       "converse", "read",
     ]);
     let askCalls = 0;
-    const started = await startProductHost({
+    const started = await startTrackedProductHost({
       vaultPath: vault,
       port: 0,
       // This proof needs the Product Host scheduler and initial engine tick,
@@ -156,7 +153,6 @@ describe("P3 Product Host", () => {
     });
     expect(started.ok).toBe(true);
     if (!started.ok) return;
-    hosts.push(started.value);
     try {
       const created = await fetchTextWithin(
         "session creation",
@@ -198,9 +194,9 @@ describe("P3 Product Host", () => {
   test("an exact launchd child starts while its supervisor holds resuming Tx2", async () => {
     const vault = await initializedVault();
     const f = await installedResumeFixture(vault);
-    let childStart: Promise<Awaited<ReturnType<typeof startProductHost>>> | null = null;
-    let reportChild!: (result: Awaited<ReturnType<typeof startProductHost>>) => void;
-    const childObserved = new Promise<Awaited<ReturnType<typeof startProductHost>>>((resolve) => {
+    let childStart: Promise<Awaited<ReturnType<typeof startTrackedProductHost>>> | null = null;
+    let reportChild!: (result: Awaited<ReturnType<typeof startTrackedProductHost>>) => void;
+    const childObserved = new Promise<Awaited<ReturnType<typeof startTrackedProductHost>>>((resolve) => {
       reportChild = resolve;
     });
     let childReported = false;
@@ -219,7 +215,7 @@ describe("P3 Product Host", () => {
       drainTimeoutMs: 50,
       readinessTimeoutMs: 5_000,
       readiness: async () => {
-        childStart ??= startProductHost({
+        childStart ??= startTrackedProductHost({
           vaultPath: vault,
           port: 0,
           launch: {
@@ -230,7 +226,6 @@ describe("P3 Product Host", () => {
         const result = await childStart;
         if (!childReported) {
           childReported = true;
-          if (result.ok) hosts.push(result.value);
           reportChild(result);
         }
         return result.ok;
@@ -254,7 +249,7 @@ describe("P3 Product Host", () => {
     const before = await fingerprintFiles(protectedPaths);
     const transactionId = "product-host-startup-closed";
     expect((await engageOperationalWriterBarrier({ vaultPath: vault, transactionId })).ok).toBeTrue();
-    const denied = await startProductHost({ vaultPath: vault, port: 0 });
+    const denied = await startTrackedProductHost({ vaultPath: vault, port: 0 });
     expect(denied).toMatchObject({
       ok: false,
       error: { kind: "startup-failed" },
@@ -288,7 +283,7 @@ describe("P3 Product Host", () => {
       readiness: async () => false,
     });
     expect(suspended.kind).toBe("failed");
-    const denied = await startProductHost({
+    const denied = await startTrackedProductHost({
       vaultPath: vault,
       port: 0,
       launch: {
@@ -321,7 +316,7 @@ describe("P3 Product Host", () => {
         finished: blocked.then(() => ({ citations: [], changes: [], stopReason: "final" as const })),
       }),
     });
-    const started = await startProductHost({
+    const started = await startTrackedProductHost({
       vaultPath: vault,
       port: 0,
       pollIntervalMs: 25,
@@ -329,7 +324,6 @@ describe("P3 Product Host", () => {
     });
     expect(started.ok).toBe(true);
     if (!started.ok) return;
-    hosts.push(started.value);
     let turn: ControlledResponse | null = null;
     try {
       const created = await fetchTextWithin(
@@ -464,10 +458,10 @@ describe("P3 Product Host", () => {
     });
     seeded.close();
 
-    const started = await startProductHost({ vaultPath: vault, port: 0 });
+    const started = await startTrackedProductHost({ vaultPath: vault, port: 0 });
     expect(started.ok).toBe(true);
     if (!started.ok) return;
-    await started.value.close();
+    await closeTrackedProductFixture(started.value, hosts);
 
     const reopened = await openRequestReceiptsDb({ path });
     expect(reopened.ok).toBe(true);
@@ -488,7 +482,7 @@ describe("P3 Product Host", () => {
   test("refuses startup when durable request receipts cannot open", async () => {
     const vault = await initializedVault();
     await writeFile(join(vault, ".dome", "state", "request-receipts.db"), "not sqlite", "utf8");
-    const started = await startProductHost({ vaultPath: vault, port: 0 });
+    const started = await startTrackedProductHost({ vaultPath: vault, port: 0 });
     expect(started).toMatchObject({
       ok: false,
       error: { kind: "startup-failed" },
@@ -629,24 +623,54 @@ async function fingerprintFiles(paths: ReadonlyArray<string>): Promise<ReadonlyA
 function launchctlOutcome(exitCode: number) { return { exitCode, stdout: "", stderr: "" }; }
 
 type BrowserAuth = { readonly cookie: string; readonly csrf: string };
+type ProductReadiness = Awaited<ReturnType<ProductHost["readiness"]>>;
 
 async function pair(
   baseUrl: string,
   code: string,
   origin: string = baseUrl,
 ): Promise<BrowserAuth> {
-  const response = await fetch(`${baseUrl}/pair`, {
-    method: "POST",
-    headers: { "content-type": "application/json", origin },
-    body: JSON.stringify({ code }),
-  });
-  expect(response.status).toBe(200);
-  const cookies = response.headers.getSetCookie().map((value) => value.split(";", 1)[0] ?? "");
+  const response = await fetchTextWithin(
+    "browser pairing",
+    5_000,
+    `${baseUrl}/pair`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json", origin },
+      body: JSON.stringify({ code }),
+    },
+  );
+  expect(response.response.status).toBe(200);
+  const cookies = response.response.headers.getSetCookie()
+    .map((value) => value.split(";", 1)[0] ?? "");
   const csrfCookie = cookies.find((value) => value.startsWith("dome_csrf="));
   return {
     cookie: cookies.join("; "),
     csrf: decodeURIComponent(csrfCookie?.slice("dome_csrf=".length) ?? ""),
   };
+}
+
+async function readProductReadiness(
+  baseUrl: string,
+  auth: BrowserAuth,
+): Promise<ProductReadiness> {
+  const ready = await fetchTextWithin(
+    "Product Host readiness",
+    5_000,
+    `${baseUrl}/readyz`,
+    { headers: { cookie: auth.cookie } },
+  );
+  expect(ready.response.status).toBe(200);
+  return JSON.parse(ready.text) as ProductReadiness;
+}
+
+async function startTrackedProductHost(
+  options: Parameters<typeof startProductHost>[0],
+  deps?: Parameters<typeof startProductHost>[1],
+): ReturnType<typeof startProductHost> {
+  const result = await startProductHost(options, deps);
+  if (result.ok) hosts.push(result.value);
+  return result;
 }
 
 function mutationHeaders(baseUrl: string, auth: BrowserAuth): Record<string, string> {
