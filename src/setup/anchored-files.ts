@@ -146,7 +146,10 @@ export class AnchoredVaultFiles {
     }
   }
 
-  async readRegular(relativePath: string): Promise<AnchoredRegularFile | null> {
+  async readRegular(
+    relativePath: string,
+    options: Readonly<{ maxBytes?: number | undefined }> = {},
+  ): Promise<AnchoredRegularFile | null> {
     return this.withParent(relativePath, async (parent, name, chain) => {
       const fd = this.native.openFile(parent.fd, name, constants.O_RDONLY | constants.O_NOFOLLOW, 0);
       if (fd === null) return null;
@@ -155,7 +158,14 @@ export class AnchoredVaultFiles {
         try {
           const before = await handle.stat({ bigint: true });
           if (!before.isFile()) throw new Error(`setup requires a direct regular file at ${relativePath}`);
-          const body = await handle.readFile("utf8");
+          const maxBytes = options.maxBytes;
+          if (maxBytes !== undefined &&
+            (!Number.isSafeInteger(maxBytes) || maxBytes < 0 || before.size > BigInt(maxBytes))) {
+            throw new Error(`setup direct regular file exceeds the admitted size at ${relativePath}`);
+          }
+          const body = maxBytes === undefined
+            ? await handle.readFile("utf8")
+            : await readUtf8Bounded(handle, maxBytes, relativePath);
           const after = await handle.stat({ bigint: true });
           if (!sameProof(before, after)) throw new Error(`setup detected a concurrent read of ${relativePath}`);
           await this.revalidate(chain);
@@ -196,14 +206,22 @@ export class AnchoredVaultFiles {
   }
 
   async linkExclusive(source: string, destination: string): Promise<void> {
-    await this.withSameParent(source, destination, async (parent, sourceName, destinationName, chain) => {
-      if (this.beforeFinalMutation !== undefined) {
-        await this.beforeFinalMutation("link-exclusive", destination);
-      }
-      if (!this.native.link(parent.fd, sourceName, parent.fd, destinationName)) {
-        throw new Error(`setup refused concurrent publication of ${destination}`);
-      }
-      await this.revalidate(chain);
+    await this.withParent(source, async (sourceParent, sourceName, sourceChain) => {
+      await this.withParent(destination, async (destinationParent, destinationName, destinationChain) => {
+        if (this.beforeFinalMutation !== undefined) {
+          await this.beforeFinalMutation("link-exclusive", destination);
+        }
+        if (!this.native.link(
+          sourceParent.fd,
+          sourceName,
+          destinationParent.fd,
+          destinationName,
+        )) {
+          throw new Error(`setup refused concurrent publication of ${destination}`);
+        }
+        await this.revalidate(sourceChain);
+        await this.revalidate(destinationChain);
+      });
     });
   }
 
@@ -225,25 +243,6 @@ export class AnchoredVaultFiles {
       this.native.sync(parent.fd);
       await this.revalidate(chain);
     });
-  }
-
-  private async withSameParent<T>(
-    left: string,
-    right: string,
-    callback: (
-      parent: HeldDirectory,
-      leftName: string,
-      rightName: string,
-      chain: ReadonlyArray<HeldDirectory>,
-    ) => Promise<T>,
-  ): Promise<T> {
-    const leftNames = relativeSegments(left);
-    const rightNames = relativeSegments(right);
-    const leftParent = leftNames.slice(0, -1).join("/");
-    const rightParent = rightNames.slice(0, -1).join("/");
-    if (leftParent !== rightParent) throw new Error("setup publication must stay in one directory");
-    return this.withParent(left, (parent, leftName, chain) =>
-      callback(parent, leftName, rightNames.at(-1)!, chain));
   }
 
   private async withParent<T>(
@@ -278,6 +277,24 @@ export class AnchoredVaultFiles {
       } finally { this.native.close(reopened); }
     }
   }
+}
+
+async function readUtf8Bounded(
+  handle: Awaited<ReturnType<typeof open>>,
+  maxBytes: number,
+  relativePath: string,
+): Promise<string> {
+  const bytes = Buffer.alloc(maxBytes + 1);
+  let offset = 0;
+  while (offset < bytes.byteLength) {
+    const { bytesRead } = await handle.read(bytes, offset, bytes.byteLength - offset, offset);
+    if (bytesRead === 0) break;
+    offset += bytesRead;
+  }
+  if (offset > maxBytes) {
+    throw new Error(`setup direct regular file exceeds the admitted size at ${relativePath}`);
+  }
+  return bytes.subarray(0, offset).toString("utf8");
 }
 
 function nativeOps() {

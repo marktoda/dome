@@ -92,6 +92,53 @@ async function planFor(target: string) {
   return plan;
 }
 
+async function publicationWitness(
+  target: string,
+  digest: string,
+  path: string,
+  phase: "prepared" | "published" = "prepared",
+): Promise<{ witnessPath: string; candidatePath: string }> {
+  const directory = join(target, ".dome/state/setup", digest);
+  for (const name of await readdir(directory)) {
+    if (!name.endsWith(`.${phase}.json`)) continue;
+    const witnessPath = join(directory, name);
+    const parsed = JSON.parse(await readFile(witnessPath, "utf8")) as {
+      path?: unknown;
+      candidatePath?: unknown;
+    };
+    if (parsed.path === path && typeof parsed.candidatePath === "string") {
+      return { witnessPath, candidatePath: join(target, parsed.candidatePath) };
+    }
+  }
+  throw new Error(`missing ${phase} publication witness for ${path}`);
+}
+
+async function crashPublicationProcess(
+  target: string,
+  plan: Awaited<ReturnType<typeof planFor>>,
+  transition: "candidate-durable" | "destination-linked-durable",
+): Promise<number> {
+  const carrier = await realpath(await mkdtemp(join(tmpdir(), "dome-setup-crash-payload-")));
+  roots.push(carrier);
+  const payloadPath = join(carrier, "payload.json");
+  await writeFile(payloadPath, JSON.stringify({
+    plan,
+    consent: createSetupConsent(plan),
+    scaffold,
+    compilerInput: await evidence(target),
+  }));
+  const child = Bun.spawn([
+    process.execPath,
+    join(import.meta.dir, "fixtures/setup-publication-crash.ts"),
+    payloadPath,
+    transition,
+  ], { stdout: "pipe", stderr: "pipe" });
+  const exitCode = await child.exited;
+  const stderr = await new Response(child.stderr).text();
+  if (exitCode !== 86) throw new Error(`crash fixture exited ${exitCode}: ${stderr}`);
+  return exitCode;
+}
+
 describe("applySetupPlan", () => {
   for (const kind of ["new", "non-git", "git"] as const) {
     test(`adapts a ${kind} vault with exact commits and an idempotent retry`, async () => {
@@ -293,6 +340,22 @@ describe("applySetupPlan", () => {
     expect(await readFile(configPath, "utf8")).toContain("raced owner config");
   });
 
+  test("refuses a candidate inode swap before publishing its witness", async () => {
+    const target = await fixture("git");
+    const plan = await planFor(target);
+    const consent = createSetupConsent(plan);
+    const result = await applier(async (boundary) => {
+      if (boundary !== "agents-orientation-prepared") return;
+      const { candidatePath } = await publicationWitness(target, consent.planSha256, "AGENTS.md");
+      await unlink(candidatePath);
+      await writeFile(candidatePath, scaffold.agentsOrientation);
+    })(plan, consent);
+    expect(result.status).toBe("blocked");
+    expect(await currentSha(target)).toBe(plan.assessment.revision.head);
+    expect(await readFile(join(target, "AGENTS.md"), "utf8")).toBe(scaffold.agentsOrientation);
+    await expect(publicationWitness(target, consent.planSha256, "AGENTS.md", "published")).rejects.toThrow();
+  });
+
   test("rejects a forged marker commit without scanning older history", async () => {
     const target = await fixture("git");
     const plan = await planFor(target);
@@ -314,8 +377,9 @@ describe("applySetupPlan", () => {
     const plan = await planFor(target);
     const consent = createSetupConsent(plan);
     await expect(applier(failSetupAfter("agents-orientation-prepared"))(plan, consent)).rejects.toThrow();
-    const temp = join(target, `.AGENTS.md.dome-setup-${consent.planSha256.slice(0, 16)}.tmp`);
-    await writeFile(temp, "partial");
+    const { candidatePath } = await publicationWitness(target, consent.planSha256, "AGENTS.md");
+    await unlink(candidatePath);
+    await writeFile(candidatePath, "partial");
     const result = await applier()(plan, consent);
     expect(result.status).toBe("blocked");
     expect(await Bun.file(join(target, "AGENTS.md")).exists()).toBe(false);
@@ -367,13 +431,82 @@ describe("applySetupPlan", () => {
     const plan = await planFor(target);
     const consent = createSetupConsent(plan);
     await expect(applier(failSetupAfter("content-scope-prepared"))(plan, consent)).rejects.toThrow();
-    const temp = join(target, `.dome/.content-scope.yaml.dome-setup-${consent.planSha256.slice(0, 16)}.tmp`);
-    const exactOverlay = await readFile(temp, "utf8");
-    await unlink(temp);
+    const { candidatePath } = await publicationWitness(
+      target,
+      consent.planSha256,
+      ".dome/content-scope.yaml",
+    );
+    const exactOverlay = await readFile(candidatePath, "utf8");
+    await unlink(candidatePath);
     await writeFile(join(target, ".dome/content-scope.yaml"), exactOverlay);
     const result = await applier()(plan, consent);
     expect(result.status).toBe("blocked");
     expect(await currentSha(target)).toBe(plan.assessment.revision.head);
+  });
+
+  test("blocks oversized publication witnesses before parsing them", async () => {
+    const target = await fixture("git");
+    const plan = await planFor(target);
+    const consent = createSetupConsent(plan);
+    await expect(applier(failSetupAfter("agents-orientation-prepared"))(plan, consent)).rejects.toThrow();
+    const { witnessPath } = await publicationWitness(target, consent.planSha256, "AGENTS.md");
+    await writeFile(witnessPath, "x".repeat(4_097));
+    const result = await applier()(plan, consent);
+    expect(result.status).toBe("blocked");
+    expect(await Bun.file(join(target, "AGENTS.md")).exists()).toBe(false);
+  });
+
+  test("blocks oversized owned candidates without loading their bytes", async () => {
+    const target = await fixture("git");
+    const plan = await planFor(target);
+    const consent = createSetupConsent(plan);
+    await expect(applier(failSetupAfter("agents-orientation-prepared"))(plan, consent)).rejects.toThrow();
+    const { candidatePath } = await publicationWitness(target, consent.planSha256, "AGENTS.md");
+    await unlink(candidatePath);
+    await writeFile(candidatePath, "x".repeat(64 * 1024));
+    const result = await applier()(plan, consent);
+    expect(result.status).toBe("blocked");
+    expect(await Bun.file(join(target, "AGENTS.md")).exists()).toBe(false);
+  });
+
+  test("rejects an exact-byte final replacement after published witness", async () => {
+    const target = await fixture("git");
+    const plan = await planFor(target);
+    const consent = createSetupConsent(plan);
+    await expect(applier(failSetupAfter("agents-orientation-published"))(plan, consent)).rejects.toThrow();
+    await unlink(join(target, "AGENTS.md"));
+    await writeFile(join(target, "AGENTS.md"), scaffold.agentsOrientation);
+    const result = await applier()(plan, consent);
+    expect(result.status).toBe("blocked");
+    expect(await currentSha(target)).toBe(plan.assessment.revision.head);
+  });
+
+  test("retries after a real process exit between durable candidate and prepared witness", async () => {
+    const target = await fixture("git");
+    const plan = await planFor(target);
+    const consent = createSetupConsent(plan);
+    expect(await crashPublicationProcess(target, plan, "candidate-durable")).toBe(86);
+    const candidateDirectory = join(target, ".dome/state/setup", consent.planSha256, "candidates");
+    const orphaned = await readdir(candidateDirectory);
+    expect(orphaned).toHaveLength(1);
+    await writeFile(join(candidateDirectory, "foreign.keep"), "owner debris\n");
+    const result = await applier()(plan, consent);
+    expect(result.status, JSON.stringify(result)).toBe("completed");
+    expect((await readdir(candidateDirectory)).sort()).toEqual([...orphaned, "foreign.keep"].sort());
+    expect(await readFile(join(candidateDirectory, "foreign.keep"), "utf8")).toBe("owner debris\n");
+  });
+
+  test("retries after a real process exit between durable link and published witness", async () => {
+    const target = await fixture("git");
+    const plan = await planFor(target);
+    const consent = createSetupConsent(plan);
+    expect(await crashPublicationProcess(target, plan, "destination-linked-durable")).toBe(86);
+    expect(await readFile(join(target, "AGENTS.md"), "utf8")).toBe(scaffold.agentsOrientation);
+    const prepared = await publicationWitness(target, consent.planSha256, "AGENTS.md");
+    const result = await applier()(plan, consent);
+    expect(result.status, JSON.stringify(result)).toBe("completed");
+    expect(await Bun.file(prepared.candidatePath).exists()).toBe(false);
+    await publicationWitness(target, consent.planSha256, "AGENTS.md", "published");
   });
 
   test("replays destination durability after a post-link pre-fsync failure", async () => {

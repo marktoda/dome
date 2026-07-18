@@ -323,10 +323,13 @@ Module. It opens every vault and destination-parent component with
 `O_NOFOLLOW`, holds and revalidates their directory identities, and performs
 `openat` / `linkat` / `unlinkat` relative to the held parent. Replacing an
 ancestor name with a symlink therefore cannot redirect a create outside the
-admitted vault. Publication uses a
-same-directory exclusive temp, exact mode, file sync, and destination-parent
-sync; a retry after a returned link but before parent sync repeats that parent
-sync. Existing config bytes, inode, and mode are never mutated. Prepared,
+admitted vault. Publication uses a random exclusive candidate under the exact
+plan-owned `.dome/state/setup/<plan-sha256>/candidates/` directory, exact mode,
+candidate-file and candidate-parent sync, an exclusive hard link to the final
+name, and destination-parent sync. The prepared witness is written only after
+the candidate is durable; the published witness is written only after the
+destination link is durable. Existing config bytes, inode, and mode are never
+mutated. Prepared,
 published, ref-advanced, and committed transitions are
 fault-injection boundaries.
 
@@ -338,15 +341,22 @@ Unsupported hosts return a blocked result without beginning discovery.
 Recovery has no mutable workflow database, but it does retain minimal
 plan-owned publication witnesses under
 `.dome/state/setup/<plan-sha256>/`. A prepared witness binds exact bytes, mode,
-path, operation, and plan before publication; a distinct published witness is
-durable only after the kernel publication succeeds. Exact final bytes without
-that published witness are owner state, not a recoverable Dome prefix. A retry
-also requires exact temporary bytes and mode, exact Dome commit identity and
+path, operation, plan, random candidate path, and candidate device/inode before
+publication; a distinct published witness retains that identity after the
+kernel publication succeeds. Recovery requires the final file to retain the
+witnessed device/inode even after the candidate link is cleaned up. Exact final
+bytes without that identity proof are owner state, not a recoverable Dome
+prefix. A retry also requires exact witnessed candidate bytes and mode, exact
+Dome commit identity and
 trailers, exact parent chain, and exact tree delta. It looks only at current
 `HEAD`; a matching substring or an older history entry is not ownership
 evidence. Owner drift, unexpected paths, forged commits, changed modes, and
-partial or foreign temp/witness bytes block instead of being folded into a Dome
-commit.
+partial or foreign witnessed-candidate/witness bytes block instead of being
+folded into a Dome commit. A process exit after a random candidate becomes
+durable but before its prepared witness can leave inert, gitignored residue.
+Retry creates a fresh random candidate and never attributes, rewrites, or
+deletes that unwitnessed residue; operators may inspect and remove old files in
+the plan candidate directory after setup completes.
 
 Commit publication binds symbolic `HEAD`, the approved branch name, and the
 old branch OID in one Git-lock transition. It also owns Git's real

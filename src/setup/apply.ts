@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { lstat, mkdir, readFile, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
@@ -60,7 +60,13 @@ type SetupApplyDeps = Readonly<{
   discover?: ((targetPath: string, deps: SetupDiscoveryDeps) => Promise<SetupCompilerInput>) | undefined;
   afterBoundary?: ((boundary: SetupDurableBoundary) => Promise<void>) | undefined;
   preflightPlatform?: (() => void | Promise<void>) | undefined;
+  afterPublicationTransition?: ((
+    transition: SetupPublicationTransition,
+    relativePath: string,
+  ) => Promise<void>) | undefined;
 }>;
+
+export type SetupPublicationTransition = "candidate-durable" | "destination-linked-durable";
 
 type ApplyContext = Readonly<{
   plan: SetupPlan;
@@ -72,9 +78,14 @@ type ApplyContext = Readonly<{
   actualWrites: Set<string>;
   filesystem: { current: AnchoredVaultFiles | null };
   afterBoundary: (boundary: SetupDurableBoundary) => Promise<void>;
+  afterPublicationTransition: (
+    transition: SetupPublicationTransition,
+    relativePath: string,
+  ) => Promise<void>;
 }>;
 
 type RecoveryPrefix = "none" | "directory" | "git" | "baseline" | "scaffold-dirty" | "complete" | "conflict";
+const PUBLICATION_WITNESS_MAX_BYTES = 4_096;
 
 /** Production entry point. Tests use createSetupPlanApplier to inject discovery and faults. */
 export async function applySetupPlan(plan: SetupPlan, consent: SetupConsent): Promise<SetupApplyResult> {
@@ -136,6 +147,7 @@ export function createSetupPlanApplier(deps: SetupApplyDeps = {}) {
       actualWrites: new Set(),
       filesystem: { current: null },
       afterBoundary: deps.afterBoundary ?? (async () => {}),
+      afterPublicationTransition: deps.afterPublicationTransition ?? (async () => {}),
     };
     try {
       const commits = await execute(context, prefix);
@@ -319,7 +331,16 @@ async function inspectRecoveryPrefix(
   const existingGitWrites = (existingGitPlan || commits.baseline !== null || commits.configuration !== null)
     ? await inspectPlannedWritePrefix(plan, scaffold, digest)
     : null;
-  if (existingGitPlan && commits.configuration === null && existingGitWrites?.observed !== true) return "none";
+  if (existingGitPlan && commits.configuration === null && existingGitWrites?.observed !== true) {
+    const reservedState = await safeLstat(join(
+      target,
+      ".dome/state/setup",
+      digest,
+      "candidates",
+    ));
+    if (reservedState === null) return "none";
+    if (!reservedState.isDirectory() || reservedState.isSymbolicLink()) return "conflict";
+  }
   if (commits.configuration !== null &&
     (existingGitWrites?.valid !== true || existingGitWrites.observed !== true)) return "conflict";
   if (!sameExternalEvidence(plan, freshPlan) || !await sameOwnerEvidence(plan, freshPlan, scaffold)) return "conflict";
@@ -335,7 +356,7 @@ async function inspectRecoveryPrefix(
   if (existingGitPlan) {
     if (currentHead !== expectedOriginalHead || currentBranchName !== plan.assessment.git.branch) return "conflict";
     const writes = existingGitWrites!;
-    if (!writes.valid || !writes.observed || !await onlyPlannedDirtyPaths(plan)) return writes.observed ? "conflict" : "none";
+    if (!writes.valid || !await onlyPlannedDirtyPaths(plan)) return "conflict";
     return "scaffold-dirty";
   }
   if (commits.baseline !== null) {
@@ -401,11 +422,12 @@ async function publishScaffoldIfAbsent(
   body: string,
   preparedBoundary: "agents-orientation-prepared" | "gitignore-prepared" | "content-scope-prepared",
 ): Promise<boolean> {
-  const existing = await anchored(context).readRegular(path);
+  const existing = await anchored(context).readRegular(path, bodyReadLimit(body));
   if (existing !== null) {
     if (wasPresentAtAssessment(context.plan, path)) return false;
+    await promoteLinkedPreparedPublication(context, path, body, 0o644, existing);
     if (existing.body !== body || existing.mode !== 0o644 ||
-      !await hasPublishedWitness(context, path, body, 0o644)) {
+      !await hasPublishedWitness(context, path, body, 0o644, existing)) {
       throw new Error(`setup refused to replace unexpected ${path}`);
     }
     await replayPublicationDurability(context, path, body, 0o644);
@@ -423,51 +445,81 @@ async function publishAtomic(
   preparedBoundary: "agents-orientation-prepared" | "gitignore-prepared" | "content-scope-prepared",
 ): Promise<void> {
   const files = anchored(context);
-  const temp = transactionTempPath(relativePath, context.digest);
-  const priorTemp = await files.readRegular(temp);
-  if (priorTemp === null) {
+  let identity = await readWitnessIdentity(context, relativePath, body, mode, "prepared");
+  if (identity === null) {
+    await ensureCandidateDirectory(context);
+    const temp = publicationCandidatePath(context.digest, relativePath);
     await files.createExclusive(temp, body, mode);
-  } else if (priorTemp.body !== body || priorTemp.mode !== mode) {
-    throw new Error(`setup temporary publication collision for ${relativePath}`);
+    await files.syncParent(temp);
+    await context.afterPublicationTransition("candidate-durable", temp);
+    const candidate = await requireRegular(context, temp);
+    identity = publicationIdentity(temp, candidate);
+    await ensureWitness(context, relativePath, body, mode, "prepared", identity);
+  } else {
+    await requireOwnedCandidate(context, relativePath, body, mode, identity);
   }
-  await ensureWitness(context, relativePath, body, mode, "prepared");
   await context.afterBoundary(preparedBoundary);
 
   // The destination was admitted absent before preparation. Even an
   // identical concurrent publication is not attributable to this call and
   // must not be folded into Dome's configuration commit. Crash recovery
   // admits an already-published exact destination before reaching here.
-  await files.linkExclusive(temp, relativePath);
-  await ensureWitness(context, relativePath, body, mode, "published");
-  await context.afterBoundary(publishedBoundary(preparedBoundary));
+  await files.linkExclusive(identity.candidatePath, relativePath);
   await files.syncParent(relativePath);
-  await files.unlink(temp);
-  await files.syncParent(temp);
+  await context.afterPublicationTransition("destination-linked-durable", relativePath);
+  const published = await requireRegular(context, relativePath, body);
+  if (!samePublicationIdentity(published, identity) || published.body !== body || published.mode !== mode) {
+    throw new Error(`setup refused changed publication candidate for ${relativePath}`);
+  }
+  await ensureWitness(context, relativePath, body, mode, "published", identity);
+  await context.afterBoundary(publishedBoundary(preparedBoundary));
+  await removeOwnedCandidate(context, relativePath, body, mode, identity);
 }
 
-async function removeExactTempIfPresent(
+async function removeOwnedCandidate(
   context: ApplyContext,
   path: string,
   body: string,
-  mode?: number,
+  mode: number,
+  identity: PublicationIdentity,
 ): Promise<void> {
-  const temp = transactionTempPath(path, context.digest);
-  const opened = await anchored(context).readRegular(temp);
+  const opened = await anchored(context).readRegular(identity.candidatePath, bodyReadLimit(body));
   if (opened === null) return;
-  if (opened.body !== body || (mode !== undefined && opened.mode !== mode)) {
+  if (!samePublicationIdentity(opened, identity) || opened.body !== body || opened.mode !== mode) {
     throw new Error(`setup temporary publication collision for ${path}`);
   }
-  await anchored(context).unlink(temp);
-  await anchored(context).syncParent(temp);
+  await anchored(context).unlink(identity.candidatePath);
+  await anchored(context).syncParent(identity.candidatePath);
 }
 
-function transactionTempPath(path: string, digest: string): string {
-  const name = path.slice(path.lastIndexOf("/") + 1);
-  const parent = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
-  return `${parent === "" ? "" : `${parent}/`}.${name}.dome-setup-${digest.slice(0, 16)}.tmp`;
+function publicationCandidatePath(digest: string, path: string): string {
+  return `.dome/state/setup/${digest}/candidates/${sha256(path)}-${randomBytes(12).toString("hex")}.tmp`;
 }
 
 type PublicationPhase = "prepared" | "published";
+type PublicationIdentity = Readonly<{
+  candidatePath: string;
+  dev: string;
+  ino: string;
+}>;
+
+function publicationIdentity(
+  candidatePath: string,
+  file: AnchoredRegularFile,
+): PublicationIdentity {
+  return Object.freeze({
+    candidatePath,
+    dev: file.dev.toString(),
+    ino: file.ino.toString(),
+  });
+}
+
+function samePublicationIdentity(
+  file: AnchoredRegularFile,
+  identity: PublicationIdentity,
+): boolean {
+  return file.dev.toString() === identity.dev && file.ino.toString() === identity.ino;
+}
 
 function anchored(context: ApplyContext): AnchoredVaultFiles {
   const files = context.filesystem.current;
@@ -475,8 +527,15 @@ function anchored(context: ApplyContext): AnchoredVaultFiles {
   return files;
 }
 
-async function requireRegular(context: ApplyContext, path: string): Promise<AnchoredRegularFile> {
-  const opened = await anchored(context).readRegular(path);
+async function requireRegular(
+  context: ApplyContext,
+  path: string,
+  expectedBody?: string,
+): Promise<AnchoredRegularFile> {
+  const opened = await anchored(context).readRegular(
+    path,
+    expectedBody === undefined ? {} : bodyReadLimit(expectedBody),
+  );
   if (opened === null) throw new Error(`setup requires a direct regular file at ${path}`);
   return opened;
 }
@@ -503,8 +562,9 @@ function witnessBody(
   body: string,
   mode: number,
   phase: PublicationPhase,
+  identity: PublicationIdentity,
 ): string {
-  return publicationWitnessBody(context.digest, path, body, mode, phase);
+  return publicationWitnessBody(context.digest, path, body, mode, phase, identity);
 }
 
 function publicationWitnessBody(
@@ -513,6 +573,7 @@ function publicationWitnessBody(
   body: string,
   mode: number,
   phase: PublicationPhase,
+  identity: PublicationIdentity,
 ): string {
   return `${JSON.stringify({
     schema: "dome.setup.publication-witness/v1",
@@ -522,6 +583,9 @@ function publicationWitnessBody(
     contentSha256: sha256(body),
     mode: mode.toString(8).padStart(4, "0"),
     phase,
+    candidatePath: identity.candidatePath,
+    candidateDev: identity.dev,
+    candidateIno: identity.ino,
   })}\n`;
 }
 
@@ -531,6 +595,7 @@ async function ensureWitness(
   body: string,
   mode: number,
   phase: PublicationPhase,
+  identity: PublicationIdentity,
 ): Promise<void> {
   const files = anchored(context);
   await files.ensureDirectory(".dome", 0o755);
@@ -538,8 +603,8 @@ async function ensureWitness(
   await files.ensureDirectory(".dome/state/setup", 0o700, true);
   await files.ensureDirectory(`.dome/state/setup/${context.digest}`, 0o700, true);
   const relative = witnessPath(context, path, phase);
-  const expected = witnessBody(context, path, body, mode, phase);
-  const existing = await files.readRegular(relative);
+  const expected = witnessBody(context, path, body, mode, phase, identity);
+  const existing = await files.readRegular(relative, { maxBytes: PUBLICATION_WITNESS_MAX_BYTES });
   if (existing === null) await files.createExclusive(relative, expected, 0o600);
   else if (existing.body !== expected || existing.mode !== 0o600) {
     throw new Error(`setup publication witness collision for ${path}`);
@@ -552,10 +617,102 @@ async function hasPublishedWitness(
   path: string,
   body: string,
   mode: number,
+  final: AnchoredRegularFile,
 ): Promise<boolean> {
-  const expected = witnessBody(context, path, body, mode, "published");
-  const witness = await anchored(context).readRegular(witnessPath(context, path, "published"));
-  return witness?.body === expected && witness.mode === 0o600;
+  const identity = await readWitnessIdentity(context, path, body, mode, "published");
+  return identity !== null && samePublicationIdentity(final, identity);
+}
+
+async function ensureCandidateDirectory(context: ApplyContext): Promise<void> {
+  const files = anchored(context);
+  await files.ensureDirectory(".dome", 0o755);
+  await files.ensureDirectory(".dome/state", 0o700, true);
+  await files.ensureDirectory(".dome/state/setup", 0o700, true);
+  await files.ensureDirectory(`.dome/state/setup/${context.digest}`, 0o700, true);
+  await files.ensureDirectory(`.dome/state/setup/${context.digest}/candidates`, 0o700, true);
+}
+
+async function readWitnessIdentity(
+  context: ApplyContext,
+  path: string,
+  body: string,
+  mode: number,
+  phase: PublicationPhase,
+): Promise<PublicationIdentity | null> {
+  const witness = await readOptionalRegular(
+    anchored(context),
+    witnessPath(context, path, phase),
+    { maxBytes: PUBLICATION_WITNESS_MAX_BYTES },
+  );
+  if (witness === null) return null;
+  if (witness.mode !== 0o600) throw new Error(`setup publication witness collision for ${path}`);
+  const identity = decodePublicationWitness(
+    witness.body,
+    context.digest,
+    path,
+    body,
+    mode,
+    phase,
+  );
+  if (identity === null) throw new Error(`setup publication witness collision for ${path}`);
+  return identity;
+}
+
+function decodePublicationWitness(
+  witnessBodyValue: string,
+  digest: string,
+  path: string,
+  body: string,
+  mode: number,
+  phase: PublicationPhase,
+): PublicationIdentity | null {
+  let parsed: unknown;
+  try { parsed = JSON.parse(witnessBodyValue); }
+  catch { return null; }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return null;
+  }
+  const row = parsed as Record<string, unknown>;
+  const identity: PublicationIdentity = Object.freeze({
+    candidatePath: typeof row.candidatePath === "string" ? row.candidatePath : "",
+    dev: typeof row.candidateDev === "string" ? row.candidateDev : "",
+    ino: typeof row.candidateIno === "string" ? row.candidateIno : "",
+  });
+  const prefix = `.dome/state/setup/${digest}/candidates/${sha256(path)}-`;
+  if (!identity.candidatePath.startsWith(prefix) || !/^[0-9a-f]{24}\.tmp$/.test(identity.candidatePath.slice(prefix.length)) ||
+    witnessBodyValue !== publicationWitnessBody(digest, path, body, mode, phase, identity)) {
+    return null;
+  }
+  return identity;
+}
+
+async function requireOwnedCandidate(
+  context: ApplyContext,
+  path: string,
+  body: string,
+  mode: number,
+  identity: PublicationIdentity,
+): Promise<AnchoredRegularFile> {
+  const candidate = await requireRegular(context, identity.candidatePath, body);
+  if (!samePublicationIdentity(candidate, identity) || candidate.body !== body || candidate.mode !== mode) {
+    throw new Error(`setup temporary publication collision for ${path}`);
+  }
+  return candidate;
+}
+
+async function promoteLinkedPreparedPublication(
+  context: ApplyContext,
+  path: string,
+  body: string,
+  mode: number,
+  final: AnchoredRegularFile,
+): Promise<void> {
+  if (await hasPublishedWitness(context, path, body, mode, final)) return;
+  const identity = await readWitnessIdentity(context, path, body, mode, "prepared");
+  if (identity === null) return;
+  const candidate = await requireOwnedCandidate(context, path, body, mode, identity);
+  if (!samePublicationIdentity(final, identity) || !samePublicationIdentity(candidate, identity)) return;
+  await ensureWitness(context, path, body, mode, "published", identity);
 }
 
 async function replayPublicationDurability(
@@ -564,14 +721,18 @@ async function replayPublicationDurability(
   body: string,
   mode: number,
 ): Promise<void> {
-  const final = await requireRegular(context, path);
+  const final = await requireRegular(context, path, body);
   if (final.body !== body || final.mode !== mode) {
     throw new Error(`setup publication changed before durability replay: ${path}`);
   }
   // A retry after link but before the directory fsync must perform the
   // fsync again. Exact final bytes alone are never treated as evidence.
   await anchored(context).syncParent(path);
-  await removeExactTempIfPresent(context, path, body, mode);
+  const identity = await readWitnessIdentity(context, path, body, mode, "published");
+  if (identity === null || !samePublicationIdentity(final, identity)) {
+    throw new Error(`setup publication identity changed before durability replay: ${path}`);
+  }
+  await removeOwnedCandidate(context, path, body, mode, identity);
 }
 
 async function verifyPlannedWritePrefix(context: ApplyContext): Promise<void> {
@@ -612,61 +773,94 @@ async function inspectPlannedWritePrefixAnchored(
     row.kind === "write-scaffold-file")) {
     if (wasPresentAtAssessment(plan, write.path)) continue;
     const expected = write.id === "agents-orientation" ? scaffold.agentsOrientation : scaffold.gitignore;
-    const actual = await readOptionalRegular(files, write.path);
+    const actual = await readOptionalRegular(files, write.path, bodyReadLimit(expected));
     if (actual !== null) {
       observed = true;
       if (actual.body !== expected || actual.mode !== 0o644 ||
-        !await recoveryWitnessMatches(files, digest, write.path, expected, 0o644, "published")) {
+        !await recoveryPublishedOrLinked(files, digest, write.path, expected, 0o644, actual)) {
         return { valid: false, observed };
       }
     }
-    const temp = await readOptionalRegular(files, transactionTempPath(write.path, digest));
-    if (temp !== null) {
+    if (actual === null && await recoveryPreparedWitnessMatches(
+      files, digest, write.path, expected, 0o644,
+    )) {
       observed = true;
-      if (temp.body !== expected || temp.mode !== 0o644 ||
-        !await recoveryWitnessMatches(files, digest, write.path, expected, 0o644, "prepared")) {
-        return { valid: false, observed };
-      }
     }
   }
   const config = action(plan, "set-content-scope");
   if (config !== undefined) {
     const expected = contentScopeWriteBody(config, scaffold);
-    const actual = await readOptionalRegular(files, config.write.path);
-    const temp = await readOptionalRegular(files, transactionTempPath(config.write.path, digest));
+    const actual = await readOptionalRegular(files, config.write.path, bodyReadLimit(expected));
     if (actual === null) {
-      if (temp !== null) {
+      if (await recoveryPreparedWitnessMatches(
+        files, digest, config.write.path, expected, 0o644,
+      )) {
         observed = true;
-        if (temp.body !== expected || temp.mode !== 0o644 ||
-          !await recoveryWitnessMatches(files, digest, config.write.path, expected, 0o644, "prepared")) {
-          return { valid: false, observed };
-        }
       }
       return { valid: true, observed };
     }
     observed = true;
     if (actual.body !== expected || actual.mode !== 0o644 ||
-      !await recoveryWitnessMatches(files, digest, config.write.path, expected, 0o644, "published")) {
+      !await recoveryPublishedOrLinked(
+        files, digest, config.write.path, expected, 0o644, actual,
+      )) {
       return { valid: false, observed };
     }
-    if (temp !== null && (temp.body !== expected || temp.mode !== 0o644)) return { valid: false, observed };
   }
   return { valid: true, observed };
 }
 
-async function recoveryWitnessMatches(
+async function recoveryPreparedWitnessMatches(
   files: AnchoredVaultFiles,
   digest: string,
   path: string,
   body: string,
   mode: number,
-  phase: PublicationPhase,
 ): Promise<boolean> {
-  const relative = `.dome/state/setup/${digest}/${sha256(path)}.${phase}.json`;
+  const relative = `.dome/state/setup/${digest}/${sha256(path)}.prepared.json`;
   try {
-    const witness = await files.readRegular(relative);
-    return witness?.mode === 0o600 &&
-      witness.body === publicationWitnessBody(digest, path, body, mode, phase);
+    const witness = await files.readRegular(relative, { maxBytes: PUBLICATION_WITNESS_MAX_BYTES });
+    if (witness === null || witness.mode !== 0o600) return false;
+    const identity = decodePublicationWitness(witness.body, digest, path, body, mode, "prepared");
+    if (identity === null) return false;
+    const candidate = await files.readRegular(identity.candidatePath, bodyReadLimit(body));
+    return candidate !== null && candidate.body === body && candidate.mode === mode &&
+      samePublicationIdentity(candidate, identity);
+  } catch {
+    return false;
+  }
+}
+
+async function recoveryPublishedOrLinked(
+  files: AnchoredVaultFiles,
+  digest: string,
+  path: string,
+  body: string,
+  mode: number,
+  final: AnchoredRegularFile,
+): Promise<boolean> {
+  const publishedRelative = `.dome/state/setup/${digest}/${sha256(path)}.published.json`;
+  try {
+    const published = await files.readRegular(
+      publishedRelative,
+      { maxBytes: PUBLICATION_WITNESS_MAX_BYTES },
+    );
+    if (published !== null && published.mode === 0o600) {
+      const identity = decodePublicationWitness(published.body, digest, path, body, mode, "published");
+      if (identity !== null && samePublicationIdentity(final, identity)) return true;
+    }
+  } catch {
+    return false;
+  }
+  const relative = `.dome/state/setup/${digest}/${sha256(path)}.prepared.json`;
+  try {
+    const witness = await files.readRegular(relative, { maxBytes: PUBLICATION_WITNESS_MAX_BYTES });
+    if (witness === null || witness.mode !== 0o600) return false;
+    const identity = decodePublicationWitness(witness.body, digest, path, body, mode, "prepared");
+    if (identity === null || !samePublicationIdentity(final, identity)) return false;
+    const candidate = await files.readRegular(identity.candidatePath, bodyReadLimit(body));
+    return candidate !== null && candidate.body === body && candidate.mode === mode &&
+      samePublicationIdentity(candidate, identity);
   } catch {
     return false;
   }
@@ -675,12 +869,17 @@ async function recoveryWitnessMatches(
 async function readOptionalRegular(
   files: AnchoredVaultFiles,
   path: string,
+  options: Readonly<{ maxBytes?: number | undefined }> = {},
 ): Promise<AnchoredRegularFile | null> {
-  try { return await files.readRegular(path); }
+  try { return await files.readRegular(path, options); }
   catch (error) {
     if (error instanceof Error && error.message.includes("parent directory is not direct")) return null;
     throw error;
   }
+}
+
+function bodyReadLimit(body: string): Readonly<{ maxBytes: number }> {
+  return { maxBytes: Buffer.byteLength(body, "utf8") };
 }
 
 function sameExternalEvidence(original: SetupPlan, fresh: SetupPlan): boolean {
@@ -706,17 +905,16 @@ async function sameOwnerEvidence(
 ): Promise<boolean> {
   const setupPaths = new Set(original.actions.flatMap((row) => {
     if (row.kind === "ensure-scaffold-directory") return [row.path];
-    if (row.kind === "write-scaffold-file") return [row.path, transactionTempPath(row.path, setupPlanSha256(original))];
-    if (row.kind === "set-content-scope") return [
-      row.write.path,
-      transactionTempPath(row.write.path, setupPlanSha256(original)),
-    ];
+    if (row.kind === "write-scaffold-file") return [row.path];
+    if (row.kind === "set-content-scope") return [row.write.path];
     return [];
   }));
   const digest = setupPlanSha256(original);
+  const candidateDirectory = `.dome/state/setup/${digest}/candidates`;
   setupPaths.add(".dome/state");
   setupPaths.add(".dome/state/setup");
   setupPaths.add(`.dome/state/setup/${digest}`);
+  setupPaths.add(candidateDirectory);
   for (const path of original.actions.flatMap((row) => {
     if (row.kind === "write-scaffold-file") return [row.path];
     if (row.kind === "set-content-scope") return [row.write.path];
@@ -734,7 +932,8 @@ async function sameOwnerEvidence(
     if (row.kind === "directory" && [...setupPaths].some((owned) => owned.startsWith(`${path}/`))) continue;
     return false;
   }
-  return [...freshByPath.keys()].every((path) => originalByPath.has(path) || setupPaths.has(path));
+  return [...freshByPath.keys()].every((path) =>
+    originalByPath.has(path) || setupPaths.has(path) || path.startsWith(`${candidateDirectory}/`));
 }
 
 async function onlyPlannedDirtyPaths(plan: SetupPlan): Promise<boolean> {
@@ -744,10 +943,9 @@ async function onlyPlannedDirtyPaths(plan: SetupPlan): Promise<boolean> {
 }
 
 function allowedTransactionDirtyPaths(plan: SetupPlan): Set<string> {
-  const digest = setupPlanSha256(plan);
   return new Set([...plan.actions.flatMap((row) => {
-    if (row.kind === "write-scaffold-file") return [row.path, transactionTempPath(row.path, digest)];
-    if (row.kind === "set-content-scope") return [row.write.path, transactionTempPath(row.write.path, digest)];
+    if (row.kind === "write-scaffold-file") return [row.path];
+    if (row.kind === "set-content-scope") return [row.write.path];
     return [];
   }), ...plan.assessment.repository.candidates
     .filter((row) => row.disposition === "preserve-untracked")
@@ -767,7 +965,7 @@ async function exactActualWrites(context: ApplyContext): Promise<Array<{
   const files: Array<{ filepath: string; content: string; mode: "100644" | "100755" }> = [];
   for (const filepath of expectedPaths) {
     const intended = bodies.get(filepath)!;
-    const opened = await requireRegular(context, filepath);
+    const opened = await requireRegular(context, filepath, intended);
     if (opened.body !== intended) throw new Error(`Dome write changed before commit: ${filepath}`);
     files.push({ filepath, content: intended, mode: (opened.mode & 0o111) === 0 ? "100644" : "100755" });
   }
