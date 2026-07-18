@@ -1,11 +1,6 @@
 # Bun configuration for the Dome SDK repo.
 
 [test]
-# Dome's real-boundary tests own fresh setup, filesystem, SQLite, and native
-# Git work. Keep that work inside a repository-wide per-test budget while the
-# root runner retains its independent 300s per-file process-group watchdog.
-# Tests with intentionally longer product deadlines override this explicitly.
-timeout = 10000
 # Hermetic-by-default test environment: no test may reach the real
 # Anthropic API, regardless of the repo-root .env. See tests/preload.ts
 # and the tests/integration/hermetic-test-env.test.ts fence.

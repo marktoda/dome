@@ -50,7 +50,7 @@ By substrate type:
 
 ## How to run
 
-- `bun run test` — complete root SDK and product-runtime suite. The typed runner discovers every `tests/**/*.test.ts` file, groups the sorted inventory into ordered scripts, harness, product, and runtime areas, and executes each file in its own fresh Bun process group. A five-minute per-file deadline reports the exact stuck file and performs bounded whole-group TERM-to-KILL cleanup; owner INT is forwarded to the group before that fallback. Descendants are owned while they remain in that group; a fixture that deliberately starts a new detached session owns and must clean the escaped process.
+- `bun run test` — complete root SDK and product-runtime suite. The typed runner discovers every `tests/**/*.test.ts` file, groups the sorted inventory into ordered scripts, harness, product, and runtime areas, and executes each file in its own fresh Bun process group with an explicit 10-second per-test deadline. A five-minute per-file deadline reports the exact stuck file and performs bounded whole-group TERM-to-KILL cleanup; owner INT is forwarded to the group before that fallback. Descendants are owned while they remain in that group; a fixture that deliberately starts a new detached session owns and must clean the escaped process. Use `bun test --timeout 10000 <file>` for a focused real-boundary test that matches the root gate; explicit longer per-test deadlines remain authoritative.
 - `bun run check:pwa` — PWA tests, typecheck, and production build. Run this and `bun run test` for the full repository test surface.
 - `bun test tests/invariants` — invariant lockstep only.
 - `bun test tests/engine/apply-effect.test.ts tests/engine/capability-broker.test.ts` — broker enforcement coverage.

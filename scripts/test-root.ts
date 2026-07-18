@@ -23,6 +23,10 @@ export type RootTestAreaPlan = Readonly<{
 
 export type RootTestSignal = "SIGINT" | "SIGTERM";
 
+// Bun 1.2.13 does not apply bunfig.toml's test timeout. Keep the supported
+// repository default on the child command line, where focused CLI overrides
+// and explicit longer per-test deadlines retain Bun's normal precedence.
+export const ROOT_TEST_CASE_TIMEOUT_MS = 10_000;
 export const ROOT_TEST_FILE_TIMEOUT_MS = 5 * 60_000;
 export const ROOT_TEST_SHUTDOWN_GRACE_MS = 5_000;
 export const ROOT_TEST_TIMEOUT_EXIT_CODE = 124;
@@ -136,8 +140,14 @@ export function rootTestTimeoutDiagnostic(input: Readonly<{
 export function rootTestCommand(
   path: string,
   bunExecutable: string = process.execPath,
-): [string, "test", string] {
-  return [bunExecutable, "test", canonicalTestPath(path)];
+): [string, "test", "--timeout", string, string] {
+  return [
+    bunExecutable,
+    "test",
+    "--timeout",
+    String(ROOT_TEST_CASE_TIMEOUT_MS),
+    canonicalTestPath(path),
+  ];
 }
 
 /**

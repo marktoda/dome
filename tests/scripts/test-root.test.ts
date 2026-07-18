@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import {
   createRootTestPlan,
   discoverRootTestFiles,
+  ROOT_TEST_CASE_TIMEOUT_MS,
   ROOT_TEST_FILE_TIMEOUT_MS,
   ROOT_TEST_AREA_ORDER,
   ROOT_TEST_TIMEOUT_EXIT_CODE,
@@ -45,7 +46,13 @@ describe("root test runner", () => {
   test("builds one exact Bun command for one canonical test file", () => {
     const command = rootTestCommand("./tests/product/example.test.ts", "/opt/bun");
 
-    expect(command).toEqual(["/opt/bun", "test", "tests/product/example.test.ts"]);
+    expect(command).toEqual([
+      "/opt/bun",
+      "test",
+      "--timeout",
+      "10000",
+      "tests/product/example.test.ts",
+    ]);
   });
 
   test("rejects duplicate and non-root test paths instead of silently changing coverage", () => {
@@ -197,6 +204,7 @@ describe("root test runner", () => {
   });
 
   test("renders the exact timed-out file and bounded cleanup result", () => {
+    expect(ROOT_TEST_CASE_TIMEOUT_MS).toBe(10_000);
     expect(ROOT_TEST_FILE_TIMEOUT_MS).toBe(300_000);
     expect(ROOT_TEST_TIMEOUT_EXIT_CODE).toBe(124);
     expect(rootTestTimeoutDiagnostic({

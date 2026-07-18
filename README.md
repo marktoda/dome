@@ -162,19 +162,22 @@ bun run test
 sorted inventory into scripts, harness, product, and remaining runtime areas,
 and runs each file in its own fresh Bun process. This preserves complete root
 coverage without carrying one test file's scheduler, SQLite, server, or
-lifecycle state into another file. A file that does not exit within five
-minutes is reported by exact path; the runner requests TERM, waits a bounded
-grace period, then escalates to KILL for the test's private POSIX process group,
-so a descendant that remains in that group cannot outlive its named file and
-consume the rest of the CI job. A test that deliberately starts a new detached
-session owns and must clean that escaped process. An owner interrupt is
-forwarded to the owned group as INT before the same bounded TERM-to-KILL
-fallback. Run
+lifecycle state into another file. Each child receives a 10-second per-test
+deadline on Bun's command line; intentional longer tests retain their explicit
+per-test deadlines. A file that does not exit within five minutes is reported
+by exact path; the runner requests TERM, waits a bounded grace period, then
+escalates to KILL for the test's private POSIX process group, so a descendant
+that remains in that group cannot outlive its named file and consume the rest
+of the CI job. A test that deliberately starts a new detached session owns and
+must clean that escaped process. An owner interrupt is forwarded to the owned
+group as INT before the same bounded TERM-to-KILL fallback. Run
 `bun run check:pwa` separately for the PWA package.
 
 Useful narrower gates include `bun test tests/invariants` and
-`bin/dome <command>` for a local CLI invocation. The package currently
-exports `@marktoda/dome`, `@marktoda/dome/cli`, and `@marktoda/dome/mcp`.
+`bin/dome <command>` for a local CLI invocation. Focused real-boundary tests
+should use `bun test --timeout 10000 <file>` to match the root gate. The package
+currently exports `@marktoda/dome`, `@marktoda/dome/cli`, and
+`@marktoda/dome/mcp`.
 The package remains unpublished while the no-checkout product payload and
 release evidence are completed.
 
