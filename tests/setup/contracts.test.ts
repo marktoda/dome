@@ -4,6 +4,7 @@ import {
   VAULT_ASSESSMENT_SCHEMA,
   VAULT_KINDS,
   type AdaptationAction,
+  type SetupPlan,
   type VaultAssessment,
   validateSetupPlan,
   validateVaultAssessment,
@@ -38,14 +39,18 @@ function fixture(kind: VaultAssessment["target"]["kind"]): VaultAssessment {
         sha256: FILE_HASH, mode: "0644", ifMissing: true,
       },
       {
-        kind: "write-scaffold-file", id: "vault-config", path: ".dome/config.yaml", bytes: 128,
-        sha256: FILE_HASH, mode: "0644", ifMissing: true,
+        kind: "set-content-scope",
+        id: "vault-config",
+        scope: { include: ["**/*.md"], exclude: [".dome/**"] },
+        write: {
+          path: ".dome/config.yaml", operation: "create-file", bytes: 128,
+          sha256: FILE_HASH, mode: "0644", ifMissing: true,
+        },
       },
-      { kind: "set-content-scope", id: "content-scope", scope: { include: ["**/*.md"], exclude: [".dome/**"] } },
     );
-    if (!gitPresent) actions.push({
+    if (kind === "existing-non-git-vault") actions.push({
       kind: "create-baseline-commit", id: "baseline-commit", message: "Initialize Dome vault",
-      paths: [".dome/config.yaml", ".gitignore", "AGENTS.md"],
+      paths: ["Journal.md"],
     });
     actions.push(
       { kind: "install-home", id: "home-artifact", artifactId: ARTIFACT },
@@ -183,8 +188,69 @@ describe("VaultAssessment contract", () => {
     })).toThrow("must match the packaged product version and source commit");
     expect(() => validateVaultAssessment({
       ...existing,
-      actions: existing.actions.map((action) => action.id === "vault-config" ? { ...action, path: "config.yaml" } : action),
-    })).toThrow("vault-config has a non-canonical path");
+      actions: existing.actions.map((action) => action.kind === "set-content-scope" ? {
+        ...action,
+        write: { ...action.write, path: "config.yaml" },
+      } : action),
+    })).toThrow();
+  });
+
+  test("binds directory and repository actions to compatible assessed targets", () => {
+    const fresh = fixture("new-path");
+    expect(() => validateVaultAssessment({
+      ...fresh,
+      actions: fresh.actions.map((action) => action.kind === "create-vault-directory" ?
+        { ...action, path: "/Users/example/Other" } : action),
+    })).toThrow("must equal the assessed vault path");
+    const nonGit = fixture("existing-non-git-vault");
+    expect(() => validateVaultAssessment({
+      ...nonGit,
+      actions: nonGit.actions.map((action) => action.kind === "initialize-git" ?
+        { ...action, repositoryPath: "/Users/example/Other" } : action),
+    })).toThrow("must equal the assessed vault path");
+    const existing = fixture("existing-git-vault");
+    expect(() => validateVaultAssessment({
+      ...existing,
+      actions: [{
+        kind: "initialize-git", id: "git-repository", repositoryPath: existing.target.path, ifMissing: true,
+      }, ...existing.actions],
+    })).toThrow("must initialize Git exactly for a compatible non-Git target");
+  });
+
+  test("distinguishes missing from observed-but-unsupported prerequisites", () => {
+    const unsafe = fixture("unsafe-or-ambiguous-state");
+    const unsupported = validateVaultAssessment({
+      ...unsafe,
+      prerequisites: [
+        { id: "bun", status: "unsupported", version: "1.1.0" },
+        { id: "git", status: "available", version: "2.50.1" },
+      ],
+      blockers: [{
+        code: "unsupported-prerequisite",
+        message: "The observed Bun version is unsupported.",
+        nextAction: "Install a supported Bun version, then reassess.",
+      }],
+    });
+    expect(unsupported.prerequisites[0]?.version).toBe("1.1.0");
+    expect(() => validateVaultAssessment({
+      ...unsupported,
+      prerequisites: [
+        { id: "bun", status: "unsupported", version: null },
+        { id: "git", status: "available", version: "2.50.1" },
+      ],
+    })).toThrow("must be null exactly when missing and observed otherwise");
+    expect(() => validateVaultAssessment({
+      ...unsafe,
+      prerequisites: [
+        { id: "bun", status: "missing", version: "1.2.13" },
+        { id: "git", status: "available", version: "2.50.1" },
+      ],
+      blockers: [{
+        code: "missing-prerequisite",
+        message: "Bun is missing.",
+        nextAction: "Install Bun, then reassess.",
+      }],
+    })).toThrow("must be null exactly when missing and observed otherwise");
   });
 });
 
@@ -209,12 +275,16 @@ describe("SetupPlan contract", () => {
           sha256: FILE_HASH, mode: "0644", ifMissing: true,
         },
       ],
-      commits: [{ kind: "configuration", message: "Configure Dome", paths: [".dome/config.yaml"] }],
+      commits: [{
+        kind: "configuration",
+        message: "Configure Dome",
+        paths: [".dome/config.yaml", ".gitignore", "AGENTS.md"],
+      }],
       serviceActions: [
-        { kind: "install-home", description: "Install the packaged Home artifact." },
-        { kind: "select-home-vault", description: "Select the assessed vault." },
-        { kind: "install-home-service", description: "Install the Home service." },
-        { kind: "start-home", description: "Start Dome Home." },
+        { kind: "install-home", artifactId: ARTIFACT },
+        { kind: "select-home-vault", vaultPath: "/Users/example/Vault" },
+        { kind: "install-home-service", serviceLabel: "com.dome.home.example-vault", ifMissing: true },
+        { kind: "start-home", serviceLabel: "com.dome.home.example-vault" },
       ],
       optionalSteps: [
         { kind: "configure-integration", description: "Connect an optional source." },
@@ -224,6 +294,29 @@ describe("SetupPlan contract", () => {
       warnings: [{ code: "scope-review", message: "Review the proposed Markdown scope." }],
     });
     expect(validateSetupPlan(JSON.parse(JSON.stringify(plan)))).toEqual(plan);
+    expect(() => validateSetupPlan({
+      ...plan,
+      writes: plan.writes.map((write) => write.id === "vault-config" ? { ...write, sha256: "8".repeat(64) } : write),
+    })).toThrow("must bind content-scope to its exact vault-config write");
+    expect(() => validateSetupPlan({
+      ...plan,
+      commits: [{
+        ...plan.commits[0]!,
+        paths: [...plan.commits[0]!.paths, "notes/private.md"],
+      }],
+    })).toThrow("configuration commit paths must equal applicable plan writes");
+    expect(() => validateSetupPlan({ ...plan, commits: [] })).toThrow(
+      "configuration commit must exist exactly when plan writes apply",
+    );
+    expect(() => validateSetupPlan({
+      ...plan,
+      writes: plan.writes.map((write) => write.id === "gitignore" ? { ...write, path: "AGENTS.md" } : write),
+    })).toThrow("must not contain duplicate target paths");
+    expect(() => validateSetupPlan({
+      ...plan,
+      serviceActions: plan.serviceActions.map((action) => action.kind === "start-home" ?
+        { ...action, serviceLabel: "com.dome.home.other-vault" } : action),
+    })).toThrow("must exactly project Home assessment actions");
   });
 
   test("a blocked plan cannot carry applicable effects", () => {
@@ -267,8 +360,8 @@ describe("SetupPlan contract", () => {
       writes: [],
       commits: [],
       serviceActions: [
-        { kind: "select-home-vault", description: "Select the assessed vault." },
-        { kind: "install-home", description: "Install the packaged Home artifact." },
+        { kind: "select-home-vault", vaultPath: "/Users/example/Vault" },
+        { kind: "install-home", artifactId: ARTIFACT },
       ],
       optionalSteps: [],
       recoveryCommands: [],
@@ -276,31 +369,57 @@ describe("SetupPlan contract", () => {
     })).toThrow("canonical operation order");
   });
 
-  test("plan writes cannot drift from assessed scaffold bytes", () => {
+  test("Home install and start actions share one assessed service label", () => {
     const assessment = fixture("existing-git-vault");
-    const writes = assessment.actions.flatMap((action) => action.kind === "write-scaffold-file" ? [{
-      id: action.id,
-      path: action.path,
-      operation: "create-file" as const,
-      bytes: action.id === "vault-config" ? action.bytes + 1 : action.bytes,
-      sha256: action.sha256,
-      mode: action.mode,
-      ifMissing: action.ifMissing,
-    }] : []);
+    expect(() => validateVaultAssessment({
+      ...assessment,
+      actions: assessment.actions.map((action) => action.kind === "start-home" ?
+        { ...action, serviceLabel: "com.dome.home.other-vault" } : action),
+    })).toThrow("must use one service label");
+  });
+
+  test("plan writes cannot drift from assessed content-scope bytes", () => {
+    const assessment = fixture("existing-git-vault");
+    const writes: Array<SetupPlan["writes"][number]> = [];
+    for (const action of assessment.actions) {
+      if (action.kind === "write-scaffold-file") writes.push({
+        id: action.id,
+        path: action.path,
+        operation: "create-file",
+        bytes: action.bytes,
+        sha256: action.sha256,
+        mode: action.mode,
+        ifMissing: action.ifMissing,
+      });
+      if (action.kind === "set-content-scope") writes.push({
+        id: action.id,
+        ...action.write,
+        bytes: action.write.bytes + 1,
+      });
+    }
+    const serviceActions: Array<SetupPlan["serviceActions"][number]> = [];
+    for (const action of assessment.actions) {
+      if (action.kind === "install-home") serviceActions.push({ kind: action.kind, artifactId: action.artifactId });
+      if (action.kind === "select-home-vault") serviceActions.push({ kind: action.kind, vaultPath: action.vaultPath });
+      if (action.kind === "install-home-service") serviceActions.push({
+        kind: action.kind, serviceLabel: action.serviceLabel, ifMissing: action.ifMissing,
+      });
+      if (action.kind === "start-home") serviceActions.push({ kind: action.kind, serviceLabel: action.serviceLabel });
+    }
     expect(() => validateSetupPlan({
       schema: SETUP_PLAN_SCHEMA,
       status: "ready",
       assessment,
       writes,
-      commits: [],
-      serviceActions: assessment.actions.flatMap((action) =>
-        action.kind === "install-home" || action.kind === "select-home-vault" ||
-          action.kind === "install-home-service" || action.kind === "start-home" ?
-          [{ kind: action.kind, description: action.kind }] : []
-      ),
+      commits: [{
+        kind: "configuration",
+        message: "Configure Dome",
+        paths: [...new Set(writes.map((write) => write.path))].sort(),
+      }],
+      serviceActions,
       optionalSteps: [],
       recoveryCommands: [],
       warnings: [],
-    })).toThrow("must exactly project scaffold-file assessment actions");
+    })).toThrow("must bind content-scope to its exact vault-config write");
   });
 });

@@ -51,6 +51,11 @@ active Git operation, an active Home upgrade, conflicting Home ownership,
 symlink ambiguity, an unsupported host, and missing prerequisites are modeled
 as blockers instead of implicit choices.
 
+Prerequisite evidence distinguishes absence from incompatibility: a missing
+tool has no observed version and a `missing-prerequisite` blocker; an observed
+but unsupported tool retains its version and has an
+`unsupported-prerequisite` blocker.
+
 `AdaptationAction` is intentionally additive and closed:
 
 - `create-vault-directory`
@@ -116,11 +121,16 @@ unknown discriminants, unsafe paths, inconsistent Git/HEAD evidence, and
 non-canonical arrays fail validation.
 
 The validator cross-checks exact scaffold writes, the baseline commit, and
-Home service actions against their assessment actions. Content-scope output is
-the one deliberate compiler-owned consolidation: M4 decides whether an
-accepted scope is already included in a new `vault-config` write or requires a
-separate managed-config merge. The compiled plan still carries the exact final
-write inventory; renderers never infer it.
+Home service actions against their assessment actions. Content scope owns the
+one exact `vault-config` write: its path, create-or-merge operation, bytes,
+hash, mode, and missing-file behavior are bound in the assessment and must be
+identical in the plan. A plan cannot express a second config write or two
+writes to the same path. Whenever writes apply, one configuration commit must
+name exactly those paths—never an unrelated owner file.
+
+Home plan evidence projects the assessed artifact ID, selected vault path,
+service label, and missing-service guard rather than replacing them with prose.
+Install and start must use the same service label.
 
 The plan is a preview and a revision binding, not an execution log. Apply may
 consume a successfully revalidated plan in a later slice, but it must not
