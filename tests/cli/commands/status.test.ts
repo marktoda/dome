@@ -12,7 +12,7 @@ import {
   type LaunchctlRunner,
   type ServiceDeps,
 } from "../../../src/surface/service-probe";
-import { runStatus, type RunStatusOptions } from "../../../src/cli/commands/status";
+import { runStatus } from "../../../src/cli/commands/status";
 import { runSync } from "../../../src/cli/commands/sync";
 
 import {
@@ -141,6 +141,9 @@ describe("runStatus", () => {
 
     const out = captured.out.join("\n");
     expect(out).toContain("dome status"); // headline
+    expect(out).toContain("VAULT");
+    expect(out).toContain("ENGINE");
+    expect(out).not.toMatch(/[-─]{10,}/); // no full-width rule
     expect(out).toContain("attention"); // headline status
     expect(out).toContain("(uninitialized)"); // adopted ref
     expect(out).toContain("sync"); expect(out).toContain("! needed"); // sync row
@@ -153,7 +156,8 @@ describe("runStatus", () => {
     expect(out).not.toContain("\n  LOOPS\n"); // no loop detail section
     expect(out).toContain("diagnostics"); expect(out).toContain("√ 0"); // diagnostic row
     expect(out).toContain("questions"); expect(out).toContain("√ 0"); // questions row
-    expect(out).toContain("outbox"); expect(out).toContain("0 pending · 0 failed"); // outbox row
+    expect(out).toMatch(/runs.*0 pending ·.*0 failed/s);
+    expect(out).toMatch(/outbox.*0 pending ·.*0 failed/s);
     expect(out).toContain("quarantine"); // quarantine row
     expect(out).toContain("serve"); expect(out).toContain("o off"); // serve row (off glyph)
   });
@@ -1946,37 +1950,10 @@ describe("runStatus", () => {
     expect(out).not.toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
   });
 
-  test("runs and outbox rows dim zero terms in text mode", async () => {
-    const f = await makeFixture();
-    fixtures.push(f);
-
-    // Fresh vault: pending_runs=0, failed_runs=0, outbox_pending=0, outbox_failed=0.
-    // In no-color test mode dimZeros returns the plain joined string.
-    // verbose: true to see the ENGINE section with runs/outbox rows.
-    expect(await runStatus({ vault: f.vaultPath, verbose: true })).toBe(0);
-
-    const out = captured.out.join("\n");
-    // runs row: "0 pending · 0 failed" (both terms dimmed when zero)
-    expect(out).toContain("runs");
-    expect(out).toMatch(/runs.*0 pending ·.*0 failed/s);
-    // outbox row: "0 pending · 0 failed"
-    expect(out).toContain("outbox");
-    expect(out).toMatch(/outbox.*0 pending ·.*0 failed/s);
-  });
-
   // The "status after a submit reports the advanced adopted ref" test
   // was retired in Phase 11a along with `runSubmit`; the corresponding
   // assertion against an advanced adopted ref will land in the Phase 11b
   // daemon integration tests, which drive adoption via the watcher.
-
-  test("runStatus accepts a verbose option without error", async () => {
-    const f = await makeFixture();
-    fixtures.push(f);
-
-    const opts: RunStatusOptions = { vault: f.vaultPath, verbose: true };
-    const code = await runStatus(opts);
-    expect(code).toBe(0);
-  });
 
   // ----- Task 7: signal-only default + verbose breakdown ----------------------
 
@@ -2073,22 +2050,6 @@ describe("runStatus", () => {
     expect(out).not.toContain("ENGINE");
     expect(out).not.toMatch(/[-─]{10,}/);
   }, { timeout: 15_000 });
-
-  test("verbose status restores the full vault + engine breakdown", async () => {
-    const f = await makeFixture();
-    fixtures.push(f);
-
-    const code = await runStatus({ vault: f.vaultPath, verbose: true });
-    expect(code).toBe(0);
-
-    const verboseOut = captured.out.join("\n");
-    // Full sections present in verbose
-    expect(verboseOut).toContain("VAULT");
-    expect(verboseOut).toContain("ENGINE");
-    expect(verboseOut).toContain("loops");
-    // No full-width rule even in verbose
-    expect(verboseOut).not.toMatch(/[-─]{10,}/);
-  });
 
   // ----- Task 7: attention code exhaustiveness / text-mode rendering ----------
 
