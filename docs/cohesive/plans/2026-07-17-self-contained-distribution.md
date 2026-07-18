@@ -324,11 +324,16 @@ current Bun global installer is not admitted because it rewrites that target
 to `0777` on macOS and Linux, and the installed-product verifier correctly
 rejects group/world-writable shipped files. The producer clone, package output,
 tarball, install cache, and producer HOME/XDG state are then removed and proved
-absent before declared imports, the direct global CLI, the closed installed PWA
-inventory, and strict Home materialization run under a neutral working
-directory and dead-proxy execution environment. The real rehearsal is wired
-once as a pinned Apple-Silicon CI job; the progress ledger remains in progress
-until that hosted evidence succeeds on the implementation commit.
+absent before any import proof. A fresh offline consumer workspace contains one
+exact, prefix-contained `node_modules/@marktoda/dome` link to the verified
+install, so Bun resolves the declared package specifiers through its ordinary
+ESM rules rather than the unsupported global `NODE_PATH` convention. The
+consumer link does not modify the install. The direct global CLI, closed
+installed PWA inventory, and strict Home materialization remain separate proofs
+under a neutral working directory and dead-proxy execution environment. The
+real rehearsal is wired once as a pinned Apple-Silicon CI job; the progress
+ledger remains in progress until that hosted evidence succeeds on the
+implementation commit.
 
 Installed-tree ownership stays explicit: the product manifest closes every
 package-owned path, while npm alone may own one optional root-level
@@ -501,7 +506,7 @@ Work:
    artifact boundary.
 2. Delegate installation to the existing content-addressed managed release,
    per-vault installation record, and LaunchAgent lifecycle. Do not point
-   `launchd` at Bun's global package directory.
+   `launchd` at the mutable global package directory.
 3. Treat an identical existing release/install as success; treat a different
    installed release as an explicit upgrade choice handled by the existing
    upgrade transaction.
@@ -725,7 +730,7 @@ Every mission that changes installation or first-run behavior must preserve:
 - one owner, one vault, one supervised Home process, and many paired clients;
 - Markdown/Git authority and the adopted-ref contract;
 - a single capability-checked mutation path;
-- no long-lived execution from Bun's mutable global package location;
+- no long-lived execution from the mutable global package location;
 - manifest-bound package, artifact, runtime, PWA, and evidence identities;
 - preview-before-write behavior and byte-preserving existing-vault adaptation;
 - idempotent reruns and crash recovery at every durable boundary;

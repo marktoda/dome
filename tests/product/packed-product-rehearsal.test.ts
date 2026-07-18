@@ -1,11 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { readFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import {
   buildPackedProductGlobalInstallCommand,
   PACKED_PRODUCT_GLOBAL_INSTALL_CONTRACT,
   packedProductGlobalInstallLayout,
+  preparePackedProductConsumerWorkspace,
   runPackedProductAcceptanceForTests,
   type PackedProductAcceptanceDependencies,
 } from "../../scripts/packed-product-rehearsal";
@@ -72,16 +75,52 @@ describe("packed-product v3 rehearsal", () => {
     });
   });
 
+  test("offline consumer resolution binds the declared package name to the exact contained install", async () => {
+    const prefix = await realpath(await mkdtemp(join(tmpdir(), "dome-packed-consumer-test-")));
+    try {
+      const installedRoot = join(prefix, "lib", "node_modules", "@marktoda", "dome");
+      await mkdir(installedRoot, { recursive: true });
+      await writeFile(join(installedRoot, "package.json"), JSON.stringify({
+        name: "@marktoda/dome",
+        type: "module",
+        exports: { "./cli": "./cli.ts" },
+      }));
+      await writeFile(join(installedRoot, "cli.ts"), "export const marker = 'offline-consumer';\n");
+      const consumer = await preparePackedProductConsumerWorkspace({
+        prefix,
+        installedRoot,
+        workspace: join(prefix, "probe", "consumer"),
+      });
+      expect(consumer).toEqual({
+        root: join(prefix, "probe", "consumer"),
+        packageLink: join(prefix, "probe", "consumer", "node_modules", "@marktoda", "dome"),
+      });
+      expect((await lstat(consumer.packageLink)).isSymbolicLink()).toBeTrue();
+      expect(await realpath(consumer.packageLink)).toBe(installedRoot);
+      const probe = join(consumer.root, "probe.ts");
+      await writeFile(probe, "export { marker } from '@marktoda/dome/cli';\n");
+      expect((await import(pathToFileURL(probe).href)).marker).toBe("offline-consumer");
+      await expect(preparePackedProductConsumerWorkspace({
+        prefix,
+        installedRoot,
+        workspace: join(installedRoot, "consumer"),
+      })).rejects.toThrow("consumer workspace ownership is invalid");
+    } finally {
+      await rm(prefix, { recursive: true, force: true });
+    }
+  });
+
   test("production adapter hardwires input retirement and shipped verification", async () => {
     const source = await readFile(join(import.meta.dir, "..", "..", "scripts", "packed-product-rehearsal.ts"), "utf8");
     for (const required of [
-      "buildPackedProductGlobalInstallCommand", "assertGlobalInstallLinks",
+      "buildPackedProductGlobalInstallCommand", "assertGlobalInstallLinks", "preparePackedProductConsumerWorkspace",
       'removeOwnedDirectory(producer, "producer repository")',
       'removeOwnedDirectory(productOutput, "product build output")',
       'removeOwnedDirectory(installCache, "npm install cache")',
       'removeOwnedDirectory(producerHome, "producer home and XDG state")',
       "src\", \"product-package\", \"installed-product.ts", "HTTP_PROXY: \"http://127.0.0.1:1\"",
     ]) expect(source).toContain(required);
+    expect(source).not.toContain("NODE_PATH: globalLayout.modulesRoot");
   });
 
   test("release phases expose only bounded content-free progress and preserve operation failures", async () => {

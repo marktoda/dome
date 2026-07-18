@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 import { createHash } from "node:crypto";
-import { lstat, mkdir, mkdtemp, readFile, realpath, readdir, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, realpath, readdir, symlink, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { tmpdir } from "node:os";
@@ -74,6 +74,39 @@ export function packedProductGlobalInstallLayout(prefix: string): Readonly<{
   });
 }
 
+/** Create one ordinary offline consumer resolver without mutating the global package. */
+export async function preparePackedProductConsumerWorkspace(input: Readonly<{
+  prefix: string;
+  installedRoot: string;
+  workspace: string;
+}>): Promise<Readonly<{ root: string; packageLink: string }>> {
+  const prefix = resolve(input.prefix);
+  const installedRoot = resolve(input.installedRoot);
+  const workspace = resolve(input.workspace);
+  if (![input.prefix, input.installedRoot, input.workspace].every(isAbsolute) ||
+    await realpath(prefix) !== prefix || await realpath(installedRoot) !== installedRoot ||
+    !contains(prefix, installedRoot) || !contains(prefix, workspace) || workspace === prefix ||
+    contains(installedRoot, workspace) || contains(workspace, installedRoot)) {
+    throw new Error("packed-product consumer workspace ownership is invalid");
+  }
+  const parent = dirname(workspace);
+  await mkdir(parent, { recursive: true, mode: 0o700 });
+  if (await realpath(parent) !== parent) throw new Error("packed-product consumer workspace parent is aliased");
+  await assertAbsent(workspace, "offline consumer workspace");
+  await mkdir(workspace, { mode: 0o700 });
+  const nodeModules = join(workspace, "node_modules");
+  const packageLink = join(nodeModules, ...RELEASE_PACKAGE_NAME.split("/"));
+  await mkdir(nodeModules, { mode: 0o700 });
+  await mkdir(dirname(packageLink), { mode: 0o700 });
+  await symlink(installedRoot, packageLink, "dir");
+  const link = await lstat(packageLink);
+  if (!link.isSymbolicLink() || !contains(workspace, packageLink) ||
+    await realpath(packageLink) !== installedRoot) {
+    throw new Error("packed-product consumer package link is invalid");
+  }
+  return Object.freeze({ root: workspace, packageLink });
+}
+
 export type PortablePackedProductReport = Readonly<{
   evidence: false;
   repositoryUnavailable: true;
@@ -117,7 +150,7 @@ export async function runPackedProductAcceptanceForTests(
   await dependencies.assertInputsUnavailable();
   const product = await dependencies.verifyInstalled();
   const exports = await dependencies.verifyExports();
-  if (JSON.stringify(exports) !== JSON.stringify(EXPORTS)) throw new Error("global package exports differ from the declared contract");
+  if (JSON.stringify(exports) !== JSON.stringify(EXPORTS)) throw new Error("installed package exports differ from the declared contract");
   await dependencies.verifyCli();
   const consumer = await dependencies.verifyConsumer();
   return Object.freeze({
@@ -286,15 +319,18 @@ export async function rehearsePackedProduct(input: Readonly<{
       },
       verifyExports: async () => {
         return await runReleasePhase("verify-exports", report, async () => {
-          const path = join(probe, "verify-exports.ts");
+          const consumer = await preparePackedProductConsumerWorkspace({
+            prefix,
+            installedRoot,
+            workspace: join(probe, "consumer"),
+          });
+          const path = join(consumer.root, "verify-exports.ts");
           await writeFile(
             path,
             `${EXPORTS.map((specifier) => `await import(${JSON.stringify(specifier)});`).join("\n")}\n`,
             { flag: "wx", mode: 0o600 },
           );
-          await command([process.execPath, path], probe, 2 * 60_000, 1024 * 1024, {
-            ...offlineEnv(baseEnv), NODE_PATH: globalLayout.modulesRoot,
-          });
+          await command([process.execPath, path], consumer.root, 2 * 60_000, 1024 * 1024, offlineEnv(baseEnv));
           return EXPORTS;
         });
       },

@@ -410,9 +410,13 @@ current Bun global installer rewrites that target to `0777` on macOS and Linux.
 The verifier does not relax its group/world-writable rejection. It removes the
 producer clone, package-build output, tarball, npm cache, and producer HOME/XDG
 state and proves each absent. Only then does a neutral-cwd probe under a
-dead-proxy execution environment import every declared entrypoint, execute the
-direct isolated `dome` bin, and load the shipped installed-product verifier
-from the global package.
+dead-proxy execution environment load the shipped installed-product verifier.
+For declared package imports it creates one ordinary offline consumer
+`node_modules/@marktoda/dome` link, proves that link is contained and resolves
+exactly to the verified install, and lets Bun resolve every public specifier
+from that consumer workspace. This does not mutate the installed package or
+rely on `NODE_PATH`, which Bun ESM does not use for global package resolution.
+The direct isolated `dome --help` remains a separate executable proof.
 
 The versioned `dome.packed-product-rehearsal/v3` report records npm as installer,
 Bun as runtime, isolated prefix and cache, production-only dependencies,
