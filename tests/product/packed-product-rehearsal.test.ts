@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   buildPackedProductGlobalInstallCommand,
   PACKED_PRODUCT_GLOBAL_INSTALL_CONTRACT,
+  packedProductGlobalInstallLayout,
   runPackedProductAcceptanceForTests,
   type PackedProductAcceptanceDependencies,
 } from "../../scripts/packed-product-rehearsal";
@@ -63,6 +64,12 @@ describe("packed-product v3 rehearsal", () => {
       prefix: "/private/install",
       cache: "/private/cache",
     })).toThrow("packed-product global install paths are invalid");
+    expect(packedProductGlobalInstallLayout("/private/install")).toEqual({
+      modulesRoot: "/private/install/lib/node_modules",
+      packageRoot: "/private/install/lib/node_modules/@marktoda/dome",
+      binRoot: "/private/install/bin",
+      domeBin: "/private/install/bin/dome",
+    });
   });
 
   test("production adapter hardwires input retirement and shipped verification", async () => {

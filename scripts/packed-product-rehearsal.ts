@@ -57,6 +57,23 @@ export function buildPackedProductGlobalInstallCommand(input: Readonly<{
   ]);
 }
 
+export function packedProductGlobalInstallLayout(prefix: string): Readonly<{
+  modulesRoot: string;
+  packageRoot: string;
+  binRoot: string;
+  domeBin: string;
+}> {
+  if (!isAbsolute(prefix)) throw new Error("packed-product global install prefix is invalid");
+  const modulesRoot = join(prefix, "lib", "node_modules");
+  const binRoot = join(prefix, "bin");
+  return Object.freeze({
+    modulesRoot,
+    packageRoot: join(modulesRoot, "@marktoda", "dome"),
+    binRoot,
+    domeBin: join(binRoot, "dome"),
+  });
+}
+
 export type PortablePackedProductReport = Readonly<{
   evidence: false;
   repositoryUnavailable: true;
@@ -127,8 +144,7 @@ export async function rehearsePackedProduct(input: Readonly<{
     const producer = join(temporary, "producer");
     const productOutput = join(temporary, "complete-product");
     const prefix = join(temporary, "prefix");
-    const globalDir = join(prefix, "lib", "node_modules");
-    const globalBin = join(prefix, "bin");
+    const globalLayout = packedProductGlobalInstallLayout(prefix);
     const installCache = join(prefix, "cache");
     const home = join(prefix, "home");
     const probe = join(prefix, "probe");
@@ -140,7 +156,7 @@ export async function rehearsePackedProduct(input: Readonly<{
     const npmExecutable = Bun.which("npm");
     if (npmExecutable === null) throw new Error("npm is required to rehearse the safe global package installation");
     await Promise.all([
-      mkdir(globalBin, { recursive: true, mode: 0o700 }),
+      mkdir(globalLayout.binRoot, { recursive: true, mode: 0o700 }),
       mkdir(installCache, { recursive: true, mode: 0o700 }),
       mkdir(home, { recursive: true, mode: 0o700 }),
       mkdir(probe, { recursive: true, mode: 0o700 }),
@@ -187,7 +203,7 @@ export async function rehearsePackedProduct(input: Readonly<{
       ...isolatedEnvironment({
         home,
         cache: installCache,
-        path: `${globalBin}:${dirname(npmExecutable)}:${dirname(process.execPath)}:/usr/bin:/bin:/usr/sbin:/sbin`,
+        path: `${globalLayout.binRoot}:${dirname(npmExecutable)}:${dirname(process.execPath)}:/usr/bin:/bin:/usr/sbin:/sbin`,
       }),
       NPM_CONFIG_PREFIX: prefix,
       NPM_CONFIG_CACHE: installCache,
@@ -196,8 +212,8 @@ export async function rehearsePackedProduct(input: Readonly<{
       XDG_DATA_HOME: xdgData,
       NODE_PATH: "",
     });
-    const installedRoot = join(globalDir, "node_modules", "@marktoda", "dome");
-    const domeBin = join(globalBin, "dome");
+    const installedRoot = globalLayout.packageRoot;
+    const domeBin = globalLayout.domeBin;
     let installedEvidence: InstalledProductEvidence | undefined;
     const portable = await runPackedProductAcceptanceForTests({
       install: async () => {
@@ -213,7 +229,13 @@ export async function rehearsePackedProduct(input: Readonly<{
           4 * 1024 * 1024,
           baseEnv,
         ));
-        await assertGlobalInstallLinks(prefix, globalDir, globalBin, installedRoot, domeBin);
+        await assertGlobalInstallLinks(
+          prefix,
+          globalLayout.modulesRoot,
+          globalLayout.binRoot,
+          installedRoot,
+          domeBin,
+        );
         const installedPackage = JSON.parse(await readFile(join(installedRoot, "package.json"), "utf8"));
         if (JSON.stringify(validateReleasePackageManifest(installedPackage)) !== JSON.stringify(EXPORTS)) {
           throw new Error("globally installed package identity differs from release contract");
@@ -271,7 +293,7 @@ export async function rehearsePackedProduct(input: Readonly<{
             { flag: "wx", mode: 0o600 },
           );
           await command([process.execPath, path], probe, 2 * 60_000, 1024 * 1024, {
-            ...offlineEnv(baseEnv), NODE_PATH: join(globalDir, "node_modules"),
+            ...offlineEnv(baseEnv), NODE_PATH: globalLayout.modulesRoot,
           });
           return EXPORTS;
         });
