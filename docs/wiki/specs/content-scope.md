@@ -39,6 +39,9 @@ recursively frozen value. Invalid input returns structured validation errors;
 it does not throw. Raw array lengths are checked before any element is
 validated, and at most 16 validation errors are returned, so hostile payloads
 cannot amplify validation work or diagnostics beyond the contract budgets.
+Validation compiles a passive snapshot from already-inspected data
+descriptors; accessor-backed fields/elements are refused, and neither Zod nor
+canonicalization rereads the caller's object or arrays.
 
 Globs are non-empty, vault-relative POSIX patterns of at most **8,192
 characters per glob**, interpreted by `Bun.Glob`. Absolute patterns,

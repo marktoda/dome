@@ -154,7 +154,45 @@ describe("ContentScope contract", () => {
     );
     expect(defineContentScope(activeShape))
       .toMatchObject({ ok: false, errors: [{ code: "invalid-shape" }] });
+    expect(canonicalContentScopeSchema.safeParse(activeShape).success).toBe(false);
     expect(getterCalls).toBe(0);
+  });
+
+  test("validates only passive descriptor snapshots for outer proxies and array elements", () => {
+    let objectGetCalls = 0;
+    const trappedObject = new Proxy(
+      { version: 1, include: ["**/*.md"], exclude: [] },
+      {
+        get() {
+          objectGetCalls += 1;
+          throw new Error("outer get trap must not run");
+        },
+      },
+    );
+    expect(defineContentScope(trappedObject)).toMatchObject({
+      ok: true,
+      scope: { version: 1, include: ["**/*.md"], exclude: [] },
+    });
+    expect(canonicalContentScopeSchema.safeParse(trappedObject).success).toBe(true);
+    expect(objectGetCalls).toBe(0);
+
+    let elementGetterCalls = 0;
+    const activeArray = ["placeholder"];
+    Object.defineProperty(activeArray, "0", {
+      configurable: true,
+      enumerable: true,
+      get() {
+        elementGetterCalls += 1;
+        throw new Error("array element getter must not run");
+      },
+    });
+    const activeElement = { version: 1, include: activeArray, exclude: [] };
+    expect(defineContentScope(activeElement)).toMatchObject({
+      ok: false,
+      errors: [{ code: "invalid-shape", path: "include" }],
+    });
+    expect(canonicalContentScopeSchema.safeParse(activeElement).success).toBe(false);
+    expect(elementGetterCalls).toBe(0);
   });
 });
 

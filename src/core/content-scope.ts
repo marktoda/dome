@@ -188,66 +188,150 @@ type RawContentScopeResult =
   | Readonly<{ ok: false; errors: ReadonlyArray<ContentScopeValidationError> }>;
 
 function validateRawContentScope(input: unknown): RawContentScopeResult {
-  const preflight = preflightRawContentScope(input);
-  if (preflight.length > 0) return Object.freeze({ ok: false, errors: preflight });
+  try {
+    const preflight = snapshotRawContentScope(input);
+    if (!preflight.ok) return Object.freeze({ ok: false, errors: preflight.errors });
 
-  const parsed = rawContentScopeSchema.safeParse(input);
-  if (parsed.success) return Object.freeze({ ok: true, value: parsed.data });
-  return Object.freeze({
-    ok: false,
-    errors: freezeErrors(parsed.error.issues.map(contentScopeIssue)),
-  });
+    const parsed = rawContentScopeSchema.safeParse(preflight.value);
+    if (parsed.success) return Object.freeze({ ok: true, value: parsed.data });
+    return Object.freeze({
+      ok: false,
+      errors: freezeErrors(parsed.error.issues.map(contentScopeIssue)),
+    });
+  } catch {
+    return invalidRawContentScope("validation failed while inspecting passive data");
+  }
 }
 
-/** Refuse oversized or active raw shapes before Zod visits array elements. */
-function preflightRawContentScope(input: unknown): ReadonlyArray<ContentScopeValidationError> {
-  if (typeof input !== "object" || input === null || Array.isArray(input)) return Object.freeze([]);
+type RawContentScopeSnapshotResult =
+  | Readonly<{ ok: true; value: unknown }>
+  | Readonly<{ ok: false; errors: ReadonlyArray<ContentScopeValidationError> }>;
 
+/** Compile an inert snapshot before Zod can observe user-controlled accessors. */
+function snapshotRawContentScope(input: unknown): RawContentScopeSnapshotResult {
   try {
+    if (typeof input !== "object" || input === null) {
+      return Object.freeze({ ok: true, value: input });
+    }
+    if (Array.isArray(input)) return invalidRawContentScope("must be a plain data object");
+
     const prototype = Object.getPrototypeOf(input);
     if (prototype !== Object.prototype && prototype !== null) {
-      return freezeErrors([{
-        code: "invalid-shape",
-        path: "$",
-        message: "must be a plain data object",
-      }]);
+      return invalidRawContentScope("must be a plain data object");
     }
-    const descriptors = Object.getOwnPropertyDescriptors(input);
+    const descriptors = Object.getOwnPropertyDescriptors(input) as unknown as
+      Record<PropertyKey, PropertyDescriptor>;
     const ownKeys = Reflect.ownKeys(descriptors);
     if (ownKeys.some((key) => typeof key !== "string" || !["version", "include", "exclude"].includes(key))) {
-      return freezeErrors([{
-        code: "invalid-shape",
-        path: "$",
-        message: "must contain only version, include, and exclude",
-      }]);
+      return invalidRawContentScope("must contain only version, include, and exclude");
     }
     if (Object.values(descriptors).some((descriptor) => descriptor.get !== undefined || descriptor.set !== undefined)) {
-      return freezeErrors([{
-        code: "invalid-shape",
-        path: "$",
-        message: "must contain data properties only",
-      }]);
+      return invalidRawContentScope("must contain data properties only");
     }
 
     const errors: ContentScopeValidationError[] = [];
+    const snapshot: Record<string, unknown> = {};
+    const version = descriptors.version;
+    if (version !== undefined) snapshot.version = version.value;
     for (const key of ["include", "exclude"] as const) {
       const descriptor = descriptors[key];
-      if (descriptor !== undefined && Array.isArray(descriptor.value) && descriptor.value.length > CONTENT_SCOPE_MAX_GLOBS) {
+      if (descriptor === undefined) continue;
+      if (!Array.isArray(descriptor.value)) {
         errors.push({
-          code: "too-many-globs",
+          code: "invalid-shape",
           path: key,
-          message: `must contain at most ${CONTENT_SCOPE_MAX_GLOBS} globs`,
+          message: "must be an array",
         });
+        continue;
+      }
+      const array = snapshotPassiveArray(descriptor.value, key);
+      if (!array.ok) {
+        errors.push(...array.errors);
+      } else {
+        snapshot[key] = array.value;
       }
     }
-    return freezeErrors(errors);
+    if (errors.length > 0) {
+      return Object.freeze({ ok: false, errors: freezeErrors(errors) });
+    }
+    return Object.freeze({ ok: true, value: Object.freeze(snapshot) });
   } catch {
-    return freezeErrors([{
+    return invalidRawContentScope("must be an inspectable data object");
+  }
+}
+
+type PassiveArrayResult =
+  | Readonly<{ ok: true; value: ReadonlyArray<unknown> }>
+  | Readonly<{ ok: false; errors: ReadonlyArray<ContentScopeValidationError> }>;
+
+function snapshotPassiveArray(input: unknown[], path: "include" | "exclude"): PassiveArrayResult {
+  try {
+    const lengthDescriptor = Object.getOwnPropertyDescriptor(input, "length");
+    const length = lengthDescriptor?.value;
+    if (!Number.isSafeInteger(length) || length < 0) {
+      return invalidPassiveArray(path, "must have a valid array length");
+    }
+    if (length > CONTENT_SCOPE_MAX_GLOBS) {
+      return Object.freeze({
+        ok: false,
+        errors: freezeErrors([{
+          code: "too-many-globs",
+          path,
+          message: `must contain at most ${CONTENT_SCOPE_MAX_GLOBS} globs`,
+        }]),
+      });
+    }
+
+    const descriptors = Object.getOwnPropertyDescriptors(input) as unknown as
+      Record<PropertyKey, PropertyDescriptor>;
+    if (descriptors.length?.value !== length) {
+      return invalidPassiveArray(path, "changed while it was inspected");
+    }
+    const allowedKeys = new Set(["length", ...Array.from({ length }, (_, index) => String(index))]);
+    if (Reflect.ownKeys(descriptors).some((key) => typeof key !== "string" || !allowedKeys.has(key))) {
+      return invalidPassiveArray(path, "must contain indexed elements only");
+    }
+
+    const snapshot: unknown[] = [];
+    for (let index = 0; index < length; index += 1) {
+      const descriptor = descriptors[String(index)];
+      if (descriptor === undefined) {
+        snapshot.push(undefined);
+      } else if (descriptor.get !== undefined || descriptor.set !== undefined) {
+        return invalidPassiveArray(path, "must contain data elements only");
+      } else {
+        snapshot.push(descriptor.value);
+      }
+    }
+    return Object.freeze({ ok: true, value: Object.freeze(snapshot) });
+  } catch {
+    return invalidPassiveArray(path, "must be an inspectable data array");
+  }
+}
+
+function invalidPassiveArray(
+  path: "include" | "exclude",
+  message: string,
+): PassiveArrayResult {
+  return Object.freeze({
+    ok: false,
+    errors: freezeErrors([{
+      code: "invalid-shape",
+      path,
+      message,
+    }]),
+  });
+}
+
+function invalidRawContentScope(message: string): Extract<RawContentScopeResult, { ok: false }> {
+  return Object.freeze({
+    ok: false,
+    errors: freezeErrors([{
       code: "invalid-shape",
       path: "$",
-      message: "must be an inspectable data object",
-    }]);
-  }
+      message,
+    }]),
+  });
 }
 
 function freezeErrors(
