@@ -305,9 +305,17 @@ source, and closes exact checksummed inventories in the shipped pure
 private staging and uses fixed `tar@7.5.19` to stream-verify every actual tgz
 member twice without extraction before inode-bound exclusive publication.
 The portable test seam cannot issue release evidence; the
-production adapter hardwires all three trusted implementations. The remaining
-M2 checkpoint is step 4 plus its acceptance evidence: isolated global-prefix
-installation and operation after the repository becomes unavailable.
+production adapter hardwires all three trusted implementations. Checkpoint 3
+implements step 4 as `dome.packed-product-rehearsal/v2`. A private clean clone
+produces the exact package; fresh Bun global package/bin/cache and HOME/XDG
+roots receive it through a production-only, scripts-disabled copyfile install.
+The producer clone, package output, tarball, install cache, and producer
+HOME/XDG state are then removed and proved absent before declared imports, the
+direct global CLI, the closed installed PWA inventory, and strict Home
+materialization run under a neutral working directory and dead-proxy execution
+environment. The real rehearsal is wired once as a pinned Apple-Silicon CI
+job; the progress ledger remains in progress until that hosted evidence
+succeeds on the implementation commit.
 
 Acceptance gate:
 

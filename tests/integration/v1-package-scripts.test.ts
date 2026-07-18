@@ -25,9 +25,12 @@ describe("V1 package scripts", () => {
     expect(scripts["release:package-rehearsal"]).toBe(
       "bun scripts/release-package.ts",
     );
+    expect(scripts["release:packed-product-rehearsal"]).toBe(
+      "bun scripts/packed-product-rehearsal.ts",
+    );
     expect(scripts["v1:implementation-check"]).toContain("bun run v1:check");
     expect(scripts["v1:implementation-check"]).toContain(
-      "bun run release:package-rehearsal",
+      "bun run release:packed-product-rehearsal",
     );
     expect(scripts["v1:release-check"]).toBe("bun scripts/v1-release-check.ts");
   });

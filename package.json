@@ -72,7 +72,8 @@
     "eval": "bun scripts/eval.ts",
     "eval:product": "bun scripts/product-quality.ts",
     "release:package-rehearsal": "bun scripts/release-package.ts",
-    "v1:implementation-check": "bun run v1:check && bun run release:package-rehearsal",
+    "release:packed-product-rehearsal": "bun scripts/packed-product-rehearsal.ts",
+    "v1:implementation-check": "bun run v1:check && bun run release:packed-product-rehearsal",
     "v1:check": "bun run typecheck && bun run check:pwa && git diff --check && bun run test && bun run v1:smoke",
     "v1:release-check": "bun scripts/v1-release-check.ts",
     "product:journey": "bun test tests/harness/scenarios/cli-surface/capture-ingest-captured-block.scenario.test.ts"

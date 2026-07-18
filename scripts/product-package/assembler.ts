@@ -74,7 +74,8 @@ export type ProductPackageAssemblerDependencies = Readonly<{
   publish(input: Readonly<{ source: string; target: string }>): Promise<void>;
 }>;
 
-type CommandResult = Readonly<{ stdout: Buffer; stderr: Buffer; exitCode: number }>;
+export type ProductPackageCommandResult = Readonly<{ stdout: Buffer; stderr: Buffer; exitCode: number }>;
+type CommandResult = ProductPackageCommandResult;
 type TreeEntry = Readonly<{ mode: "100644" | "100755"; type: "blob"; object: string; size: number; path: string }>;
 
 /**
@@ -244,11 +245,11 @@ function assertPwaMatchesVerifiedHome(
 }
 
 async function assertCleanTrackedHead(repoRoot: string): Promise<string> {
-  const status = await runBounded(["git", "status", "--porcelain=v1", "--untracked-files=all"], repoRoot, {
+  const status = await runBoundedProductCommand(["git", "status", "--porcelain=v1", "--untracked-files=all"], repoRoot, {
     timeoutMs: 15_000, maxStdoutBytes: 1024 * 1024, maxStderrBytes: 64 * 1024,
   });
   if (status.stdout.byteLength !== 0) throw new Error("complete product packaging requires a clean tracked HEAD with no untracked files");
-  const head = (await runBounded(["git", "rev-parse", "HEAD"], repoRoot, {
+  const head = (await runBoundedProductCommand(["git", "rev-parse", "HEAD"], repoRoot, {
     timeoutMs: 15_000, maxStdoutBytes: 128, maxStderrBytes: 64 * 1024,
   })).stdout.toString("utf8").trim();
   if (!/^[0-9a-f]{40}$/.test(head)) throw new Error("complete product packaging requires one commit HEAD");
@@ -256,7 +257,7 @@ async function assertCleanTrackedHead(repoRoot: string): Promise<string> {
 }
 
 async function readHeadTree(repoRoot: string, sourceCommit: string): Promise<ReadonlyArray<TreeEntry>> {
-  const output = (await runBounded([
+  const output = (await runBoundedProductCommand([
     "git", "ls-tree", "-r", "-l", "-z", "--full-tree", sourceCommit, "--", ...PRODUCT_PACKAGE_SOURCE_PATHS,
   ], repoRoot, { timeoutMs: 15_000, maxStdoutBytes: 1024 * 1024, maxStderrBytes: 64 * 1024 })).stdout.toString("utf8");
   const entries: TreeEntry[] = [];
@@ -302,7 +303,7 @@ async function stageCapturedBlobs(
 ): Promise<ReadonlyArray<ProductPackageFile>> {
   const evidence: ProductPackageFile[] = [];
   for (const entry of entries) {
-    const result = await runBounded(["git", "cat-file", "blob", entry.object], repoRoot, {
+    const result = await runBoundedProductCommand(["git", "cat-file", "blob", entry.object], repoRoot, {
       timeoutMs: 15_000,
       maxStdoutBytes: entry.size,
       maxStderrBytes: 64 * 1024,
@@ -442,7 +443,7 @@ async function assertStageMatchesManifest(
 }
 
 async function npmPackStage(stage: string, destination: string): Promise<ProductPackagePackResult> {
-  const output = await runBounded([
+  const output = await runBoundedProductCommand([
     "npm", "pack", "--ignore-scripts", "--json", "--pack-destination", destination,
   ], stage, { timeoutMs: 60_000, maxStdoutBytes: 4 * 1024 * 1024, maxStderrBytes: 1024 * 1024 });
   const parsed = JSON.parse(output.stdout.toString("utf8")) as ReadonlyArray<ProductPackagePackResult>;
@@ -506,18 +507,19 @@ function assertNoSecretContent(path: string, bytes: Uint8Array): void {
   }
 }
 
-type BoundedCommandOptions = Readonly<{
+export type BoundedCommandOptions = Readonly<{
   timeoutMs: number;
   maxStdoutBytes: number;
   maxStderrBytes: number;
+  env?: Readonly<Record<string, string | undefined>>;
 }>;
 
-async function runBounded(
+export async function runBoundedProductCommand(
   command: ReadonlyArray<string>,
   cwd: string,
   options: BoundedCommandOptions,
 ): Promise<CommandResult> {
-  const child = Bun.spawn([...command], { cwd, env: process.env, stdout: "pipe", stderr: "pipe" });
+  const child = Bun.spawn([...command], { cwd, env: options.env ?? process.env, stdout: "pipe", stderr: "pipe" });
   const collect = async (stream: ReadableStream<Uint8Array>, maxBytes: number, label: string): Promise<Buffer> => {
     const reader = stream.getReader();
     const chunks: Uint8Array[] = [];
@@ -566,7 +568,7 @@ async function runBounded(
 export async function runProductPackageCommandForTests(
   command: ReadonlyArray<string>, cwd: string, timeoutMs: number,
 ): Promise<void> {
-  await runBounded(command, cwd, { timeoutMs, maxStdoutBytes: 1024, maxStderrBytes: 1024 });
+  await runBoundedProductCommand(command, cwd, { timeoutMs, maxStdoutBytes: 1024, maxStderrBytes: 1024 });
 }
 
 function sha256(bytes: Uint8Array): string {

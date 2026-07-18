@@ -10,6 +10,11 @@ import {
   PRODUCT_PACKAGE_SOURCE_PATHS,
 } from "../src/product-package/manifest";
 import { assembleCompleteProductPackage } from "./product-package";
+import {
+  verifyInstalledConsumerWorkflow,
+} from "./installed-consumer-rehearsal";
+
+export { currentSchemaReopenEvidence } from "./installed-consumer-rehearsal";
 
 const repoRoot = resolve(import.meta.dir, "..");
 
@@ -195,28 +200,6 @@ export function validateReleasePackageManifest(manifest: unknown): ReadonlyArray
   );
 }
 
-export function currentSchemaReopenEvidence(
-  first: { readonly head: string | null; readonly adopted: string | null },
-  second: { readonly head: string | null; readonly adopted: string | null },
-): ReleasePackageReport["currentSchemaReopen"] {
-  if (
-    first.head !== second.head ||
-    first.adopted !== second.adopted ||
-    first.head === null ||
-    first.adopted === null
-  ) {
-    throw new Error(
-      "installed package current-schema reopen failed or changed semantic refs",
-    );
-  }
-  return Object.freeze({
-    attempts: 2 as const,
-    succeeded: true as const,
-    semanticRefsStable: true as const,
-    priorVersionUpgradeClaimed: false as const,
-  });
-}
-
 function isAllowedPackagePath(path: string): boolean {
   return ALLOWED_PATHS.some((allowed) =>
     allowed.endsWith("/") ? path.startsWith(allowed) : path === allowed
@@ -264,53 +247,19 @@ export async function rehearseReleasePackage(): Promise<ReleasePackageReport> {
       throw new Error("installed dome --help did not render the Dome CLI");
     }
 
-    const vault = join(temporary, "external-vault");
     const offlineEnv = {
       ANTHROPIC_API_KEY: "",
       HTTP_PROXY: "http://127.0.0.1:1",
       HTTPS_PROXY: "http://127.0.0.1:1",
       NO_PROXY: "",
     };
-    await run([
+    const consumerEvidence = await verifyInstalledConsumerWorkflow({
       domeBin,
-      "init",
-      vault,
-      "--with-model-provider",
-      "anthropic",
-      "--with-source",
-      "slack",
-    ], consumer, offlineEnv);
-
-    for (const required of [
-      join(installedRoot, "assets", "extensions", "dome.markdown", "manifest.yaml"),
-      join(installedRoot, "assets", "model-providers", "anthropic.ts"),
-      join(installedRoot, "assets", "source-handlers", "claude-slack.sh"),
-      join(vault, ".dome", "model-provider.ts"),
-      join(vault, ".dome", "bin", "fetch-slack.sh"),
-    ]) {
-      if (!existsSync(required)) throw new Error(`installed package did not resolve asset: ${required}`);
-    }
-    if (
-      await readFile(join(vault, ".dome", "model-provider.ts"), "utf8") !==
-      await readFile(join(installedRoot, "assets", "model-providers", "anthropic.ts"), "utf8")
-    ) {
-      throw new Error("installed model-provider scaffold differs from its shipped asset");
-    }
-    if (
-      await readFile(join(vault, ".dome", "bin", "fetch-slack.sh"), "utf8") !==
-      await readFile(join(installedRoot, "assets", "source-handlers", "claude-slack.sh"), "utf8")
-    ) {
-      throw new Error("installed Slack scaffold differs from its shipped asset");
-    }
-
-    await run([domeBin, "sync", "--vault", vault, "--quiet"], consumer, offlineEnv);
-    const firstStatus = parseStatus(await run([
-      domeBin, "status", "--vault", vault, "--json",
-    ], consumer, offlineEnv));
-    const secondStatus = parseStatus(await run([
-      domeBin, "status", "--vault", vault, "--json",
-    ], consumer, offlineEnv));
-    const reopenEvidence = currentSchemaReopenEvidence(firstStatus, secondStatus);
+      installedRoot,
+      workspace: consumer,
+      env: offlineEnv,
+      run: async (command, cwd, env) => await run(command, cwd, env),
+    });
 
     return Object.freeze({
       schema: "dome.release-package/v1" as const,
@@ -323,24 +272,12 @@ export async function rehearseReleasePackage(): Promise<ReleasePackageReport> {
       installed: true as const,
       exports: Object.freeze(exportSpecifiers),
       cliHelp: true as const,
-      scaffold: Object.freeze({
-        modelProvider: "anthropic" as const,
-        source: "slack" as const,
-        bundlesResolved: true as const,
-      }),
-      currentSchemaReopen: reopenEvidence,
+      scaffold: consumerEvidence.scaffold,
+      currentSchemaReopen: consumerEvidence.currentSchemaReopen,
     });
   } finally {
     await rm(temporary, { recursive: true, force: true });
   }
-}
-
-function parseStatus(result: CommandResult): { readonly head: string | null; readonly adopted: string | null } {
-  const parsed = JSON.parse(result.stdout) as { readonly head?: unknown; readonly adopted?: unknown };
-  return {
-    head: typeof parsed.head === "string" ? parsed.head : null,
-    adopted: typeof parsed.adopted === "string" ? parsed.adopted : null,
-  };
 }
 
 function packagePathSegments(packageName: string): ReadonlyArray<string> {
@@ -362,7 +299,7 @@ type CommandResult = {
 async function run(
   command: ReadonlyArray<string>,
   cwd: string,
-  env: Readonly<Record<string, string>> = {},
+  env: Readonly<Record<string, string | undefined>> = {},
 ): Promise<CommandResult> {
   const proc = Bun.spawn({
     cmd: [...command],

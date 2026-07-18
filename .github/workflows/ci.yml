@@ -72,3 +72,32 @@ jobs:
 
       - name: Check PWA
         run: bun run check:pwa
+
+  packed-product:
+    needs: test
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.13
+
+      - name: Verify product host
+        run: test "$(uname -m)" = "arm64"
+
+      - name: Configure git for release fixtures
+        run: |
+          git config --global user.name "dome-ci"
+          git config --global user.email "ci@dome.invalid"
+          git config --global init.defaultBranch main
+          git config --global commit.gpgsign false
+
+      - name: Install rehearsal dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Rehearse isolated global complete product
+        run: bun run release:packed-product-rehearsal
