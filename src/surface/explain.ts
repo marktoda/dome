@@ -34,6 +34,10 @@
 // adapters that hold one (or tests) can call it without the open/close.
 
 import { join } from "node:path";
+import {
+  runtimeOpenFailureInfo,
+  type RuntimeOpenFailureInfo,
+} from "./adapter";
 
 import {
   CLAIM_PREDICATE,
@@ -123,7 +127,7 @@ export type ExplainOutcome =
 
 export type BuildExplainOutcome =
   | ExplainOutcome
-  | { readonly kind: "runtime-open-failed"; readonly errorKind: string };
+  | ({ readonly kind: "runtime-open-failed" } & RuntimeOpenFailureInfo);
 
 // ----- collectExplain ----------------------------------------------------------
 
@@ -237,7 +241,7 @@ export async function buildExplain(opts: {
   if (!runtimeResult.ok) {
     return Object.freeze({
       kind: "runtime-open-failed" as const,
-      errorKind: runtimeResult.error.kind,
+      ...runtimeOpenFailureInfo(runtimeResult.error),
     });
   }
   const runtime = runtimeResult.value;

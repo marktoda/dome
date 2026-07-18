@@ -22,10 +22,12 @@ export function emitRuntimeOpenFailure(opts: {
   readonly command: string;
   readonly json: boolean;
   readonly errorKind: string;
+  readonly errorDetail?: string | undefined;
 }): 1 {
   const message = runtimeOpenFailureMessage(
     `dome ${opts.command}`,
     opts.errorKind,
+    opts.errorDetail,
   );
   if (opts.json) {
     console.log(

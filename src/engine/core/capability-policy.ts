@@ -151,11 +151,11 @@ export function computeCapabilityPolicyHash(policy: CapabilityPolicy): string {
 export async function loadCapabilityPolicy(
   vaultPath: string,
 ): Promise<Result<CapabilityPolicy, string>> {
-  const basePath = join(vaultPath, ".dome", "config.yaml");
-  const contentScopePath = join(vaultPath, ".dome", "content-scope.yaml");
+  const basePath = ".dome/config.yaml";
+  const contentScopePath = ".dome/content-scope.yaml";
   const [base, contentScope] = await Promise.all([
-    readPolicyDocument(basePath),
-    readPolicyDocument(contentScopePath),
+    readPolicyDocument(join(vaultPath, basePath), basePath),
+    readPolicyDocument(join(vaultPath, contentScopePath), contentScopePath),
   ]);
   if (!base.ok) return base;
   if (!contentScope.ok) return contentScope;
@@ -174,6 +174,47 @@ export type CapabilityPolicyDocuments = Readonly<{
   readonly base: CapabilityPolicyDocument | null;
   readonly contentScope: CapabilityPolicyDocument | null;
 }>;
+
+export type CapabilityPolicyOperatorDetail =
+  | ".dome/content-scope.yaml is orphaned because .dome/config.yaml is absent"
+  | ".dome/config.yaml and .dome/content-scope.yaml define conflicting content_scope values"
+  | ".dome/config.yaml is invalid"
+  | ".dome/content-scope.yaml is invalid"
+  | ".dome/config.yaml could not be read"
+  | ".dome/content-scope.yaml could not be read"
+  | "Dome capability policy is invalid";
+
+/**
+ * Close rich internal parse/read failures into the bounded, single-line
+ * vocabulary allowed to cross CLI, HTTP, MCP, and public-SDK boundaries.
+ */
+export function capabilityPolicyOperatorDetail(
+  error: string,
+): CapabilityPolicyOperatorDetail {
+  if (
+    error ===
+      ".dome/content-scope.yaml is orphaned because .dome/config.yaml is absent" ||
+    error ===
+      ".dome/config.yaml and .dome/content-scope.yaml define conflicting content_scope values" ||
+    error === ".dome/config.yaml could not be read" ||
+    error === ".dome/content-scope.yaml could not be read"
+  ) {
+    return error;
+  }
+  if (error.startsWith(".dome/content-scope.yaml")) {
+    return ".dome/content-scope.yaml is invalid";
+  }
+  if (error.startsWith("failed to parse .dome/content-scope.yaml:")) {
+    return ".dome/content-scope.yaml is invalid";
+  }
+  if (error.startsWith(".dome/config.yaml")) {
+    return ".dome/config.yaml is invalid";
+  }
+  if (error.startsWith("failed to parse .dome/config.yaml:")) {
+    return ".dome/config.yaml is invalid";
+  }
+  return "Dome capability policy is invalid";
+}
 
 /**
  * Resolve the complete capability policy from its two versioned source
@@ -383,13 +424,17 @@ function parseBaseCapabilityPolicy(
 }
 
 async function readPolicyDocument(
-  path: string,
+  filesystemPath: string,
+  displayPath: string,
 ): Promise<Result<CapabilityPolicyDocument | null, string>> {
   try {
-    return ok(Object.freeze({ body: await readFile(path, "utf8"), path }));
+    return ok(Object.freeze({
+      body: await readFile(filesystemPath, "utf8"),
+      path: displayPath,
+    }));
   } catch (error) {
     if (isMissingFile(error)) return ok(null);
-    return err(`failed to read ${path}: ${messageFor(error)}`);
+    return err(`${displayPath} could not be read`);
   }
 }
 

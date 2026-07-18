@@ -35,6 +35,7 @@ import { resolveBundleRoots } from "./sync-shared";
 import { parseNonNegativeIntegerValue } from "../parse-options";
 
 import { resolveVaultPath } from "../../surface/resolve-vault";
+import { runtimeOpenFailureInfo } from "../../surface/adapter";
 import { EX_USAGE } from "../exit-codes";
 
 export type RunDoctorOptions = {
@@ -91,7 +92,7 @@ export async function runDoctor(
     return emitRuntimeOpenFailure({
       command: "doctor",
       json: options.json === true,
-      errorKind: runtimeResult.error.kind,
+      ...runtimeOpenFailureInfo(runtimeResult.error),
     });
   }
   const runtime = runtimeResult.value;

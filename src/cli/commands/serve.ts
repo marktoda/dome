@@ -49,6 +49,10 @@ import { compileRange } from "../../engine/core/compile-range";
 import { isWorkingTreeDirty } from "../../git";
 import { runLedgerRetentionPass } from "../../ledger/runs";
 import { resolveVaultPath } from "../../surface/resolve-vault";
+import {
+  runtimeOpenFailureInfo,
+  runtimeOpenFailureMessage,
+} from "../../surface/adapter";
 
 import {
   detectDrift,
@@ -215,8 +219,13 @@ export async function runServe(
   const runtimeOpts = makeRuntimeOpts();
   const runtimeResult = await openVaultRuntime(runtimeOpts);
   if (!runtimeResult.ok) {
+    const failure = runtimeOpenFailureInfo(runtimeResult.error);
     console.error(
-      `dome serve: openVaultRuntime failed (${runtimeResult.error.kind}). Run \`dome init\` to initialize the vault.`,
+      runtimeOpenFailureMessage(
+        "dome serve",
+        failure.errorKind,
+        failure.errorDetail,
+      ),
     );
     return 1;
   }
@@ -734,8 +743,11 @@ async function reloadServeRuntime(input: {
   if (!next.ok) {
     const error = formatOpenRuntimeError(next.error);
     if (input.state.lastReloadError !== error) {
+      const failure = runtimeOpenFailureInfo(next.error);
       console.error(
-        `dome serve: runtime reload failed (${error}); pausing adoption until config is repaired.`,
+        failure.errorDetail === undefined
+          ? `dome serve: runtime reload failed (${error}); pausing adoption until config is repaired.`
+          : `${runtimeOpenFailureMessage("dome serve", failure.errorKind, failure.errorDetail)} Pausing adoption until the policy is repaired.`,
       );
       input.state.lastReloadError = error;
     }
@@ -760,6 +772,8 @@ async function reloadServeRuntime(input: {
 
 function formatOpenRuntimeError(error: OpenVaultRuntimeError): string {
   switch (error.kind) {
+    case "capability-policy-load-failed":
+      return `${error.kind}:${error.cause}`;
     case "bundle-load-failed":
       if (error.cause.kind === "bundle-not-found") {
         return `${error.kind}:${error.cause.kind}:${

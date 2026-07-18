@@ -57,6 +57,7 @@ export async function runStatus(
       command: "status",
       json: options.json === true,
       errorKind: outcome.errorKind,
+      errorDetail: outcome.errorDetail,
     });
   }
 

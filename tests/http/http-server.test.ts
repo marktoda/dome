@@ -850,6 +850,39 @@ describe("POST /reject", () => {
 
 describe("read routes", () => {
   test(
+    "GET /status preserves actionable content-scope policy detail",
+    async () => {
+      const vault = mkdtempSync(join(tmpdir(), "dome-http-policy-error-"));
+      try {
+        expect(await runInit({ path: vault })).toBe(0);
+        const secret = "http-vault-secret-52df";
+        await writeFile(
+          join(vault, ".dome", "config.yaml"),
+          `${secret}: [\n\u0001`,
+          "utf8",
+        );
+        const handler = createDomeHttpServer({ vaultPath: vault, token: TOKEN });
+        const response = await handler.fetch(new Request("http://dome.test/status", {
+          headers: { authorization: `Bearer ${TOKEN}` },
+        }));
+        expect(response.status).toBe(500);
+        const json = await jsonOf(response);
+        expect(json.error).toBe("capability-policy-load-failed");
+        expect(String(json.message)).toContain(".dome/config.yaml is invalid");
+        expect(String(json.message)).toContain(
+          "Repair `.dome/config.yaml` and `.dome/content-scope.yaml`, then retry.",
+        );
+        expect(String(json.message)).not.toContain(vault);
+        expect(String(json.message)).not.toContain(secret);
+        expect(String(json.message)).not.toMatch(/[\r\n\u0000-\u001f\u007f]/);
+      } finally {
+        await rm(vault, { recursive: true, force: true });
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
     "GET /status mirrors the dome status --json snapshot",
     async () => {
       const f = await fixture();

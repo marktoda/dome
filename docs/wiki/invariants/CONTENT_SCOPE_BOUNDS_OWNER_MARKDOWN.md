@@ -53,11 +53,11 @@ bound. The processor must receive paths already narrowed by ContentScope and
 still pass its independent capability checks.
 
 **Rollout status:** The policy contract, mechanical floors, setup compiler,
-and runtime config loading ship now through the same canonical schema.
-First-party processor adoption is a subsequent M4 checkpoint tracked in the
-distribution plan. Until that migration completes, the invariant applies to
-consumers of the ContentScope Module; the plan's acceptance gate separately
-removes every independent first-party universe.
+dual-document runtime loading, and policy-hash invalidation ship now through
+the same canonical schema. First-party processor adoption is a subsequent M4
+checkpoint tracked in the distribution plan. Until that migration completes,
+the invariant applies to consumers of the ContentScope Module; the plan's
+acceptance gate separately removes every independent first-party universe.
 The temporary engine matcher re-export is removed at the final M4 checkpoint
 after all imports move to the neutral seam.
 

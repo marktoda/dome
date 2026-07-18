@@ -2,7 +2,10 @@
 
 import { formatJson } from "../../surface/format";
 import { resolveVaultPath } from "../../surface/resolve-vault";
-import { openVaultErrorKind } from "../../surface/adapter";
+import {
+  openVaultFailureInfo,
+  vaultOpenFailureMessage,
+} from "../../surface/adapter";
 import { answerHandlersJson, questionRecordJson } from "../../surface/answer";
 import { withVaultCli } from "../vault-helpers";
 
@@ -52,8 +55,9 @@ export async function runAgentWork(
     path: resolveVaultPath(options.vault),
     bundlesRoot: options.bundlesRoot,
     onOpenFailed: (error) => {
-      const message = `dome agent-work: vault open failed (${openVaultErrorKind(error)}).`;
-      printError(options.json === true, "vault-open-failed", message);
+      const failure = openVaultFailureInfo(error);
+      const message = vaultOpenFailureMessage("dome agent-work", error);
+      printError(options.json === true, failure.errorKind, message);
       return error.kind === "not-a-vault" ? 64 : 1;
     },
     run: async (vault) => {

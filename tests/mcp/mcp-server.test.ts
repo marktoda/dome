@@ -823,6 +823,43 @@ describe("dome mcp server (in-memory transport)", () => {
   }, TEST_TIMEOUT_MS);
 });
 
+describe("policy-open failures", () => {
+  test("status preserves actionable content-scope policy detail", async () => {
+    const vault = mkdtempSync(join(tmpdir(), "dome-mcp-policy-error-"));
+    const server = createDomeMcpServer({ vaultPath: vault });
+    const client = new Client({ name: "dome-mcp-policy-test", version: "0.0.0" });
+    try {
+      expect(await runInit({ path: vault })).toBe(0);
+      const secret = "mcp-vault-secret-b8a1";
+      await writeFile(
+        join(vault, ".dome", "config.yaml"),
+        `${secret}: [\n\u0001`,
+        "utf8",
+      );
+      const [clientTransport, serverTransport] =
+        InMemoryTransport.createLinkedPair();
+      await Promise.all([
+        client.connect(clientTransport),
+        server.connect(serverTransport),
+      ]);
+      const call = await callTool(client, "status");
+      expect(call.isError).toBe(true);
+      expect(call.json.error).toBe("capability-policy-load-failed");
+      expect(String(call.json.message)).toContain(".dome/config.yaml is invalid");
+      expect(String(call.json.message)).toContain(
+        "Repair `.dome/config.yaml` and `.dome/content-scope.yaml`, then retry.",
+      );
+      expect(String(call.json.message)).not.toContain(vault);
+      expect(String(call.json.message)).not.toContain(secret);
+      expect(String(call.json.message)).not.toMatch(/[\r\n\u0000-\u001f\u007f]/);
+    } finally {
+      await client.close();
+      await server.close();
+      await rm(vault, { recursive: true, force: true });
+    }
+  }, TEST_TIMEOUT_MS);
+});
+
 // ----- The stdio smoke session ----------------------------------------------------
 //
 // A scripted real-process session: spawn `bin/dome mcp --vault <vault>`,

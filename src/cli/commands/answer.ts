@@ -23,7 +23,10 @@ import {
   section,
 } from "../presenter";
 
-import { openVaultErrorKind } from "../../surface/adapter";
+import {
+  openVaultFailureInfo,
+  vaultOpenFailureMessage,
+} from "../../surface/adapter";
 import { resolveVaultPath } from "../../surface/resolve-vault";
 import {
   ANSWER_SCHEMA,
@@ -62,15 +65,12 @@ export async function runAnswer(
     path: vaultPath,
     bundlesRoot: options.bundlesRoot,
     onOpenFailed: (error) => {
-      const errorKind = openVaultErrorKind(error);
+      const failure = openVaultFailureInfo(error);
       printAnswerError({
         commandLabel,
         json: options.json === true,
-        error: errorKind,
-        message: error.kind === "not-a-vault"
-          ? `${commandLabel}: ${error.message}`
-          : `${commandLabel}: openVaultRuntime failed (${errorKind}). ` +
-            "Run `dome init` first to initialize the vault.",
+        error: failure.errorKind,
+        message: vaultOpenFailureMessage(commandLabel, error),
       });
       return 1;
     },

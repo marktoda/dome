@@ -45,7 +45,7 @@ import {
   dispatchView,
   dispatchViewOnVault,
   makeVaultMutex,
-  openVaultErrorKind,
+  openVaultFailureInfo,
   runtimeOpenFailureMessage,
   withVault as withVaultShared,
   type CatalogViewProblem,
@@ -354,13 +354,17 @@ function sourceDocumentHttpStatus(result: SourceDocumentResult): number {
 }
 
 /** The vault-open failure envelope — same shape as the http server's. */
-function commandErrorResponse(command: string, errorKind: string): Response {
+function commandErrorResponse(
+  command: string,
+  errorKind: string,
+  errorDetail?: string | undefined,
+): Response {
   return jsonResponse(500, {
     schema: COMMAND_ERROR_SCHEMA,
     status: "error",
     command,
     error: errorKind,
-    message: runtimeOpenFailureMessage(`dome ${command}`, errorKind),
+    message: runtimeOpenFailureMessage(`dome ${command}`, errorKind, errorDetail),
   });
 }
 
@@ -385,8 +389,14 @@ function httpViewRenderer<TPayload>(
   entry: FirstPartyViewEntry<TPayload>,
 ): ViewRenderer<Response> {
   return {
-    openFailed: (error) =>
-      commandErrorResponse(route, openVaultErrorKind(error)),
+    openFailed: (error) => {
+      const failure = openVaultFailureInfo(error);
+      return commandErrorResponse(
+        route,
+        failure.errorKind,
+        failure.errorDetail,
+      );
+    },
     problem: (problem) =>
       dataErrorResponse(
         viewProblemHttpStatus(problem),
@@ -556,9 +566,13 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       { path: opts.vaultPath, bundlesRoot: opts.bundlesRoot },
       fn,
     );
-    return outcome.kind === "open-failed"
-      ? commandErrorResponse(command, openVaultErrorKind(outcome.error))
-      : outcome.value;
+    if (outcome.kind !== "open-failed") return outcome.value;
+    const failure = openVaultFailureInfo(outcome.error);
+    return commandErrorResponse(
+      command,
+      failure.errorKind,
+      failure.errorDetail,
+    );
   };
 
   const dispatchHttpView = async <TPayload>(
@@ -635,8 +649,13 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       },
     ).then((outcome) => {
       if (outcome.kind === "open-failed") {
+        const failure = openVaultFailureInfo(outcome.error);
         openError = new Error(
-          `vault open failed: ${openVaultErrorKind(outcome.error)}`,
+          runtimeOpenFailureMessage(
+            "dome agent",
+            failure.errorKind,
+            failure.errorDetail,
+          ),
         );
         ready();
       }
@@ -1565,7 +1584,7 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       }
       const result = await buildStatusSnapshot({ vault: opts.vaultPath, bundlesRoot: opts.bundlesRoot });
       return result.kind === "runtime-open-failed"
-        ? commandErrorResponse("status", result.errorKind)
+        ? commandErrorResponse("status", result.errorKind, result.errorDetail)
         : jsonResponse(200, result.snapshot);
     }
 

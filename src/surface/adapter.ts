@@ -19,6 +19,7 @@ import {
   type OpenVaultError,
   type Vault,
 } from "../vault";
+import type { OpenVaultRuntimeError } from "../engine/host/vault-runtime";
 import type { DiagnosticEffect } from "../core/effect";
 import type { FirstPartyViewEntry } from "./view-catalog";
 
@@ -27,6 +28,35 @@ import type { FirstPartyViewEntry } from "./view-catalog";
 /** Flatten an `OpenVaultError` to the kind string operator envelopes carry. */
 export function openVaultErrorKind(error: OpenVaultError): string {
   return error.kind === "runtime-open-failed" ? error.cause.kind : error.kind;
+}
+
+/** The stable kind plus the one runtime-open detail safe for operator output. */
+export type RuntimeOpenFailureInfo = {
+  readonly errorKind: string;
+  readonly errorDetail?: string | undefined;
+};
+
+/**
+ * Preserve the capability-policy operator detail without exposing arbitrary
+ * nested runtime errors. The runtime closes rich parser failures through the
+ * capability-policy-owned vocabulary before constructing this error; every
+ * other failure intentionally remains kind-only.
+ */
+export function runtimeOpenFailureInfo(
+  error: OpenVaultRuntimeError,
+): RuntimeOpenFailureInfo {
+  return error.kind === "capability-policy-load-failed"
+    ? Object.freeze({ errorKind: error.kind, errorDetail: error.cause })
+    : Object.freeze({ errorKind: error.kind });
+}
+
+/** Runtime-open info for adapters using the public `openVault` wrapper. */
+export function openVaultFailureInfo(
+  error: OpenVaultError,
+): RuntimeOpenFailureInfo {
+  return error.kind === "runtime-open-failed"
+    ? runtimeOpenFailureInfo(error.cause)
+    : Object.freeze({ errorKind: error.kind });
 }
 
 /**
@@ -38,7 +68,17 @@ export function openVaultErrorKind(error: OpenVaultError): string {
 export function runtimeOpenFailureMessage(
   commandLabel: string,
   errorKind: string,
+  errorDetail?: string | undefined,
 ): string {
+  if (
+    errorKind === "capability-policy-load-failed" &&
+    errorDetail !== undefined
+  ) {
+    return (
+      `${commandLabel}: openVaultRuntime failed (${errorKind}): ${errorDetail}. ` +
+      "Repair `.dome/config.yaml` and `.dome/content-scope.yaml`, then retry."
+    );
+  }
   return (
     `${commandLabel}: openVaultRuntime failed (${errorKind}). ` +
     "Run `dome init` to initialize the vault."
@@ -54,9 +94,13 @@ export function vaultOpenFailureMessage(
   commandLabel: string,
   error: OpenVaultError,
 ): string {
-  return error.kind === "not-a-vault"
-    ? `${commandLabel}: ${error.message}`
-    : runtimeOpenFailureMessage(commandLabel, error.cause.kind);
+  if (error.kind === "not-a-vault") return `${commandLabel}: ${error.message}`;
+  const info = runtimeOpenFailureInfo(error.cause);
+  return runtimeOpenFailureMessage(
+    commandLabel,
+    info.errorKind,
+    info.errorDetail,
+  );
 }
 
 /**

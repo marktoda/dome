@@ -497,6 +497,27 @@ describe("runServe smoke", () => {
     expect(captured.out).toContain("dome serve: reloaded runtime configuration");
   }, 15_000);
 
+  test("reports conflicting policy documents with actionable paths at startup", async () => {
+    const f = await makeFixture({
+      configYaml: `${defaultServeConfig()}\ncontent_scope:\n  version: 1\n  include: ["**/*.md"]\n  exclude: [".dome/**", ".git/**"]\n`,
+      extraInitialFiles: {
+        ".dome/content-scope.yaml": `content_scope:\n  version: 1\n  include: ["notes/**/*.md"]\n  exclude: [".dome/**", ".git/**"]\n`,
+      },
+    });
+    fixtures.push(f);
+    silenceConsole();
+
+    expect(await runServe({ vault: f.vaultPath })).toBe(1);
+    const message = captured.err.join("\n");
+    expect(message).toContain("capability-policy-load-failed");
+    expect(message).toContain(
+      ".dome/config.yaml and .dome/content-scope.yaml define conflicting content_scope values",
+    );
+    expect(message).toContain(
+      "Repair `.dome/config.yaml` and `.dome/content-scope.yaml`, then retry.",
+    );
+  });
+
   test("drains due operational work while HEAD is already in sync", async () => {
     const f = await makeFixture();
     fixtures.push(f);

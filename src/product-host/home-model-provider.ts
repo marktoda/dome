@@ -6,6 +6,7 @@
 import { homedir, tmpdir } from "node:os";
 
 import {
+  capabilityPolicyOperatorDetail,
   loadCapabilityPolicy,
   type CommandModelProviderConfig,
 } from "../engine/core/capability-policy";
@@ -48,7 +49,13 @@ export async function resolveHomeModelRuntime(
 ): Promise<HomeModelRuntime> {
   const loaded = await (deps.loadPolicy ?? loadCapabilityPolicy)(vaultPath);
   if (!loaded.ok) {
-    return Object.freeze({ configuration: "invalid", credential: "not-managed", modelState: "unreachable", probe: null, detail: loaded.error });
+    return Object.freeze({
+      configuration: "invalid",
+      credential: "not-managed",
+      modelState: "unreachable",
+      probe: null,
+      detail: capabilityPolicyOperatorDetail(loaded.error),
+    });
   }
   const configured = loaded.value.runtime.modelProvider;
   if (configured === undefined) {

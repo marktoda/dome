@@ -240,7 +240,11 @@ block yourself.
   weaves whatever exists into the daily and omits what doesn't.
 - \`preferences/signals.md\` is the append-only preference-signal log — see
   "Preference signals" above for when and how to append to it.
-- \`.dome/config.yaml\` controls enabled extension bundles and grants.
+- \`.dome/config.yaml\` controls enabled extension bundles and grants. An older
+  adapted vault may also have the narrow managed \`.dome/content-scope.yaml\`
+  overlay; it contains only \`content_scope\`. If both files define scope, the
+  values must be equal or Dome fails closed. Do not merge unrelated settings
+  into the overlay.
 - \`.dome/state/\` contains derived SQLite state for projections, outbox, and the
   run ledger. Do not edit or commit it.
 - \`.dome/extensions/\` is optional vault-local extension code. The shipped

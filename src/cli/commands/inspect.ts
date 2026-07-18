@@ -67,6 +67,7 @@ import type {
 } from "../../core/processor";
 import { openVaultRuntime, type VaultRuntime } from "../../engine/host/vault-runtime";
 import { emitRuntimeOpenFailure } from "../command-error";
+import { runtimeOpenFailureInfo } from "../../surface/adapter";
 import {
   loadBundleManifestSummaryFromRoots,
   type BundleManifestSummary,
@@ -259,7 +260,7 @@ export async function runInspect(
     return emitRuntimeOpenFailure({
       command: "inspect",
       json: options.json === true,
-      errorKind: runtimeResult.error.kind,
+      ...runtimeOpenFailureInfo(runtimeResult.error),
     });
   }
   const runtime = runtimeResult.value;

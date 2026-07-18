@@ -10,7 +10,7 @@ import {
 /** Broad visible-owner-Markdown policy proposed by the first setup slice. */
 export const DEFAULT_SETUP_CONTENT_SCOPE = DEFAULT_CONTENT_SCOPE_CONFIG;
 
-/** Exact managed mapping inserted into an existing config that has no scope. */
+/** Exact standalone create-only overlay for an existing config with no scope. */
 export function renderSetupContentScopeConfig(input: ContentScopeConfig): string {
   const scope = canonicalContentScopeSchema.parse(input);
   const rendered = "# Dome setup: canonical owner-Markdown universe.\n" + renderContentScopeYaml(scope);

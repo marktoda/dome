@@ -41,6 +41,10 @@ import {
 import { openVaultRuntime } from "../../engine/host/vault-runtime";
 import { formatJson } from "../../surface/format";
 import {
+  runtimeOpenFailureInfo,
+  runtimeOpenFailureMessage,
+} from "../../surface/adapter";
+import {
   footer,
   headline,
   kv,
@@ -192,16 +196,19 @@ export async function runReanchor(
   });
   const runtimeResult = await openVaultRuntime({ vaultPath, ...bundleRoots });
   if (!runtimeResult.ok) {
+    const failure = runtimeOpenFailureInfo(runtimeResult.error);
     return emitError({
       json,
       vaultPath,
       branch,
       head,
       adopted,
-      error: `runtime-open-failed:${runtimeResult.error.kind}`,
-      message:
-        `openVaultRuntime failed (${runtimeResult.error.kind}). ` +
-        "Run `dome init` to initialize the vault.",
+      error: `runtime-open-failed:${failure.errorKind}`,
+      message: runtimeOpenFailureMessage(
+        "dome reanchor",
+        failure.errorKind,
+        failure.errorDetail,
+      ),
       exitCode: 1,
     });
   }
@@ -362,7 +369,11 @@ function emitError(opts: {
     };
     console.log(formatJson(payload));
   } else {
-    console.error(`dome reanchor: ${opts.message}`);
+    console.error(
+      opts.message.startsWith("dome reanchor:")
+        ? opts.message
+        : `dome reanchor: ${opts.message}`,
+    );
   }
   return opts.exitCode ?? EX_USAGE;
 }

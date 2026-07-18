@@ -83,7 +83,7 @@ import {
   catalogViewProblemMessage,
   dispatchView,
   makeVaultMutex,
-  openVaultErrorKind,
+  openVaultFailureInfo,
   runtimeOpenFailureMessage,
   withVault as withVaultShared,
   type ViewRenderer,
@@ -175,7 +175,11 @@ function errorToolResult(messages: ReadonlyArray<string>): ToolResult {
  * The vault-open failure envelope — the same `dome.command-error/v1`
  * document the CLI's `emitRuntimeOpenFailure` puts on stdout in JSON mode.
  */
-function commandErrorResult(command: string, errorKind: string): ToolResult {
+function commandErrorResult(
+  command: string,
+  errorKind: string,
+  errorDetail?: string | undefined,
+): ToolResult {
   return {
     content: [
       {
@@ -185,7 +189,11 @@ function commandErrorResult(command: string, errorKind: string): ToolResult {
           status: "error",
           command,
           error: errorKind,
-          message: runtimeOpenFailureMessage(`dome ${command}`, errorKind),
+          message: runtimeOpenFailureMessage(
+            `dome ${command}`,
+            errorKind,
+            errorDetail,
+          ),
         }),
       },
     ],
@@ -219,9 +227,13 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
     fn: (vault: Vault) => Promise<ToolResult>,
   ): Promise<ToolResult> => {
     const outcome = await withVaultShared({ path: vault, bundlesRoot }, fn);
-    return outcome.kind === "open-failed"
-      ? commandErrorResult(command, openVaultErrorKind(outcome.error))
-      : outcome.value;
+    if (outcome.kind !== "open-failed") return outcome.value;
+    const failure = openVaultFailureInfo(outcome.error);
+    return commandErrorResult(
+      command,
+      failure.errorKind,
+      failure.errorDetail,
+    );
   };
 
   /** The MCP error-rendering seam: open failures + view problems → tool errors. */
@@ -229,8 +241,14 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
     toolLabel: string,
     entry: FirstPartyViewEntry<TPayload>,
   ): ViewRenderer<ToolResult> => ({
-    openFailed: (error) =>
-      commandErrorResult(toolLabel, openVaultErrorKind(error)),
+    openFailed: (error) => {
+      const failure = openVaultFailureInfo(error);
+      return commandErrorResult(
+        toolLabel,
+        failure.errorKind,
+        failure.errorDetail,
+      );
+    },
     problem: (problem) =>
       errorToolResult([catalogViewProblemMessage(toolLabel, entry, problem)]),
   });
@@ -554,7 +572,7 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
       enqueue(async () => {
         const outcome = await buildStatusSnapshot({ vault, bundlesRoot });
         return outcome.kind === "runtime-open-failed"
-          ? commandErrorResult("status", outcome.errorKind)
+          ? commandErrorResult("status", outcome.errorKind, outcome.errorDetail)
           : jsonToolResult(outcome.snapshot);
       }),
   );
@@ -596,7 +614,7 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
           orphanThresholdMs: DEFAULT_ORPHAN_RUN_THRESHOLD_MS,
         });
         return outcome.kind === "runtime-open-failed"
-          ? commandErrorResult("check", outcome.errorKind)
+          ? commandErrorResult("check", outcome.errorKind, outcome.errorDetail)
           : jsonToolResult(outcome.report);
       }),
   );
@@ -806,7 +824,7 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
       enqueue(async () => {
         const outcome = await buildExplain({ vault, bundlesRoot, target });
         if (outcome.kind === "runtime-open-failed") {
-          return commandErrorResult("explain", outcome.errorKind);
+          return commandErrorResult("explain", outcome.errorKind, outcome.errorDetail);
         }
         if (outcome.kind !== "ok") {
           return {

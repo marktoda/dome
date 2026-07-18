@@ -185,6 +185,10 @@ import {
 import { collectProposals } from "./proposals";
 import { probeServiceState, type ServiceDeps } from "./service-probe";
 import { resolveVaultPath } from "./resolve-vault";
+import {
+  runtimeOpenFailureInfo,
+  type RuntimeOpenFailureInfo,
+} from "./adapter";
 import { collectVaultAnalytics } from "./vault-analytics";
 
 const RECENT_PROCESSOR_RUN_LIMIT = 100;
@@ -292,7 +296,7 @@ type ServiceStatusValue = "loaded" | "installed" | "not-installed" | "unsupporte
 /** The data-returning outcome of one status collection. */
 export type StatusSnapshotOutcome =
   | { readonly kind: "ok"; readonly snapshot: StatusSnapshot }
-  | { readonly kind: "runtime-open-failed"; readonly errorKind: string };
+  | ({ readonly kind: "runtime-open-failed" } & RuntimeOpenFailureInfo);
 
 /**
  * Collect the full `dome status` snapshot without printing. Opens and
@@ -330,7 +334,7 @@ export async function buildStatusSnapshot(
   if (!runtimeResult.ok) {
     return Object.freeze({
       kind: "runtime-open-failed" as const,
-      errorKind: runtimeResult.error.kind,
+      ...runtimeOpenFailureInfo(runtimeResult.error),
     });
   }
   const runtime = runtimeResult.value;

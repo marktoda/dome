@@ -38,6 +38,7 @@ export async function runExplain(
       command: "explain",
       json,
       errorKind: outcome.errorKind,
+      errorDetail: outcome.errorDetail,
     });
   }
 

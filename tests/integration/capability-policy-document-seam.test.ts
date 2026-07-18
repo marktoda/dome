@@ -17,6 +17,22 @@ describe("capability policy document seam", () => {
     }
     expect(offenders).toEqual([]);
   });
+
+  test("operator surfaces do not hand-render runtime-open failures or raw policy errors", async () => {
+    const sourceRoot = join(ROOT, "src");
+    const offenders: string[] = [];
+    for (const path of await typescriptFiles(sourceRoot)) {
+      if (path.endsWith("/surface/adapter.ts")) continue;
+      const body = await readFile(path, "utf8");
+      if (
+        /openVaultRuntime failed\s*\(/.test(body) ||
+        /detail:\s*loaded\.error/.test(body)
+      ) {
+        offenders.push(relative(ROOT, path));
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
 });
 
 async function typescriptFiles(directory: string): Promise<string[]> {

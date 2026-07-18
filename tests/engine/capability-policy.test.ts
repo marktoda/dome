@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+  capabilityPolicyOperatorDetail,
   computeCapabilityPolicyHash,
   DEFAULT_RUNTIME_CONFIG,
   loadCapabilityPolicy,
@@ -79,6 +80,30 @@ describe("loadCapabilityPolicy", () => {
     });
   });
 
+  test("hashes one canonical scope identically in inline, overlay, and equal-dual storage", () => {
+    const scope = `content_scope:\n  version: 1\n  include: ["notes/**/*.md"]\n  exclude: [".dome/**", ".git/**"]\n`;
+    const baseOnly = resolveCapabilityPolicyDocuments({
+      base: { body: `grants: standard\n${scope}`, path: ".dome/config.yaml" },
+      contentScope: null,
+    });
+    const overlayOnly = resolveCapabilityPolicyDocuments({
+      base: { body: "grants: standard\n", path: ".dome/config.yaml" },
+      contentScope: { body: scope, path: ".dome/content-scope.yaml" },
+    });
+    const equalDual = resolveCapabilityPolicyDocuments({
+      base: { body: `grants: standard\n${scope}`, path: ".dome/config.yaml" },
+      contentScope: { body: scope, path: ".dome/content-scope.yaml" },
+    });
+    expect(baseOnly.ok).toBe(true);
+    expect(overlayOnly.ok).toBe(true);
+    expect(equalDual.ok).toBe(true);
+    if (!baseOnly.ok || !overlayOnly.ok || !equalDual.ok) return;
+    const hashes = [baseOnly, overlayOnly, equalDual].map((result) =>
+      computeCapabilityPolicyHash(result.value)
+    );
+    expect(new Set(hashes).size).toBe(1);
+  });
+
   test("loads and reloads the scope document while foundConfig derives from the base", async () => {
     const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
     roots.push(root);
@@ -94,6 +119,25 @@ describe("loadCapabilityPolicy", () => {
     rmSync(join(root, ".dome", "config.yaml"));
     const orphan = await loadCapabilityPolicy(root);
     expect(orphan.ok).toBe(false);
+  });
+
+  test("bounds runtime load errors to stable display paths without source excerpts", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-policy-safe-error-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    const secret = "policy-secret-93a6";
+    writeFileSync(
+      join(root, ".dome", "config.yaml"),
+      `${secret}: [\n\u0001`,
+    );
+    const loaded = await loadCapabilityPolicy(root);
+    if (!loaded.ok) {
+      const detail = capabilityPolicyOperatorDetail(loaded.error);
+      expect(detail).toBe(".dome/config.yaml is invalid");
+      expect(detail).not.toContain(root);
+      expect(detail).not.toContain(secret);
+      expect(detail).not.toMatch(/[\r\n\u0000-\u001f\u007f]/);
+    }
   });
 
   test("parses canonical content scope and includes it in the policy hash", () => {

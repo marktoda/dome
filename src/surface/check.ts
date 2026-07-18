@@ -34,6 +34,10 @@ import { queryDiagnostics } from "../projections/diagnostics";
 import { queryQuestionRecords } from "../projections/questions";
 import { collectProposals, type ProposalView } from "./proposals";
 import {
+  runtimeOpenFailureInfo,
+  type RuntimeOpenFailureInfo,
+} from "./adapter";
+import {
   countQuestionAutomationPolicies,
   questionAutomationPolicy,
   resolveQuestionCommand,
@@ -175,7 +179,7 @@ export type CheckQuestionItem = {
 /** The data-returning outcome of one check-report collection. */
 export type CheckReportOutcome =
   | { readonly kind: "ok"; readonly report: CheckReport }
-  | { readonly kind: "runtime-open-failed"; readonly errorKind: string };
+  | ({ readonly kind: "runtime-open-failed" } & RuntimeOpenFailureInfo);
 
 /**
  * Collect the full `dome.check/v1` report without printing. Opens and
@@ -221,7 +225,7 @@ export async function buildCheckReport(opts: {
   if (!runtimeResult.ok) {
     return Object.freeze({
       kind: "runtime-open-failed" as const,
-      errorKind: runtimeResult.error.kind,
+      ...runtimeOpenFailureInfo(runtimeResult.error),
     });
   }
   const runtime = runtimeResult.value;

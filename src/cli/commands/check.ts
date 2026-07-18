@@ -89,6 +89,7 @@ export async function runCheck(
       command: "check",
       json: options.json === true,
       errorKind: outcome.errorKind,
+      errorDetail: outcome.errorDetail,
     });
   }
 

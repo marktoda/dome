@@ -64,6 +64,7 @@ import {
   type TreeOid,
 } from "../../core/processor";
 import {
+  capabilityPolicyOperatorDetail,
   computeCapabilityPolicyHash,
   loadCapabilityPolicy,
   type ExtensionPolicyStatus,
@@ -407,7 +408,7 @@ export async function openVaultRuntime(
   if (!policyResult.ok) {
     return err({
       kind: "capability-policy-load-failed",
-      cause: policyResult.error,
+      cause: capabilityPolicyOperatorDetail(policyResult.error),
     });
   }
   const policy = policyResult.value;

@@ -7,6 +7,24 @@ import { HomeCredentialError, type HomeCredentials } from "../../src/product-hos
 import { resolveHomeModelRuntime, scrubbedProviderEnvironment } from "../../src/product-host/home-model-provider";
 
 describe("Home model-provider resolution", () => {
+  test("redacts rich policy parser failures from product-facing detail", async () => {
+    const vault = "/private/vault-secret-root";
+    const secret = "anthropic-secret-source-line";
+    const resolved = await resolveHomeModelRuntime(vault, {
+      loadPolicy: async () => ({
+        ok: false as const,
+        error: `failed to parse ${vault}/.dome/config.yaml: ${secret}\nnext line`,
+      }),
+    });
+    expect(resolved).toMatchObject({
+      configuration: "invalid",
+      detail: "Dome capability policy is invalid",
+    });
+    expect(resolved.detail).not.toContain(vault);
+    expect(resolved.detail).not.toContain(secret);
+    expect(resolved.detail).not.toMatch(/[\r\n\u0000-\u001f\u007f]/);
+  });
+
   test("replaces only the exact shipped command with the fixed helper command", async () => {
     const vault = await fixture('["bun", ".dome/model-provider.ts"]');
     const probes: unknown[] = [];
