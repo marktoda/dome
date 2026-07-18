@@ -211,7 +211,11 @@ describe("BacklogReview", () => {
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Apply 1 selected" }));
     fireEvent.click(cancel);
     expect(screen.queryByRole("alertdialog")).toBeNull();
-    await waitFor(() => expect(document.activeElement).toBe(reviewSelected));
+    // useModalFocus restores the trigger in its documented cleanup microtask.
+    // Flush that exact boundary instead of polling, which can starve the queued
+    // restoration under Bun's happy-dom runner.
+    await Promise.resolve();
+    expect(document.activeElement).toBe(reviewSelected);
     expect(review).toHaveBeenCalledTimes(0);
 
     fireEvent.click(screen.getByRole("button", { name: "Review selected" }));
