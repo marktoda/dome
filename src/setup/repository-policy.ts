@@ -29,6 +29,9 @@ export type SetupRepositoryCandidate = Readonly<{
   bytes: number;
   /** Opaque, content-safe identity from the bounded source inspection. */
   proofSha256: string;
+  /** Present only when inspection was allowed to hash content. */
+  contentSha256: string | null;
+  gitMode: "100644" | "100755" | null;
   tracking: "tracked" | "untracked" | "ignored" | "other";
   disposition: typeof SETUP_REPOSITORY_DISPOSITIONS[number];
   reason: typeof SETUP_REPOSITORY_REASONS[number];
@@ -39,6 +42,8 @@ export type SetupRepositoryObservation = Readonly<{
   kind: SetupRepositoryCandidate["kind"];
   bytes: number;
   proofSha256: string;
+  contentSha256: string | null;
+  gitMode: "100644" | "100755" | null;
   tracking: SetupRepositoryCandidate["tracking"];
   gitDirect: boolean;
   observedReason: SetupRepositoryCandidate["reason"];
@@ -52,6 +57,8 @@ export function deriveSetupRepositoryCandidate(
     !["tracked", "untracked", "ignored", "other"].includes(observation.tracking) ||
     !Number.isSafeInteger(observation.bytes) || observation.bytes < 0 ||
     !/^[0-9a-f]{64}$/.test(observation.proofSha256) ||
+    !(observation.contentSha256 === null || /^[0-9a-f]{64}$/.test(observation.contentSha256)) ||
+    !(observation.gitMode === null || observation.gitMode === "100644" || observation.gitMode === "100755") ||
     !SETUP_REPOSITORY_REASONS.includes(observation.observedReason)) {
     throw new Error("repository candidate observation is invalid");
   }
@@ -61,6 +68,8 @@ export function deriveSetupRepositoryCandidate(
     kind: observation.kind,
     bytes: observation.bytes,
     proofSha256: observation.proofSha256,
+    contentSha256: observation.contentSha256,
+    gitMode: observation.gitMode,
     tracking: observation.tracking,
     disposition: canonicalDisposition({ ...observation, reason }),
     reason,
@@ -82,6 +91,8 @@ export function validateSetupRepositoryCandidate(
     kind: candidate.kind,
     bytes: candidate.bytes,
     proofSha256: candidate.proofSha256,
+    contentSha256: candidate.contentSha256,
+    gitMode: candidate.gitMode,
     tracking: candidate.tracking,
     gitDirect,
     observedReason: candidate.reason,

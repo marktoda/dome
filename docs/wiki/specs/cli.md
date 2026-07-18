@@ -150,7 +150,7 @@ questions and `dome resolve`, so recovery still goes through normal Effect
 routing and capability checks.
 - **View-phase commands:** `dome run <name>` plus dedicated wrappers such as `dome query`, `dome lint`, `dome export-context`, `dome today` (whose `--prep`/`--with` flags dispatch the `prep`/`agenda-with` view processors), and `dome audit` (whose subjects dispatch `stale-claims`/`orphan-pages`) — command-triggered view-phase processors invoked through the shared view-command boundary. `dome run <name>` remains available as the generic escape hatch for extension-authored view processors that have not (yet) earned a dedicated binding.
 - **Capture ingress:** `dome capture` — the frictionless write-side entry point ([[wedge]] §"Phase 3 — Capture loop"). It writes a timestamped raw source into `inbox/raw/` and lands it as an ordinary human commit on the current branch; adoption and `dome.agent.ingest` handle everything after the commit boundary. See [[wiki/specs/capture]] for the capture-loop spec and the phone/voice ingress recipe.
-- **Lifecycle:** `dome setup --dry-run` assesses and previews additive onboarding, `dome init` remains the current mutation path that constructs a vault, and `dome home` is the canonical PWA-first Product Host owning one long-lived vault, compiler scheduler, HTTP listener, setup, upgrade, and supervised service. The hidden top-level service commands preserve the pre-Home Serve lifecycle only for compatibility. Schema migration is handled by storage open/rebuild and Home upgrade paths; setup apply and a dedicated `dome migrate` remain roadmap items.
+- **Lifecycle:** `dome setup --dry-run` assesses and previews additive onboarding, `dome init` remains the current public mutation path that constructs a vault, and `dome home` is the canonical PWA-first Product Host owning one long-lived vault, compiler scheduler, HTTP listener, setup, upgrade, and supervised service. The product setup Module now implements revision-bound vault adaptation behind the SDK boundary; exposing it through the root setup command and collapsing init onto that seam are the next M5 checkpoint. Home activation remains M6. The hidden top-level service commands preserve the pre-Home Serve lifecycle only for compatibility. Schema migration is handled by storage open/rebuild and Home upgrade paths; a dedicated `dome migrate` remains a roadmap item.
 - **Protocol adapters:** `dome mcp` is the visible stdio server for foreground harnesses ([[wiki/specs/mcp-surface]]). Hidden `dome http` is the standalone compatibility form of HTTP contracts Home now hosts as a cohesive product ([[wiki/specs/http-surface]]). Both consume the public `openVault` wrapper and protocol-neutral `src/surface/` collectors.
 
 Planned dedicated view aliases such as `dome stats` are not Commander bindings
@@ -188,13 +188,16 @@ without imposing a first-party schema.
 ### `dome setup [path] --dry-run [--json]`
 
 Produces the versioned [[wiki/specs/setup]] `SetupPlan` for `<path>` (defaults
-to `.`). This first setup surface is deliberately preview-only: `--dry-run` is
-required and there is no `--apply` option. It performs bounded local discovery,
-then passes closed evidence through the pure setup compiler. It does not write
-files, initialize Git, open the Dome runtime, persist setup state, call a model,
-read credentials, access the network, or change Home or services. Its reused
-installed-product proof is the read-only closed-package layer: it hashes the
-compressed Home archive but does not extract or execute it.
+to `.`). The current Commander binding is deliberately preview-only:
+`--dry-run` is required and there is no `--apply` option. It performs bounded
+local discovery, then passes closed evidence through the pure setup compiler.
+The separate SDK setup Module can apply the same consented plan's
+`vault-adaptation` scope, but this CLI adapter does not invoke it yet. The
+preview command does not write files, initialize Git, open the Dome runtime,
+persist setup state, call a model, read credentials, access the network, or
+change Home or services. Its reused installed-product proof is the read-only
+closed-package layer: it hashes the compressed Home archive but does not
+extract or execute it.
 
 The compiler, not the CLI adapter, owns classification and prerequisite policy.
 The discovery adapter supplies observed Bun and Git versions, packaged-product
@@ -206,7 +209,9 @@ boundary. Human and `--json` output render the same validated plan.
 Exit `0` means the preview is ready, exit `1` means it is valid but blocked,
 and exit `64` means the required preview grammar was not supplied. Blocked
 plans carry specific next actions and no applicable actions. No setup database
-or workflow state is created.
+or workflow state is created. The next M5 checkpoint adds the public apply
+grammar and routes both setup and init through the one adaptation Module; M6
+then adds separately consented Home activation.
 
 ### `dome init [path] [--refresh-config] [--refresh-instructions] [--with-model-provider anthropic] [--with-source <kind>]...`
 

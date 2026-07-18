@@ -577,13 +577,18 @@ export async function commitFilesOnHead(opts: {
   files: ReadonlyArray<{
     readonly filepath: string;
     /** `null` removes the path from the tree (see `spliceRemoveFromTree`). */
-    readonly content: string | null;
+    readonly content: string | Uint8Array | null;
+    readonly mode?: "100644" | "100755";
   }>;
   message: string;
   author?: CommitIdentity;
   beforeRefAdvance?: (attempt: number) => Promise<void>;
   /** Defaults true. False aborts rather than splicing full-file content onto a newer HEAD. */
   retryOnCas?: boolean;
+  /** Refuse to build on any HEAD other than this exact admitted parent. */
+  expectedHead?: string;
+  /** Refuse to advance a different branch even when it has the expected HEAD. */
+  expectedBranch?: string;
   onCandidate?: (candidate: {
     readonly attempt: number;
     readonly branch: string;
@@ -600,6 +605,7 @@ export async function commitFilesOnHead(opts: {
   const fulls = opts.files.map((f) => ({
     full: fullVaultPath(prefix, f.filepath),
     content: f.content,
+    mode: f.mode ?? "100644" as const,
   }));
   if (isNativeGitFile(context)) {
     return nativeGitFileCommitFilesOnHead({ ...opts, root, fulls });
@@ -608,9 +614,15 @@ export async function commitFilesOnHead(opts: {
   if (branch === undefined) {
     throw new Error("commitFilesOnHead: HEAD is detached; callers gate on a branch");
   }
+  if (opts.expectedBranch !== undefined && branch !== `refs/heads/${opts.expectedBranch}`) {
+    throw new Error(`commitFilesOnHead: branch changed from expected ${opts.expectedBranch}`);
+  }
   const author = opts.author ?? { name: "Dome", email: "dome@local" };
 
   let head = await git.resolveRef({ fs, dir: root, ref: "HEAD" });
+  if (opts.expectedHead !== undefined && head !== opts.expectedHead) {
+    throw new Error(`commitFilesOnHead: HEAD changed from expected ${opts.expectedHead} to ${head}`);
+  }
   for (let attempt = 1; attempt <= COMMIT_SINGLE_FILE_MAX_ATTEMPTS; attempt += 1) {
     const { commit: headCommit } = await git.readCommit({ fs, dir: root, oid: head });
     let treeOid = headCommit.tree;
@@ -623,13 +635,14 @@ export async function commitFilesOnHead(opts: {
       const blobOid = await git.writeBlob({
         fs,
         dir: root,
-        blob: new TextEncoder().encode(f.content),
+        blob: typeof f.content === "string" ? new TextEncoder().encode(f.content) : f.content,
       });
       treeOid = await spliceBlobIntoTree({
         root,
         treeOid,
         segments,
         blobOid,
+        mode: f.mode,
       });
     }
     // Write the commit object without touching the branch; the ref advance
@@ -665,23 +678,8 @@ export async function commitFilesOnHead(opts: {
     if (opts.afterRefAdvance !== undefined) {
       await opts.afterRefAdvance(commitOid);
     }
-    // Keep the index in sync for the touched paths so the working tree reads
-    // clean after the commit. Writes: the caller already wrote `content` to
-    // disk, so `git.add` picks it up. Deletes: this helper is tree-only (see
-    // module header) and never touches the working tree itself, but the
-    // caller may have already unlinked the path on disk before calling in —
-    // `git.remove` stages that removal from the index either way; if the
-    // path was never tracked there is nothing to stage.
     for (const f of fulls) {
-      if (f.content === null) {
-        try {
-          await git.remove({ fs, dir: root, filepath: f.full });
-        } catch {
-          // Not present in the index — nothing to stage.
-        }
-        continue;
-      }
-      await git.add({ fs, dir: root, filepath: f.full });
+      await git.resetIndex({ fs, dir: root, filepath: f.full, ref: commitOid });
     }
     return commitOid;
   }
@@ -689,6 +687,116 @@ export async function commitFilesOnHead(opts: {
     `commitFilesOnHead: ${branch} kept advancing concurrently; ` +
       `gave up after ${COMMIT_SINGLE_FILE_MAX_ATTEMPTS} attempts`,
   );
+}
+
+/**
+ * Create the first commit from caller-supplied bytes without staging or
+ * reading the mutable working tree. The unborn branch advances by CAS, so a
+ * concurrent first commit cannot be overwritten.
+ */
+export async function commitInitialFiles(opts: {
+  path: string;
+  files: ReadonlyArray<{
+    readonly filepath: string;
+    readonly content: Uint8Array;
+    readonly mode: "100644" | "100755";
+  }>;
+  message: string;
+  author?: CommitIdentity;
+  expectedBranch?: string;
+}): Promise<string> {
+  if (opts.files.length === 0) throw new Error("commitInitialFiles: no files to commit");
+  const context = await resolveGitContext(opts.path);
+  if (isNativeGitFile(context)) throw new Error("commitInitialFiles cannot target a gitfile or linked worktree");
+  const { root, prefix } = context;
+  const branch = await git.currentBranch({ fs, dir: root, fullname: true });
+  if (branch === undefined) throw new Error("commitInitialFiles: HEAD is detached");
+  if (opts.expectedBranch !== undefined && branch !== `refs/heads/${opts.expectedBranch}`) {
+    throw new Error(`commitInitialFiles: branch changed from expected ${opts.expectedBranch}`);
+  }
+  try {
+    await git.resolveRef({ fs, dir: root, ref: "HEAD" });
+    throw new Error("commitInitialFiles: HEAD is not unborn");
+  } catch (error) {
+    if (error instanceof Error && error.message === "commitInitialFiles: HEAD is not unborn") throw error;
+  }
+  let tree = await git.writeTree({ fs, dir: root, tree: [] });
+  const fulls = opts.files.map((file) => ({
+    filepath: fullVaultPath(prefix, file.filepath),
+    content: file.content,
+    mode: file.mode,
+  }));
+  for (const file of fulls) {
+    const blob = await git.writeBlob({ fs, dir: root, blob: file.content });
+    tree = await spliceBlobIntoTree({
+      root, treeOid: tree, segments: file.filepath.split("/"), blobOid: blob, mode: file.mode,
+    });
+  }
+  const author = opts.author ?? { name: "Dome", email: "dome@local" };
+  const oid = await git.commit({
+    fs, dir: root, message: opts.message, author, tree, parent: [], noUpdateBranch: true,
+  });
+  await writeRef({ path: opts.path, ref: branch, value: oid, expectedOld: null });
+  for (const file of fulls) await git.resetIndex({ fs, dir: root, filepath: file.filepath, ref: oid });
+  return oid;
+}
+
+export type GitCommitRecord = Readonly<{
+  oid: string;
+  message: string;
+  tree: string;
+  parents: ReadonlyArray<string>;
+  author: Readonly<{ name: string; email: string }>;
+  committer: Readonly<{ name: string; email: string }>;
+}>;
+
+/** Exact local commit evidence for admission/recovery code. */
+export async function readCommitRecord(path: string, oid: string): Promise<GitCommitRecord> {
+  const row = (await log({ path, ref: oid, depth: 1 }))[0];
+  if (row === undefined || row.oid !== oid) throw new Error(`commit ${oid} is unavailable`);
+  return Object.freeze({
+    oid,
+    message: row.commit.message,
+    tree: row.commit.tree,
+    parents: Object.freeze([...row.commit.parent]),
+    author: Object.freeze({ name: row.commit.author.name, email: row.commit.author.email }),
+    committer: Object.freeze({ name: row.commit.committer.name, email: row.commit.committer.email }),
+  });
+}
+
+export type GitTreeEntry = Readonly<{ path: string; mode: string; oid: string; type: string }>;
+
+/** Recursively enumerate one commit tree at the vault boundary. */
+export async function listTreeEntriesAtCommit(path: string, commit: string): Promise<ReadonlyArray<GitTreeEntry>> {
+  const walk = async (treeish: string, prefix: string): Promise<GitTreeEntry[]> => {
+    const rows = await readTree({ path, oid: treeish });
+    const result: GitTreeEntry[] = [];
+    for (const row of rows.tree) {
+      const relative = prefix === "" ? row.path : `${prefix}/${row.path}`;
+      if (row.type === "tree") result.push(...await walk(row.oid, relative));
+      else result.push(Object.freeze({ path: relative, mode: row.mode, oid: row.oid, type: row.type }));
+    }
+    return result;
+  };
+  return Object.freeze((await walk(commit, "")).sort((a, b) => compareStrings(a.path, b.path)));
+}
+
+/** Reset selected index entries to exact committed blobs without reading the working tree. */
+export async function resetIndexToCommit(opts: {
+  path: string;
+  commit: string;
+  files: ReadonlyArray<string>;
+}): Promise<void> {
+  if (opts.files.length === 0) return;
+  const context = await resolveGitContext(opts.path);
+  const fulls = opts.files.map((path) => fullVaultPath(context.prefix, path));
+  if (isNativeGitFile(context)) {
+    await runNativeGit(["-C", context.root, "reset", opts.commit, "--", ...fulls.map(literalPathspec)]);
+    return;
+  }
+  for (const filepath of fulls) {
+    await git.resetIndex({ fs, dir: context.root, filepath, ref: opts.commit });
+  }
 }
 
 /**
@@ -703,6 +811,7 @@ async function spliceBlobIntoTree(opts: {
   readonly treeOid: string;
   readonly segments: ReadonlyArray<string>;
   readonly blobOid: string;
+  readonly mode?: "100644" | "100755";
 }): Promise<string> {
   const [segment, ...rest] = opts.segments;
   if (segment === undefined) {
@@ -711,7 +820,7 @@ async function spliceBlobIntoTree(opts: {
   const { tree } = await git.readTree({ fs, dir: opts.root, oid: opts.treeOid });
   const entries = tree.filter((entry) => entry.path !== segment);
   if (rest.length === 0) {
-    entries.push({ mode: "100644", path: segment, oid: opts.blobOid, type: "blob" });
+    entries.push({ mode: opts.mode ?? "100644", path: segment, oid: opts.blobOid, type: "blob" });
   } else {
     const existing = tree.find(
       (entry) => entry.path === segment && entry.type === "tree",
@@ -723,6 +832,7 @@ async function spliceBlobIntoTree(opts: {
       treeOid: childOid,
       segments: rest,
       blobOid: opts.blobOid,
+      ...(opts.mode === undefined ? {} : { mode: opts.mode }),
     });
     entries.push({ mode: "040000", path: segment, oid: newChild, type: "tree" });
   }
@@ -848,6 +958,36 @@ export async function readBlob(opts: {
       if (code === "NotFoundError") return null;
     }
     throw e;
+  }
+}
+
+/** Binary-safe companion to readBlob for exact setup/baseline admission. */
+export async function readBlobBytes(opts: {
+  path: string;
+  commit: string;
+  filepath: string;
+}): Promise<Uint8Array | null> {
+  const context = await resolveGitContext(opts.path);
+  const fullpath = fullVaultPath(context.prefix, opts.filepath);
+  if (isNativeGitFile(context)) {
+    const proc = Bun.spawn(["git", "-C", context.root, "cat-file", "blob", `${opts.commit}:${fullpath}`], {
+      env: nativeGitEnv(), stdout: "pipe", stderr: "pipe",
+    });
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(proc.stdout).arrayBuffer(), new Response(proc.stderr).text(), proc.exited,
+    ]);
+    if (code !== 0) {
+      if (/does not exist|not a valid object|path .* not in/i.test(stderr)) return null;
+      throw new Error(`git cat-file blob failed: ${stderr.trim() || `exit ${code}`}`);
+    }
+    return new Uint8Array(stdout);
+  }
+  try {
+    const result = await git.readBlob({ fs, dir: context.root, oid: opts.commit, filepath: fullpath });
+    return result.blob;
+  } catch (error) {
+    if (error instanceof Error && /not found|ENOENT|NotFoundError/i.test(error.message)) return null;
+    throw error;
   }
 }
 
@@ -1361,7 +1501,7 @@ function firstTrailerValue(field: string | undefined): string | null {
 }
 
 type NativeGitOptions = {
-  readonly stdin?: string;
+  readonly stdin?: string | Uint8Array;
   readonly env?: Readonly<Record<string, string>>;
 };
 
@@ -1535,7 +1675,11 @@ async function nativeWorktreeEntry(
 
 async function nativeGitFileCommitFilesOnHead(opts: {
   readonly path: string;
-  readonly files: ReadonlyArray<{ readonly filepath: string; readonly content: string | null }>;
+  readonly files: ReadonlyArray<{
+    readonly filepath: string;
+    readonly content: string | Uint8Array | null;
+    readonly mode?: "100644" | "100755";
+  }>;
   readonly message: string;
   readonly author?: CommitIdentity;
   readonly beforeRefAdvance?: (attempt: number) => Promise<void>;
@@ -1548,7 +1692,13 @@ async function nativeGitFileCommitFilesOnHead(opts: {
   }) => Promise<void>;
   readonly afterRefAdvance?: (commit: string) => Promise<void>;
   readonly root: string;
-  readonly fulls: ReadonlyArray<{ readonly full: string; readonly content: string | null }>;
+  readonly fulls: ReadonlyArray<{
+    readonly full: string;
+    readonly content: string | Uint8Array | null;
+    readonly mode: "100644" | "100755";
+  }>;
+  readonly expectedHead?: string;
+  readonly expectedBranch?: string;
 }): Promise<string> {
   const branchResult = await runNativeGitResult([
     "-C", opts.root, "symbolic-ref", "--quiet", "HEAD",
@@ -1557,9 +1707,15 @@ async function nativeGitFileCommitFilesOnHead(opts: {
     throw new Error("commitFilesOnHead: HEAD is detached; callers gate on a branch");
   }
   const branch = branchResult.stdout.trim();
+  if (opts.expectedBranch !== undefined && branch !== `refs/heads/${opts.expectedBranch}`) {
+    throw new Error(`commitFilesOnHead: branch changed from expected ${opts.expectedBranch}`);
+  }
   const author = opts.author ?? { name: "Dome", email: "dome@local" };
   let head = (await runNativeGit(["-C", opts.root, "rev-parse", "HEAD"])).trim();
-  const deduped = new Map(opts.fulls.map((file) => [file.full, file.content]));
+  if (opts.expectedHead !== undefined && head !== opts.expectedHead) {
+    throw new Error(`commitFilesOnHead: HEAD changed from expected ${opts.expectedHead} to ${head}`);
+  }
+  const deduped = new Map(opts.fulls.map((file) => [file.full, file]));
 
   for (let attempt = 1; attempt <= COMMIT_SINGLE_FILE_MAX_ATTEMPTS; attempt += 1) {
     const tempDir = mkdtempSync(join(tmpdir(), "dome-git-index-"));
@@ -1567,7 +1723,8 @@ async function nativeGitFileCommitFilesOnHead(opts: {
     const indexEnv = { GIT_INDEX_FILE: indexPath };
     try {
       await runNativeGit(["-C", opts.root, "read-tree", head], { env: indexEnv });
-      for (const [fullpath, content] of deduped) {
+      for (const [fullpath, file] of deduped) {
+        const { content } = file;
         if (content === null) {
           await runNativeGit(
             ["-C", opts.root, "update-index", "--force-remove", "--", fullpath],
@@ -1580,7 +1737,7 @@ async function nativeGitFileCommitFilesOnHead(opts: {
           { stdin: content },
         )).trim();
         await runNativeGit(
-          ["-C", opts.root, "update-index", "--add", "--cacheinfo", "100644", blob, fullpath],
+          ["-C", opts.root, "update-index", "--add", "--cacheinfo", file.mode, blob, fullpath],
           { env: indexEnv },
         );
       }
@@ -1605,13 +1762,7 @@ async function nativeGitFileCommitFilesOnHead(opts: {
       if (opts.afterRefAdvance !== undefined) {
         await opts.afterRefAdvance(candidate);
       }
-      for (const [fullpath, content] of deduped) {
-        if (content === null) {
-          await runNativeGit(["-C", opts.root, "update-index", "--force-remove", "--", fullpath]);
-        } else {
-          await runNativeGit(["-C", opts.root, "add", "--", literalPathspec(fullpath)]);
-        }
-      }
+      await runNativeGit(["-C", opts.root, "reset", candidate, "--", ...[...deduped.keys()].map(literalPathspec)]);
       return candidate;
     } finally {
       rmSync(tempDir, { recursive: true, force: true });

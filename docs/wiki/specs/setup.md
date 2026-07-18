@@ -1,17 +1,23 @@
 ---
-title: Setup assessment and plan
-description: Versioned, read-only contracts for assessing a vault and previewing additive setup work.
+title: Setup assessment, plan, and vault adaptation
+description: Versioned contracts for revision-bound assessment, explicit consent, and conservative vault adaptation.
 category: specs
 updated: 2026-07-18
 ---
 
-# Setup assessment and plan
+# Setup assessment, plan, and vault adaptation
 
-`dome setup --dry-run` is the first public onboarding grammar. Before a later
-slice is allowed to change a vault or the host, this command produces one
-read-only `VaultAssessment` and one `SetupPlan`. This page defines those two
-payloads. It does not define an installer workflow, a persisted setup record,
-or a setup state machine.
+`dome setup --dry-run` is the first public onboarding grammar. It produces one
+read-only `VaultAssessment` and one immutable `SetupPlan`. The product setup
+Module can consume that same plan through `applySetupPlan(plan, consent)` to
+perform its `vault-adaptation` scope. The current CLI remains preview-only;
+exposing this mutation through `dome setup --apply` and collapsing `dome init`
+onto the same Module are the next M5 checkpoint.
+
+This page defines assessment, planning, consent, vault adaptation, and
+recovery. It does not define an installer workflow, a persisted setup record,
+or a setup state machine. Home installation, upgrade, service selection, and
+startup are a separately consented M6 transaction.
 
 The pure TypeScript contract lives in `src/setup/contracts.ts`. It is
 deliberately not exported from the SDK root: setup is a product boundary, not a
@@ -34,11 +40,13 @@ vault path. It contains:
   proposed versioned content scope. Case-variant `.MD` files remain ordinary
   source bytes for revision binding but are outside version 1's owner-Markdown
   universe; `.dome/**` and `.git/**` remain the non-overridable private floor;
-- one bounded, content-free repository inventory. Every row reports only its
-  relative path, kind, byte count, Git tracking classification, proposed
-  baseline disposition, and one closed safety reason. `baselineTracked` is the
-  exact sorted set of direct bounded owner files proposed for a future non-Git
-  owner baseline; an existing Git repository never gets a second baseline;
+- one bounded repository inventory. Every row reports its relative path, kind,
+  byte count, Git tracking classification, proposed baseline disposition, one
+  closed safety reason, an opaque observation proof, and—only for an approved
+  regular file—its content SHA-256 and Git mode. Source bytes are never put in
+  the contract. `baselineTracked` is the exact sorted set of direct bounded
+  owner files approved for a non-Git owner baseline; an existing Git repository
+  never gets a second baseline;
 - the observed Dome content-scope state: `absent`, `configured`, or
   `incompatible`; and
 - zero or more canonically ordered blockers, each with exactly one next action.
@@ -83,9 +91,13 @@ the single closed, canonically ordered `AdaptationAction` inventory:
 - `initialize-git`
 - `ensure-scaffold-directory`
 - `write-scaffold-file`
+- `commit-owner-baseline`
 - `set-content-scope`
-- `activate-home` (`install-or-resume` or `upgrade`, derived from exact
-  installed artifact identity)
+
+The owner-baseline action appears only for a non-Git vault with approved owner
+files and sits between Git initialization and Dome scaffolding. Home evidence
+still participates in the revision binding, but `activate-home` is a required
+`deferredSteps` row for M6, not an applicable M5 action.
 
 Directory and scaffold-file actions have closed IDs, normalized modes, and
 literal `ifMissing` guards. File actions also bind exact byte counts and
@@ -96,8 +108,9 @@ addition to this closed union plus review at the apply boundary.
 
 ## Revision binding
 
-The assessment is not durable setup state. The inspector recomputes it from
-the selected path immediately before apply. `revision.head` binds Git history;
+The assessment is not durable setup state. The applier recomputes it from the
+selected path immediately before the first mutation and repeats owner-evidence
+admission before each Git transition. `revision.head` binds Git history;
 `revision.worktreeFingerprint` binds every setup-relevant observation that can
 change without moving `HEAD`, including tracked and untracked inventory,
 content bytes and modes within the assessment budget, ignore behavior,
@@ -179,9 +192,10 @@ The fixed command inventory cannot invoke a credential or
 network operation. The vault inspector does not read
 credentials, call a model, access the network, open the Dome runtime, or
 modify Git, files, services, or durable state. Apply compares both revision
-bindings and refuses a stale plan. It then
-returns a freshly assessed plan; it never applies actions inferred from the
-stale value.
+bindings and refuses a stale plan. A stale result returns the freshly assessed
+plan; the applier never executes actions inferred from the stale value. Once a
+transaction has crossed a durable boundary, retry admits only the exact
+plan-attributable prefix described below.
 
 Git evidence represents detached and unborn repositories without inventing a
 branch or commit: detached means a commit and no branch; unborn means a branch
@@ -211,7 +225,7 @@ accessor-backed properties are never invoked, and array lengths are checked
 against field-specific caps before any element traversal. One aggregate node
 budget counts objects, arrays, primitive elements, and holes. Zod sees only
 that inert snapshot. Successful values are recursively frozen, so renderers
-and a future apply implementation consume one immutable canonical contract.
+and the applier consume one immutable canonical contract.
 
 Write actions bind their exact path, create-or-merge operation, bytes, hash,
 mode, and missing-file behavior. `ContentScopeConfig.version` is the literal
@@ -232,43 +246,29 @@ plus a `content-scope-migration` warning; setup never treats that migration as
 already accepted. Malformed existing scope blocks as incompatible. A plan
 cannot express a second config write or two writes to the same path.
 
-The one atomic `activate-home` action projects the assessed artifact ID,
-selected vault path, service label, missing-service guard, and install
-disposition rather than replacing them with prose. An `owned` installed Home
-must select the assessed vault; another selector is foreign ownership and must
-be classified and blocked before planning. The disposition is
-`install-or-resume` for no installed artifact or the exact candidate identity,
-and `upgrade` for a different owned artifact selecting the same vault. M6 will
-consume this action through one deep Home activation call with rollback and
-recovery; there are no independently applicable install, select, service, or
-start rows.
-
-The action's service label is not caller-selected. Setup and the Home lifecycle
-derive it through the neutral `src/core/vault-service-identity.ts` Module, and
-the plan validator recomputes the exact label from the assessed vault path.
+Home identity and selector evidence remain part of the assessment so a change
+invalidates consent. An `owned` installed Home must select the assessed vault;
+another selector is foreign ownership and blocks planning. M5 nevertheless
+emits no Home mutation action. The plan carries one closed `activate-home` M6
+deferred step, and M6 will define the separately consented artifact, service,
+rollback, and recovery transaction.
 
 For an existing non-Git vault, the inspector revision-binds every bounded,
-nonsensitive, nonignored regular-file byte and mode—not only Markdown—and blocks
-symlinks, nested repositories, special files, and unsafe hard links. M3 does
-not yet emit a baseline-commit action. M5 must first define the exact safe Git
-inventory, ignore/exclusion behavior, and commit boundary so owner attachments,
-configuration, and other non-Markdown files are preserved. Only then may apply
-initialize and baseline that repository; the preview must never imply a
-Markdown-only baseline.
-
-M5's first read-side checkpoint exposes that exact proposed tracked set in both
-assessment presentations. The policy is deliberately conservative: a regular
-file enters the proposal only when it is direct, bounded, nonignored, outside
-`.dome/state/**`, and its path does not match the closed sensitive-name policy
+nonsensitive, nonignored regular-file byte and executable mode—not only
+Markdown—and blocks symlinks, nested repositories, special files, and unsafe
+hard links. The plan exposes that exact proposed tracked set and carries a
+`commit-owner-baseline` action. The policy is deliberately conservative: a
+regular file enters the proposal only when it is direct, bounded, nonignored,
+outside `.dome/state/**`, and its path does not match the closed sensitive-name policy
 (`.env*`, credential/secret/token/password/private-key names, private-key
 stems, or common key-container suffixes). Directories, ignored paths,
 sensitive-name files, large files, and Dome-private paths are
 `preserve-untracked`; paths already in an existing Git index are
 `already-tracked`. Nested repositories, symlinks (classified lexically as
 internal or external without following them), special files, and hard-linked
-files are `blocked`. The rows contain no source bytes. The apply checkpoint
-must consume this exact inventory under explicit consent; it may not rediscover
-a broader tracked set.
+files are `blocked`. The rows contain hashes and Git modes, not source bytes.
+Apply consumes this exact inventory under explicit consent; it may not
+rediscover a broader tracked set.
 
 For a non-Git owner vault, setup loads a bounded direct `.gitignore` in every
 directory it traverses before inspecting that directory's remaining children.
@@ -287,18 +287,52 @@ Setup does not maintain a second partial ignore-language implementation.
 Structural unsafety dominates ignore status: ignored symlinks and special files
 retain their structural reason, and an ignored hard link is still blocked.
 
-A later apply implementation must first recompute and validate the complete
-assessment and then stage exactly `baselineTracked`. Every
-`preserve-untracked` row must still exist with the revalidated disposition and
-must remain uncommitted after the baseline. Apply must never use a broad add,
-stage an ignored or sensitive candidate, or reinterpret a preserved row merely
-because Git initialization or scaffold creation changed the worktree.
+Apply recomputes and validates the complete assessment, then constructs the
+root baseline tree directly from the exact approved bytes and Git modes in
+`baselineTracked`. It never stages from the live worktree or uses a broad add.
+Every `preserve-untracked` row must still have the revalidated disposition and
+remain uncommitted. After advancing a ref, setup resets affected index entries
+from the admitted commit tree, never from live owner bytes.
 
-The plan is a preview and a revision binding, not an execution log. Apply may
-consume a successfully revalidated plan in a later slice, but it must not
-mutate this payload or persist it as a workflow record.
+The plan is a preview and a revision binding, not an execution log. Consent is
+the SHA-256 of the complete canonical plan, including inventory proofs, content
+scope, and exact write digests. The applier validates both values but neither
+mutates nor persists them as workflow state.
 
-## Read-only boundary
+## Vault-adaptation apply and recovery
+
+`applySetupPlan` accepts only a ready `dome.setup.plan/v1` with matching
+`dome.setup.consent/v1`. It returns a closed `dome.setup.apply-result/v1`:
+`completed` with admitted baseline/configuration commit IDs, `stale` with a
+fresh plan before mutation, or `blocked` with one recovery code and the
+plan-owned recovery commands.
+
+The ordered mutation is deliberately small:
+
+1. Create the selected directory when absent and initialize an unborn `main`
+   repository when the plan requires it.
+2. For owner content, create a root baseline commit from the approved binary
+   bytes and `100644`/`100755` modes.
+3. Create only missing `.dome/`, `.dome/state/`, `AGENTS.md`, and `.gitignore`
+   scaffold.
+4. Create the exact config or merge only the managed `content_scope`, then
+   create one exact configuration commit on the admitted parent.
+
+Every setup file publication uses a same-directory, no-follow, exclusive temp
+file, file and directory durability syncs, and create-without-overwrite or
+admitted replacement. Existing config comments and filesystem permissions are
+preserved. Each prepared file and each Git ref transition is a fault-injection
+boundary.
+
+Recovery has no setup database. A retry accepts only the exact prefix
+attributable to the consented plan: exact temporary/final bytes, exact Dome
+commit identity and trailers, exact parent chain, and exact tree delta. It
+looks only at current `HEAD`; a matching substring or an older history entry is
+not ownership evidence. Owner drift, unexpected paths, forged commits, changed
+modes, and partial or foreign temp bytes block instead of being folded into a
+Dome commit.
+
+## Read and mutation boundaries
 
 Assessment is allowed to inspect bounded local metadata and content needed to
 produce the contract. It performs no writes, credential reads, service
@@ -311,10 +345,16 @@ plan rather than independently reconstructing setup policy.
 The implemented root command requires `--dry-run`; it has no `--apply` flag.
 A ready preview exits zero, a valid blocked preview exits one, and a usage
 error exits 64. Both presentations explicitly state that no changes were made.
+The SDK product Module now owns vault mutation, but the CLI adapter does not
+expose it until the next checkpoint collapses setup and init onto this one
+seam. Home remains outside this mutation boundary.
 
 Exact JSON fixtures for all seven vault classifications and adversarial
 validator coverage live in `tests/setup/contracts.test.ts` and
-`tests/setup/compiler.test.ts`. CLI adapter coverage proves that omission of
+`tests/setup/compiler.test.ts`. `tests/setup/apply.test.ts` injects failure at
+every durable boundary and pins races, forged commit markers, partial temp
+files, binary owner content, executable modes, config preservation, and
+idempotent recovery. CLI adapter coverage proves that omission of
 `--dry-run` cannot invoke discovery and JSON is the exact validated plan. The
 case-sensitive inventory fixture and generated-config round trip pin setup to
 the same versioned ContentScope interface used by the setup contract.

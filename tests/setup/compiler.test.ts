@@ -21,13 +21,15 @@ function input(kind: SetupCompilerInput["source"]["kind"]): SetupCompilerInput {
   const blocked = kind === "incompatible-active-operation" || kind === "unsafe-or-ambiguous-state";
   const repository = kind === "existing-non-git-vault" ? {
     candidates: [{
-      path: "Journal.md", kind: "file" as const, bytes: 12, proofSha256: PROOF, tracking: "other" as const,
+      path: "Journal.md", kind: "file" as const, bytes: 12, proofSha256: PROOF,
+      contentSha256: PROOF, gitMode: "100644" as const, tracking: "other" as const,
       disposition: "baseline" as const, reason: "safe-owner-file" as const,
     }],
     baselineTracked: ["Journal.md"],
   } : gitPresent ? {
     candidates: [{
-      path: "notes/hello.md", kind: "file" as const, bytes: 12, proofSha256: PROOF, tracking: "tracked" as const,
+      path: "notes/hello.md", kind: "file" as const, bytes: 12, proofSha256: PROOF,
+      contentSha256: PROOF, gitMode: "100644" as const, tracking: "tracked" as const,
       disposition: "already-tracked" as const, reason: "safe-owner-file" as const,
     }],
     baselineTracked: [],

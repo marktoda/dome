@@ -70,6 +70,8 @@ const repositoryCandidateSchema = z.object({
   kind: z.enum(SETUP_REPOSITORY_CANDIDATE_KINDS),
   bytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   proofSha256: sha256,
+  contentSha256: sha256.nullable(),
+  gitMode: z.enum(["100644", "100755"]).nullable(),
   tracking: z.enum(["tracked", "untracked", "ignored", "other"]),
   disposition: z.enum(SETUP_REPOSITORY_DISPOSITIONS),
   reason: z.enum(SETUP_REPOSITORY_REASONS),
@@ -77,6 +79,10 @@ const repositoryCandidateSchema = z.object({
   (candidate) => candidate.disposition !== "baseline" ||
     (candidate.kind === "file" && candidate.reason === "safe-owner-file"),
   "only safe owner files may enter the proposed baseline",
+).refine(
+  (candidate) => candidate.disposition !== "baseline" ||
+    (candidate.contentSha256 !== null && candidate.gitMode !== null),
+  "owner baseline files must carry an exact content digest and Git mode",
 );
 
 function sortedUnique<T extends z.ZodType<string>>(item: T) {

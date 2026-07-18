@@ -12,7 +12,7 @@ import {
 import type { SetupRepositoryCandidate } from "../../src/setup/repository-policy";
 
 function withoutRepositoryProofs(rows: ReadonlyArray<SetupRepositoryCandidate>) {
-  return rows.map(({ proofSha256: _proof, ...row }) => row);
+  return rows.map(({ proofSha256: _proof, contentSha256: _content, gitMode: _mode, ...row }) => row);
 }
 import {
   VAULT_ASSESSMENT_SCHEMA,

@@ -26,6 +26,12 @@ const ALLOWED_FILES = new Set([
   "src/engine-commit.ts",
   "src/git.ts",
   "src/cli/commands/init.ts",
+  // Preview-first, plan-digest-consented pre-runtime vault adaptation. This
+  // deep Module owns only the closed setup action inventory, exact tree
+  // commits, and same-directory atomic publications; it cannot perform Home,
+  // model, integration, or ordinary engine mutation. init.ts remains allowed
+  // only until the next checkpoint collapses that adapter onto this seam.
+  "src/setup/apply.ts",
   // Host-level service scaffolding (launchd plist / systemd user unit +
   // gitignored log dir), not an engine write path — same boundary class as
   // init.ts.

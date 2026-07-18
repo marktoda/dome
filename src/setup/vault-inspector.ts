@@ -481,7 +481,7 @@ function validatedRepositoryCandidates(value: unknown, gitDirect: boolean): Read
   const candidates: SetupRepositoryCandidate[] = [];
   for (const raw of value) {
     const candidate = exactObject(raw, "setup source repository candidate", [
-      "path", "kind", "bytes", "proofSha256", "tracking", "disposition", "reason",
+      "path", "kind", "bytes", "proofSha256", "contentSha256", "gitMode", "tracking", "disposition", "reason",
     ]);
     const path = candidate["path"];
     if (typeof path !== "string" || !safeRelativePath(path) || path <= previous) {
@@ -492,7 +492,10 @@ function validatedRepositoryCandidates(value: unknown, gitDirect: boolean): Read
       !SETUP_REPOSITORY_REASONS.includes(candidate["reason"] as SetupRepositoryCandidate["reason"]) ||
       !["tracked", "untracked", "ignored", "other"].includes(String(candidate["tracking"])) ||
       !Number.isSafeInteger(candidate["bytes"]) || (candidate["bytes"] as number) < 0 ||
-      typeof candidate["proofSha256"] !== "string" || !/^[0-9a-f]{64}$/.test(candidate["proofSha256"])) {
+      typeof candidate["proofSha256"] !== "string" || !/^[0-9a-f]{64}$/.test(candidate["proofSha256"]) ||
+      !(candidate["contentSha256"] === null ||
+        typeof candidate["contentSha256"] === "string" && /^[0-9a-f]{64}$/.test(candidate["contentSha256"])) ||
+      !(candidate["gitMode"] === null || candidate["gitMode"] === "100644" || candidate["gitMode"] === "100755")) {
       throw new Error("setup source repository candidate is invalid");
     }
     const normalized = candidate as SetupRepositoryCandidate;
@@ -1038,6 +1041,8 @@ function repositoryInventory(tree: ReadonlyArray<FileEvidence>, gitDirect: boole
     kind: entry.kind,
     bytes: entry.bytes,
     proofSha256: repositoryEntryProof(entry),
+    contentSha256: entry.sha256,
+    gitMode: entry.kind === "file" && entry.sha256 !== null ? (entry.mode & 0o111) === 0 ? "100644" : "100755" : null,
     tracking: entry.tracking,
     gitDirect,
     observedReason: entry.safetyReason,

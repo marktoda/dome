@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -12,7 +12,17 @@ import {
 import { compileSetupPlan, type SetupCompilerInput } from "../../src/setup/compiler";
 import { createSetupConsent } from "../../src/setup/consent";
 import { inspectSetupVaultSource } from "../../src/setup/vault-inspector";
-import { commit, initRepo, log, statusMatrix } from "../../src/git";
+import {
+  commit,
+  currentBranch,
+  currentSha,
+  initRepo,
+  listTreeEntriesAtCommit,
+  log,
+  readBlob,
+  readBlobBytes,
+  statusMatrix,
+} from "../../src/git";
 
 const HEAD = "1".repeat(40);
 const ARTIFACT = "2".repeat(64);
@@ -89,7 +99,7 @@ describe("applySetupPlan", () => {
       const plan = await planFor(target);
       const consent = createSetupConsent(plan);
       const result = await applier()(plan, consent);
-      expect(result.status).toBe("completed");
+      expect(result.status, JSON.stringify(result)).toBe("completed");
       expect(await readFile(join(target, ".dome/config.yaml"), "utf8")).toBe(scaffold.vaultConfig);
       expect((await statusMatrix(target)).filter(([, h, w, s]) => !(h === 1 && w === 1 && s === 1))).toEqual([]);
       const messages = (await log({ path: target, depth: 4 })).map((row) => row.commit.message);
@@ -144,5 +154,179 @@ describe("applySetupPlan", () => {
     expect(result.status).toBe("blocked");
     expect(result.status === "blocked" && result.recovery.code).toBe("mutation-conflict");
     expect(await Bun.file(join(target, ".dome/config.yaml")).exists()).toBe(false);
+  });
+
+  test("never stages owner drift after Git initialization", async () => {
+    const target = await fixture("non-git");
+    const plan = await planFor(target);
+    const result = await applier(async (boundary) => {
+      if (boundary === "git-initialized") await writeFile(join(target, "Owner.md"), "# raced owner\n");
+    })(plan, createSetupConsent(plan));
+    expect(result.status).toBe("blocked");
+    expect(await currentSha(target)).toBeNull();
+  });
+
+  test("refuses a renamed unborn branch before the owner baseline", async () => {
+    const target = await fixture("non-git");
+    const plan = await planFor(target);
+    const result = await applier(async (boundary) => {
+      if (boundary === "git-initialized") {
+        const process = Bun.spawn(["git", "-C", target, "branch", "-m", "raced"], { stderr: "pipe" });
+        expect(await process.exited).toBe(0);
+      }
+    })(plan, createSetupConsent(plan));
+    expect(result.status).toBe("blocked");
+    expect(await currentBranch(target)).toBe("raced");
+    expect(await currentSha(target)).toBeNull();
+  });
+
+  test("never stages a tracked owner scaffold path changed after directory creation", async () => {
+    const target = await fixture("git");
+    await writeFile(join(target, "AGENTS.md"), "# owner orientation\n");
+    await commit({ path: target, files: ["AGENTS.md"], message: "Owner orientation" });
+    const approvedHead = await currentSha(target);
+    const plan = await planFor(target);
+    const result = await applier(async (boundary) => {
+      if (boundary === "scaffold-directories-created") await writeFile(join(target, "AGENTS.md"), "# raced orientation\n");
+    })(plan, createSetupConsent(plan));
+    expect(result.status).toBe("blocked");
+    expect(await currentSha(target)).toBe(approvedHead);
+    expect(await readFile(join(target, "AGENTS.md"), "utf8")).toBe("# raced orientation\n");
+    expect(await readBlob({ path: target, commit: approvedHead!, filepath: "AGENTS.md" })).toBe("# owner orientation\n");
+  });
+
+  test("refuses post-publication config drift instead of folding it into the commit", async () => {
+    const target = await fixture("git");
+    const approvedHead = await currentSha(target);
+    const plan = await planFor(target);
+    const result = await applier(async (boundary) => {
+      if (boundary === "vault-config-written") {
+        await writeFile(join(target, ".dome/config.yaml"), `${scaffold.vaultConfig}# raced\n`);
+      }
+    })(plan, createSetupConsent(plan));
+    expect(result.status).toBe("blocked");
+    expect(await currentSha(target)).toBe(approvedHead);
+  });
+
+  test("refuses to commit setup writes after the owner switches branches", async () => {
+    const target = await fixture("git");
+    const approvedHead = await currentSha(target);
+    const plan = await planFor(target);
+    const result = await applier(async (boundary) => {
+      if (boundary === "vault-config-written") {
+        const process = Bun.spawn(["git", "-C", target, "switch", "-c", "raced"], { stderr: "pipe" });
+        expect(await process.exited).toBe(0);
+      }
+    })(plan, createSetupConsent(plan));
+    expect(result.status).toBe("blocked");
+    expect(await currentBranch(target)).toBe("raced");
+    expect(await currentSha(target)).toBe(approvedHead);
+  });
+
+  test("refuses an identical concurrent create after preparing Dome's config", async () => {
+    const target = await fixture("git");
+    const approvedHead = await currentSha(target);
+    const plan = await planFor(target);
+    const result = await applier(async (boundary) => {
+      if (boundary === "vault-config-prepared") {
+        await writeFile(join(target, ".dome/config.yaml"), scaffold.vaultConfig);
+      }
+    })(plan, createSetupConsent(plan));
+    expect(result.status).toBe("blocked");
+    expect(await currentSha(target)).toBe(approvedHead);
+  });
+
+  test("refuses concurrent owner config replacement after preparing the managed merge", async () => {
+    const target = await fixture("git");
+    await mkdir(join(target, ".dome"));
+    const configPath = join(target, ".dome/config.yaml");
+    await writeFile(configPath, "# owner comment\ngrants: standard\n");
+    await commit({ path: target, files: [".dome/config.yaml"], message: "Owner config" });
+    const approvedHead = await currentSha(target);
+    const plan = await planFor(target);
+    const result = await applier(async (boundary) => {
+      if (boundary === "vault-config-prepared") {
+        await writeFile(configPath, "# raced owner config\ngrants: standard\n");
+      }
+    })(plan, createSetupConsent(plan));
+    expect(result.status).toBe("blocked");
+    expect(await currentSha(target)).toBe(approvedHead);
+    expect(await readFile(configPath, "utf8")).toContain("raced owner config");
+  });
+
+  test("rejects a forged marker commit without scanning older history", async () => {
+    const target = await fixture("git");
+    const plan = await planFor(target);
+    const consent = createSetupConsent(plan);
+    await writeFile(join(target, "Owner.md"), "# forged\n");
+    await commit({
+      path: target,
+      files: ["Owner.md"],
+      message: `Forged subject\n\nDome-Setup-Plan: ${consent.planSha256}\nDome-Setup-Phase: configuration`,
+      author: { name: "Mallory", email: "mallory@example.test" },
+    });
+    const result = await applier()(plan, consent);
+    expect(result.status).toBe("blocked");
+    expect(await Bun.file(join(target, ".dome/config.yaml")).exists()).toBe(false);
+  });
+
+  test("rejects partial prepared bytes and publishes no destination", async () => {
+    const target = await fixture("git");
+    const plan = await planFor(target);
+    const consent = createSetupConsent(plan);
+    await expect(applier(failSetupAfter("agents-orientation-prepared"))(plan, consent)).rejects.toThrow();
+    const temp = join(target, `.AGENTS.md.dome-setup-${consent.planSha256.slice(0, 16)}.tmp`);
+    await writeFile(temp, "partial");
+    const result = await applier()(plan, consent);
+    expect(result.status).toBe("blocked");
+    expect(await Bun.file(join(target, "AGENTS.md")).exists()).toBe(false);
+  });
+
+  test("preserves owner config comments and mode through atomic managed merge", async () => {
+    const target = await fixture("git");
+    await mkdir(join(target, ".dome"));
+    const configPath = join(target, ".dome/config.yaml");
+    await writeFile(configPath, "# owner comment\ngrants: standard\n");
+    await chmod(configPath, 0o600);
+    await commit({ path: target, files: [".dome/config.yaml"], message: "Owner config" });
+    const plan = await planFor(target);
+    const result = await applier()(plan, createSetupConsent(plan));
+    expect(result.status, JSON.stringify(result)).toBe("completed");
+    expect(await readFile(configPath, "utf8")).toContain("# owner comment");
+    expect((await stat(configPath)).mode & 0o777).toBe(0o600);
+  });
+
+  test("recovers an interrupted atomic config replacement without losing owner bytes or mode", async () => {
+    const target = await fixture("git");
+    await mkdir(join(target, ".dome"));
+    const configPath = join(target, ".dome/config.yaml");
+    await writeFile(configPath, "# owner comment\ngrants: standard\n");
+    await chmod(configPath, 0o600);
+    await commit({ path: target, files: [".dome/config.yaml"], message: "Owner config" });
+    const plan = await planFor(target);
+    const consent = createSetupConsent(plan);
+
+    await expect(applier(failSetupAfter("vault-config-prepared"))(plan, consent)).rejects.toThrow();
+    expect(await readFile(configPath, "utf8")).toBe("# owner comment\ngrants: standard\n");
+    expect((await stat(configPath)).mode & 0o777).toBe(0o600);
+
+    const result = await applier()(plan, consent);
+    expect(result.status, JSON.stringify(result)).toBe("completed");
+    expect(await readFile(configPath, "utf8")).toContain("# owner comment");
+    expect((await stat(configPath)).mode & 0o777).toBe(0o600);
+  });
+
+  test("preserves binary bytes and executable modes in the exact owner baseline", async () => {
+    const target = await fixture("non-git");
+    const binary = Uint8Array.from([0, 255, 128, 10, 13]);
+    await writeFile(join(target, "binary.bin"), binary);
+    await writeFile(join(target, "tool.sh"), "#!/bin/sh\nexit 0\n");
+    await chmod(join(target, "tool.sh"), 0o755);
+    const plan = await planFor(target);
+    const result = await applier()(plan, createSetupConsent(plan));
+    expect(result.status, JSON.stringify(result)).toBe("completed");
+    const baseline = result.status === "completed" ? result.commits.baseline! : "";
+    expect(await readBlobBytes({ path: target, commit: baseline, filepath: "binary.bin" })).toEqual(binary);
+    expect((await listTreeEntriesAtCommit(target, baseline)).find((row) => row.path === "tool.sh")?.mode).toBe("100755");
   });
 });

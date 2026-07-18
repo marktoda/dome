@@ -4,11 +4,12 @@ created: 2026-05-25
 updated: 2026-07-18
 sources:
   - "[[cohesive/brainstorms/2026-05-25-dome-vision]]"
-description: Every vault is a git repo — openVault refuses non-git directories; setup previews an explicit safe owner baseline before initialization
+description: Every vault is a git repo — openVault refuses non-git directories; setup consents and commits an exact safe owner baseline during adaptation
 enforced_by:
   - tests/vault/vault.test.ts
   - tests/git.test.ts
   - tests/setup/vault-inspector.test.ts
+  - tests/setup/apply.test.ts
 tier: axiom
 ---
 
@@ -16,7 +17,7 @@ tier: axiom
 
 **Tier:** Axiom — non-disable-able. Disabling means Dome doesn't function.
 
-**Statement:** Every Dome vault is a git repository. A `.git/` directory exists at vault root. `dome init` creates one; setup previews the exact safe owner baseline before adapting non-Git content; `openVault(path)` refuses to open a non-git directory.
+**Statement:** Every Dome vault is a git repository. A `.git/` directory exists at vault root. `dome init` creates one; a consented setup adaptation creates one and commits the exact approved owner baseline for non-Git content; `openVault(path)` refuses to open a non-git directory.
 
 **Why:** Git is Dome's content-addressed change detector, audit trail, undo mechanism, and (v1.5+) hosted-protected sync layer. Specifically:
 
@@ -30,7 +31,7 @@ tier: axiom
 
 **Counter-example:** A user tries to use Dome over a Dropbox sync folder that isn't a git repo. `openVault` refuses. The fix: `cd ~/Dropbox/my-brain && git init && dome init .` (or `dome migrate .` if there's existing content). Dropbox can sync the git repo; we just need git semantics underneath.
 
-**Test guarantee:** `tests/invariants/vault-is-git-repo.test.ts` pins this invariant in AC3 lockstep. `tests/setup/vault-inspector.test.ts` proves a non-Git baseline contains only bounded direct owner files, reports excluded candidates without content, refuses unsafe repository shapes, and does not read sensitive-name candidates. Existing vault/open/sync tests preserve the runtime refusal and Git semantics.
+**Test guarantee:** `tests/invariants/vault-is-git-repo.test.ts` pins this invariant in AC3 lockstep. `tests/setup/vault-inspector.test.ts` proves a non-Git baseline contains only bounded direct owner files, reports excluded candidates without content, refuses unsafe repository shapes, and does not read sensitive-name candidates. `tests/setup/apply.test.ts` proves the baseline tree contains the exact approved binary bytes and executable modes, preserves excluded content, and never folds post-admission owner drift into a setup commit. Existing vault/open/sync tests preserve the runtime refusal and Git semantics.
 
 **Operational notes:**
 

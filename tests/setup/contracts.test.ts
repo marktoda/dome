@@ -116,7 +116,8 @@ describe("VaultAssessment contract", () => {
       ...value,
       repository: {
         candidates: [{
-          path: ".env", kind: "file", bytes: 8, proofSha256: FINGERPRINT, tracking: "tracked",
+          path: ".env", kind: "file", bytes: 8, proofSha256: FINGERPRINT,
+          contentSha256: null, gitMode: null, tracking: "tracked",
           disposition: "already-tracked", reason: "safe-owner-file",
         }],
         baselineTracked: [],

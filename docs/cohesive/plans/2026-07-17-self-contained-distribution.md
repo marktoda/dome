@@ -456,10 +456,16 @@ teaching setup to reorganize an Obsidian vault.
 **Outcome:** after consent, setup creates the minimum viable Dome vault or
 adds only safe missing scaffolding to an existing vault.
 
+**Checkpoint status (2026-07-18):** the product setup Module now ships the
+revision-bound `vault-adaptation` transaction and its exact crash recovery.
+The root CLI intentionally remains `dome setup --dry-run`; routing public apply
+and legacy `dome init` through this one Module is the remaining M5 checkpoint.
+Home activation is no longer an applicable M5 action and remains M6.
+
 Work:
 
-1. Factor the existing init/adaptation logic behind one idempotent interface
-   consumed by both `dome init` and `dome setup`.
+1. Use the shipped idempotent adaptation Module as the only mutation seam,
+   then collapse both `dome init` and `dome setup` onto it.
 2. For a new vault, create the minimal directories, config, AGENTS.md
    orientation, Git repository, and baseline commit without fake people,
    projects, meetings, tasks, or notes.
@@ -469,15 +475,18 @@ Work:
    escape the vault. Never follow an external symlink or assume every
    pre-existing file belongs in Git.
 4. Show the exact proposed `.gitignore`, Dome additions, content-scope policy,
-   and baseline tracked inventory. Only after explicit consent initialize Git,
-   stage the approved set, and create the attributable baseline commit.
+   and baseline tracked inventory. Only after consent to the complete plan
+   digest initialize Git and construct the root baseline tree from the approved
+   bytes and modes; never stage from a live worktree or use a broad add.
    Sensitive, large, ignored, ambiguous, or explicitly declined files remain
    untouched and uncommitted until the owner decides otherwise.
 5. For an existing Git vault, preserve branch, remotes, ignore rules, owner
    files, and history. Add only missing high-confidence scaffolding. Surface
    conflicts for explicit resolution rather than overwriting them.
-6. Make interruption and rerun converge: no duplicate blocks, anchors,
-   commits, configuration, or initialization records.
+6. Make interruption and rerun converge without a setup database: admit only
+   exact same-plan file publications and attributable current-HEAD commits; no
+   duplicate blocks, anchors, commits, configuration, or initialization
+   records.
 
 Acceptance gate:
 

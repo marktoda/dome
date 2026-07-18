@@ -348,7 +348,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "revision": {
         "head": null,
-        "worktreeFingerprint": "6bded8aa635bf580272c8775da10f2a313a253cf5b0ef14fc5523aa6d10b6fb2"
+        "worktreeFingerprint": "242002b47c678e29b1da0b68b4e2b7ac7ee99c5b2532c0aff2bfc5b0178b54a4"
       },
       "host": {
         "platform": "darwin",
@@ -417,6 +417,8 @@ exports[`setup compiler compiles every closed classification into one exact plan
             "kind": "file",
             "bytes": 12,
             "proofSha256": "5555555555555555555555555555555555555555555555555555555555555555",
+            "contentSha256": "5555555555555555555555555555555555555555555555555555555555555555",
+            "gitMode": "100644",
             "tracking": "other",
             "disposition": "baseline",
             "reason": "safe-owner-file"
@@ -538,7 +540,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "revision": {
         "head": "1111111111111111111111111111111111111111",
-        "worktreeFingerprint": "b41d417986c39d7513c42689c176f8e108705c8ff2319fe309db587a8d6aa136"
+        "worktreeFingerprint": "434d9570b35b1818f9135a3250c350a8542011a5aadb4b6117c3666dad6f404c"
       },
       "host": {
         "platform": "darwin",
@@ -607,6 +609,8 @@ exports[`setup compiler compiles every closed classification into one exact plan
             "kind": "file",
             "bytes": 12,
             "proofSha256": "5555555555555555555555555555555555555555555555555555555555555555",
+            "contentSha256": "5555555555555555555555555555555555555555555555555555555555555555",
+            "gitMode": "100644",
             "tracking": "tracked",
             "disposition": "already-tracked",
             "reason": "safe-owner-file"
@@ -712,7 +716,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "revision": {
         "head": "1111111111111111111111111111111111111111",
-        "worktreeFingerprint": "31856fcae3abd1796878c94ede0158dbf73659c46dc60cdb7d45833fb2987ffd"
+        "worktreeFingerprint": "c619b0c673da0f8283f250054533f09649e910365b24fea72d94271b46a6d499"
       },
       "host": {
         "platform": "darwin",
@@ -781,6 +785,8 @@ exports[`setup compiler compiles every closed classification into one exact plan
             "kind": "file",
             "bytes": 12,
             "proofSha256": "5555555555555555555555555555555555555555555555555555555555555555",
+            "contentSha256": "5555555555555555555555555555555555555555555555555555555555555555",
+            "gitMode": "100644",
             "tracking": "tracked",
             "disposition": "already-tracked",
             "reason": "safe-owner-file"
@@ -831,7 +837,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "revision": {
         "head": "1111111111111111111111111111111111111111",
-        "worktreeFingerprint": "fe1dbf7e08bca1d885462a785d705ae5af973b3ccba3adde8a5e50b80ec5526f"
+        "worktreeFingerprint": "20af63138be08dedb863bd2bb03db315dcf4f05118f294c4a1f63cedaeaa6a09"
       },
       "host": {
         "platform": "darwin",
@@ -900,6 +906,8 @@ exports[`setup compiler compiles every closed classification into one exact plan
             "kind": "file",
             "bytes": 12,
             "proofSha256": "5555555555555555555555555555555555555555555555555555555555555555",
+            "contentSha256": "5555555555555555555555555555555555555555555555555555555555555555",
+            "gitMode": "100644",
             "tracking": "tracked",
             "disposition": "already-tracked",
             "reason": "safe-owner-file"
@@ -942,7 +950,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "revision": {
         "head": "1111111111111111111111111111111111111111",
-        "worktreeFingerprint": "a292f6add7347fc260d4513ac9ce5779cfa0fbd76b206b6d423c0571c16109d7"
+        "worktreeFingerprint": "6ca4e1e1400f135473e87def44aabfc2e1e68fa13fb36f1abc8d429d70c726af"
       },
       "host": {
         "platform": "darwin",
@@ -1011,6 +1019,8 @@ exports[`setup compiler compiles every closed classification into one exact plan
             "kind": "file",
             "bytes": 12,
             "proofSha256": "5555555555555555555555555555555555555555555555555555555555555555",
+            "contentSha256": "5555555555555555555555555555555555555555555555555555555555555555",
+            "gitMode": "100644",
             "tracking": "tracked",
             "disposition": "already-tracked",
             "reason": "safe-owner-file"
@@ -1049,7 +1059,7 @@ Vault: /Users/example/Vault
 Scope: vault-adaptation
 Status: ready
 Classification: existing-non-git-vault
-Revision: no Git HEAD / 6bded8aa635bf580272c8775da10f2a313a253cf5b0ef14fc5523aa6d10b6fb2
+Revision: no Git HEAD / 242002b47c678e29b1da0b68b4e2b7ac7ee99c5b2532c0aff2bfc5b0178b54a4
 
 Proposed owner baseline:
 - Journal.md
