@@ -597,6 +597,8 @@ export async function commitFilesOnHead(opts: {
     readonly commit: string;
   }) => Promise<void>;
   afterRefAdvance?: (commit: string) => Promise<void>;
+  beforeIndexParentSync?: () => Promise<void>;
+  beforeRefParentSync?: () => Promise<void>;
 }): Promise<string> {
   if (opts.files.length === 0) {
     throw new Error("commitFilesOnHead: no files to commit");
@@ -664,32 +666,39 @@ export async function commitFilesOnHead(opts: {
     if (opts.beforeRefAdvance !== undefined) {
       await opts.beforeRefAdvance(attempt);
     }
+    const indexTransition = await LockedIndexTransition.acquire(context, opts.beforeIndexParentSync);
     try {
-      await advanceCurrentBranchRefExact({
-        context,
-        expectedBranch: branch,
-        expectedOld: head,
-        value: commitOid,
-      });
-    } catch (e) {
-      // CAS lost: someone (typically the serve host's adoption) moved the
-      // branch since `head` was read. Re-resolve and rebuild the splice on
-      // the new head; the orphaned candidate commit is unreferenced and gets
-      // GC'd. A failure with an unmoved head is a real error — rethrow.
-      const current = await git.resolveRef({ fs, dir: root, ref: branch });
-      if (current === head) throw e;
-      if (opts.retryOnCas === false || opts.expectedHead !== undefined) throw e;
-      head = current;
-      continue;
+      const lockedIndex = await indexTransition.snapshot([...indexBefore.keys()]);
+      if (!sameIndexSnapshot(lockedIndex, indexBefore)) {
+        const current = await git.resolveRef({ fs, dir: root, ref: branch });
+        if (current !== head && opts.retryOnCas !== false && opts.expectedHead === undefined) {
+          head = current;
+          continue;
+        }
+        throw new Error("commitFilesOnHead: index changed before exact transition");
+      }
+      try {
+        await advanceCurrentBranchRefExact({
+          context,
+          expectedBranch: branch,
+          expectedOld: head,
+          value: commitOid,
+          beforeParentSync: opts.beforeRefParentSync,
+        });
+      } catch (error) {
+        const current = await git.resolveRef({ fs, dir: root, ref: branch });
+        if (current === head) throw error;
+        if (opts.retryOnCas === false || opts.expectedHead !== undefined) throw error;
+        head = current;
+        continue;
+      }
+      if (opts.afterRefAdvance !== undefined) await opts.afterRefAdvance(commitOid);
+      await indexTransition.resetSelected(commitOid, fulls.map((file) => file.full));
+      await indexTransition.publish();
+      return commitOid;
+    } finally {
+      await indexTransition.abort();
     }
-    if (opts.afterRefAdvance !== undefined) {
-      await opts.afterRefAdvance(commitOid);
-    }
-    await assertIndexSnapshotUnchanged(context, indexBefore);
-    for (const f of fulls) {
-      await git.resetIndex({ fs, dir: root, filepath: f.full, ref: commitOid });
-    }
-    return commitOid;
   }
   throw new Error(
     `commitFilesOnHead: ${branch} kept advancing concurrently; ` +
@@ -716,6 +725,8 @@ export async function commitInitialFiles(opts: {
   beforeRefAdvance?: () => Promise<void>;
   /** Test seam: runs after the exact ref transition and before index recovery. */
   afterRefAdvance?: (commit: string) => Promise<void>;
+  beforeIndexParentSync?: () => Promise<void>;
+  beforeRefParentSync?: () => Promise<void>;
 }): Promise<string> {
   if (opts.files.length === 0) throw new Error("commitInitialFiles: no files to commit");
   const context = await resolveGitContext(opts.path);
@@ -750,16 +761,26 @@ export async function commitInitialFiles(opts: {
     fs, dir: root, message: opts.message, author, tree, parent: [], noUpdateBranch: true,
   });
   if (opts.beforeRefAdvance !== undefined) await opts.beforeRefAdvance();
-  await advanceCurrentBranchRefExact({
-    context,
-    expectedBranch: branch,
-    expectedOld: null,
-    value: oid,
-  });
-  if (opts.afterRefAdvance !== undefined) await opts.afterRefAdvance(oid);
-  await assertIndexSnapshotUnchanged(context, indexBefore);
-  for (const file of fulls) await git.resetIndex({ fs, dir: root, filepath: file.filepath, ref: oid });
-  return oid;
+  const indexTransition = await LockedIndexTransition.acquire(context, opts.beforeIndexParentSync);
+  try {
+    const lockedIndex = await indexTransition.snapshot([...indexBefore.keys()]);
+    if (!sameIndexSnapshot(lockedIndex, indexBefore)) {
+      throw new Error("commitInitialFiles: index changed before exact transition");
+    }
+    await advanceCurrentBranchRefExact({
+      context,
+      expectedBranch: branch,
+      expectedOld: null,
+      value: oid,
+      beforeParentSync: opts.beforeRefParentSync,
+    });
+    if (opts.afterRefAdvance !== undefined) await opts.afterRefAdvance(oid);
+    await indexTransition.resetSelected(oid, fulls.map((file) => file.filepath));
+    await indexTransition.publish();
+    return oid;
+  } finally {
+    await indexTransition.abort();
+  }
 }
 
 export type GitCommitRecord = Readonly<{
@@ -802,24 +823,6 @@ export async function listTreeEntriesAtCommit(path: string, commit: string): Pro
   return Object.freeze((await walk(commit, "")).sort((a, b) => compareStrings(a.path, b.path)));
 }
 
-/** Reset selected index entries to exact committed blobs without reading the working tree. */
-export async function resetIndexToCommit(opts: {
-  path: string;
-  commit: string;
-  files: ReadonlyArray<string>;
-}): Promise<void> {
-  if (opts.files.length === 0) return;
-  const context = await resolveGitContext(opts.path);
-  const fulls = opts.files.map((path) => fullVaultPath(context.prefix, path));
-  if (isNativeGitFile(context)) {
-    await runNativeGit(["-C", context.root, "reset", opts.commit, "--", ...fulls.map(literalPathspec)]);
-    return;
-  }
-  for (const filepath of fulls) {
-    await git.resetIndex({ fs, dir: context.root, filepath, ref: opts.commit });
-  }
-}
-
 /**
  * Recover only the index transition attributable to an already-admitted
  * commit. The selected entries must still byte-for-byte match the commit's
@@ -831,18 +834,28 @@ export async function recoverIndexAfterExactCommit(opts: {
   commit: string;
   parent: string | null;
   files: ReadonlyArray<string>;
+  beforeIndexParentSync?: () => Promise<void>;
 }): Promise<void> {
   if (opts.files.length === 0) return;
   const context = await resolveGitContext(opts.path);
   const fulls = opts.files.map((path) => fullVaultPath(context.prefix, path));
-  const current = await readIndexSnapshot(context, fulls);
   const recovered = await readTreeSnapshot(context, opts.commit, fulls);
-  if (sameIndexSnapshot(current, recovered)) return;
   const interrupted = await readTreeSnapshot(context, opts.parent, fulls);
-  if (!sameIndexSnapshot(current, interrupted)) {
-    throw new Error("setup index recovery refused conflicting staged owner state");
+  const transition = await LockedIndexTransition.acquire(context, opts.beforeIndexParentSync);
+  try {
+    const current = await transition.snapshot(fulls);
+    if (sameIndexSnapshot(current, recovered)) {
+      await transition.replayPublishedDurability();
+      return;
+    }
+    if (!sameIndexSnapshot(current, interrupted)) {
+      throw new Error("setup index recovery refused conflicting staged owner state");
+    }
+    await transition.resetSelected(opts.commit, fulls);
+    await transition.publish();
+  } finally {
+    await transition.abort();
   }
-  await resetIndexToCommit({ path: opts.path, commit: opts.commit, files: opts.files });
 }
 
 /**
@@ -1628,12 +1641,13 @@ type IndexSnapshot = ReadonlyMap<string, ReadonlyArray<string>>;
 async function readIndexSnapshot(
   context: GitContext,
   fullpaths: ReadonlyArray<string>,
+  indexFile?: string,
 ): Promise<IndexSnapshot> {
   const paths = [...new Set(fullpaths)].sort(compareStrings);
   if (paths.length === 0) return new Map();
   const output = await runNativeGit([
     "-C", context.root, "ls-files", "--stage", "-z", "--", ...paths.map(literalPathspec),
-  ]);
+  ], indexFile === undefined ? {} : { env: { GIT_INDEX_FILE: indexFile } });
   const snapshot = new Map<string, string[]>(paths.map((path) => [path, []]));
   for (const row of splitNul(output)) {
     const tab = row.indexOf("\t");
@@ -1645,6 +1659,91 @@ async function readIndexSnapshot(
     snapshot.set(path, entries);
   }
   return new Map([...snapshot].map(([path, entries]) => [path, Object.freeze(entries.sort(compareStrings))]));
+}
+
+/**
+ * Own one exact Git index transition under Git's real index.lock convention.
+ * Unrelated staged entries remain byte-for-byte present because the whole
+ * index is copied before selected paths are reset in the lock candidate.
+ */
+class LockedIndexTransition {
+  private published = false;
+
+  private constructor(
+    readonly context: GitContext,
+    readonly indexPath: string,
+    readonly lockPath: string,
+    private readonly beforeParentSync?: (() => Promise<void>) | undefined,
+  ) {}
+
+  static async acquire(
+    context: GitContext,
+    beforeParentSync?: (() => Promise<void>) | undefined,
+  ): Promise<LockedIndexTransition> {
+    const raw = (await runNativeGit(["-C", context.root, "rev-parse", "--git-path", "index"])).trim();
+    const indexPath = isAbsolute(raw) ? raw : resolve(context.root, raw);
+    const lockPath = `${indexPath}.lock`;
+    await fs.promises.mkdir(dirname(indexPath), { recursive: true });
+    let lock: Awaited<ReturnType<typeof openFile>>;
+    try {
+      lock = await openFile(lockPath, "wx", 0o600);
+    } catch (error) {
+      throw new Error(
+        `commitFilesOnHead: could not lock index: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    try {
+      let bytes: Buffer | null;
+      try { bytes = await fs.promises.readFile(indexPath); }
+      catch (error) {
+        if (error instanceof Error && "code" in error && error.code === "ENOENT") bytes = null;
+        else throw error;
+      }
+      if (bytes !== null) await lock.writeFile(bytes);
+      await lock.sync();
+      await lock.close();
+      if (bytes === null) {
+        await runNativeGit(["-C", context.root, "read-tree", "--empty"], {
+          env: { GIT_INDEX_FILE: lockPath },
+        });
+      }
+      return new LockedIndexTransition(context, indexPath, lockPath, beforeParentSync);
+    } catch (error) {
+      await lock.close().catch(() => {});
+      await unlinkFile(lockPath).catch(() => {});
+      throw error;
+    }
+  }
+
+  snapshot(paths: ReadonlyArray<string>): Promise<IndexSnapshot> {
+    return readIndexSnapshot(this.context, paths, this.lockPath);
+  }
+
+  async resetSelected(commit: string, paths: ReadonlyArray<string>): Promise<void> {
+    if (paths.length === 0) return;
+    await runNativeGit([
+      "-C", this.context.root, "reset", commit, "--", ...paths.map(literalPathspec),
+    ], { env: { GIT_INDEX_FILE: this.lockPath } });
+  }
+
+  async publish(): Promise<void> {
+    const candidate = await openFile(this.lockPath, "r+");
+    try { await candidate.sync(); } finally { await candidate.close(); }
+    await renameFile(this.lockPath, this.indexPath);
+    this.published = true;
+    if (this.beforeParentSync !== undefined) await this.beforeParentSync();
+    await syncDirectory(dirname(this.indexPath));
+  }
+
+  async replayPublishedDurability(): Promise<void> {
+    const index = await openFile(this.indexPath, "r");
+    try { await index.sync(); } finally { await index.close(); }
+    await syncDirectory(dirname(this.indexPath));
+  }
+
+  async abort(): Promise<void> {
+    if (!this.published) await unlinkFile(this.lockPath).catch(() => {});
+  }
 }
 
 async function readTreeSnapshot(
@@ -1673,16 +1772,6 @@ function sameIndexSnapshot(left: IndexSnapshot, right: IndexSnapshot): boolean {
   return JSON.stringify([...left]) === JSON.stringify([...right]);
 }
 
-async function assertIndexSnapshotUnchanged(
-  context: GitContext,
-  expected: IndexSnapshot,
-): Promise<void> {
-  const current = await readIndexSnapshot(context, [...expected.keys()]);
-  if (!sameIndexSnapshot(current, expected)) {
-    throw new Error("commitFilesOnHead: index changed before exact recovery");
-  }
-}
-
 /**
  * Advance the branch named by symbolic HEAD while holding HEAD.lock. Git's
  * lock convention makes the symbolic-HEAD observation and branch CAS one
@@ -1694,6 +1783,7 @@ async function advanceCurrentBranchRefExact(input: {
   readonly expectedBranch: string;
   readonly expectedOld: string | null;
   readonly value: string;
+  readonly beforeParentSync?: (() => Promise<void>) | undefined;
 }): Promise<void> {
   const headPathRaw = (await runNativeGit([
     "-C", input.context.root, "rev-parse", "--git-path", "HEAD",
@@ -1716,6 +1806,7 @@ async function advanceCurrentBranchRefExact(input: {
       input.expectedBranch,
       input.expectedOld,
       input.value,
+      input.beforeParentSync,
     );
   } finally {
     try { await lock.close(); }
@@ -1728,6 +1819,7 @@ async function replaceBranchRefExact(
   branch: string,
   expectedOld: string | null,
   value: string,
+  beforeParentSync?: (() => Promise<void>) | undefined,
 ): Promise<void> {
   const refPathRaw = (await runNativeGit([
     "-C", context.root, "rev-parse", "--git-path", branch,
@@ -1752,13 +1844,57 @@ async function replaceBranchRefExact(
     await lock.sync();
     await lock.close();
     await renameFile(lockPath, refPath);
-    const parent = await openFile(dirname(refPath), fs.constants.O_RDONLY | fs.constants.O_DIRECTORY);
-    try { await parent.sync(); } finally { await parent.close(); }
+    try {
+      if (beforeParentSync !== undefined) await beforeParentSync();
+      await syncDirectory(dirname(refPath));
+    } catch (error) {
+      const published = await runNativeGitResult(["-C", context.root, "rev-parse", "--verify", branch]);
+      if (published.exitCode !== 0 || published.stdout.trim() !== value) throw error;
+      await syncDirectory(dirname(refPath));
+    }
   } catch (error) {
     await lock.close().catch(() => {});
     await unlinkFile(lockPath).catch(() => {});
     throw error;
   }
+}
+
+/** Replay durability for an already-visible exact setup branch transition. */
+export async function replayBranchRefDurability(opts: {
+  path: string;
+  branch: string;
+  value: string;
+}): Promise<void> {
+  const context = await resolveGitContext(opts.path);
+  const ref = `refs/heads/${opts.branch}`;
+  const actual = await runNativeGitResult(["-C", context.root, "rev-parse", "--verify", ref]);
+  if (actual.exitCode !== 0 || actual.stdout.trim() !== opts.value) {
+    throw new Error(`setup ref durability refused changed branch ${opts.branch}`);
+  }
+  const raw = (await runNativeGit(["-C", context.root, "rev-parse", "--git-path", ref])).trim();
+  const refPath = isAbsolute(raw) ? raw : resolve(context.root, raw);
+  try {
+    const handle = await openFile(refPath, "r");
+    try { await handle.sync(); } finally { await handle.close(); }
+    await syncDirectory(dirname(refPath));
+    return;
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+  }
+  const packedRaw = (await runNativeGit(["-C", context.root, "rev-parse", "--git-path", "packed-refs"])).trim();
+  const packedPath = isAbsolute(packedRaw) ? packedRaw : resolve(context.root, packedRaw);
+  const packed = await readFileAsync(packedPath, "utf8");
+  if (!packed.split(/\r?\n/).includes(`${opts.value} ${ref}`)) {
+    throw new Error(`setup ref durability cannot prove packed branch ${opts.branch}`);
+  }
+  const handle = await openFile(packedPath, "r");
+  try { await handle.sync(); } finally { await handle.close(); }
+  await syncDirectory(dirname(packedPath));
+}
+
+async function syncDirectory(path: string): Promise<void> {
+  const directory = await openFile(path, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY);
+  try { await directory.sync(); } finally { await directory.close(); }
 }
 
 function splitNul(output: string): ReadonlyArray<string> {
@@ -1875,6 +2011,8 @@ async function nativeGitFileCommitFilesOnHead(opts: {
     readonly commit: string;
   }) => Promise<void>;
   readonly afterRefAdvance?: (commit: string) => Promise<void>;
+  readonly beforeIndexParentSync?: () => Promise<void>;
+  readonly beforeRefParentSync?: () => Promise<void>;
   readonly root: string;
   readonly fulls: ReadonlyArray<{
     readonly full: string;
@@ -1936,26 +2074,39 @@ async function nativeGitFileCommitFilesOnHead(opts: {
         await opts.onCandidate({ attempt, branch, head, commit: candidate });
       }
       if (opts.beforeRefAdvance !== undefined) await opts.beforeRefAdvance(attempt);
+      const indexTransition = await LockedIndexTransition.acquire(attemptContext, opts.beforeIndexParentSync);
       try {
-        await advanceCurrentBranchRefExact({
-          context: await resolveGitContext(opts.path),
-          expectedBranch: branch,
-          expectedOld: head,
-          value: candidate,
-        });
-      } catch (error) {
-        const current = (await runNativeGit(["-C", opts.root, "rev-parse", branch])).trim();
-        if (current === head) throw error;
-        if (opts.retryOnCas === false || opts.expectedHead !== undefined) throw error;
-        head = current;
-        continue;
+        const lockedIndex = await indexTransition.snapshot([...indexBefore.keys()]);
+        if (!sameIndexSnapshot(lockedIndex, indexBefore)) {
+          const current = (await runNativeGit(["-C", opts.root, "rev-parse", branch])).trim();
+          if (current !== head && opts.retryOnCas !== false && opts.expectedHead === undefined) {
+            head = current;
+            continue;
+          }
+          throw new Error("commitFilesOnHead: index changed before exact transition");
+        }
+        try {
+          await advanceCurrentBranchRefExact({
+            context: await resolveGitContext(opts.path),
+            expectedBranch: branch,
+            expectedOld: head,
+            value: candidate,
+            beforeParentSync: opts.beforeRefParentSync,
+          });
+        } catch (error) {
+          const current = (await runNativeGit(["-C", opts.root, "rev-parse", branch])).trim();
+          if (current === head) throw error;
+          if (opts.retryOnCas === false || opts.expectedHead !== undefined) throw error;
+          head = current;
+          continue;
+        }
+        if (opts.afterRefAdvance !== undefined) await opts.afterRefAdvance(candidate);
+        await indexTransition.resetSelected(candidate, [...deduped.keys()]);
+        await indexTransition.publish();
+        return candidate;
+      } finally {
+        await indexTransition.abort();
       }
-      if (opts.afterRefAdvance !== undefined) {
-        await opts.afterRefAdvance(candidate);
-      }
-      await assertIndexSnapshotUnchanged(attemptContext, indexBefore);
-      await runNativeGit(["-C", opts.root, "reset", candidate, "--", ...[...deduped.keys()].map(literalPathspec)]);
-      return candidate;
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }

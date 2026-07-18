@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -16,6 +16,8 @@ import {
   isWorkingTreeDirty,
   log,
   readBlob,
+  recoverIndexAfterExactCommit,
+  replayBranchRefDurability,
   readTree,
   resolveRef,
   statusMatrix,
@@ -366,6 +368,113 @@ describe("git boundary", () => {
     } finally {
       await rm(path, { recursive: true, force: true });
     }
+  });
+
+  test("commitFilesOnHead preserves owner staging raced before its index lock", async () => {
+    const path = mkdtempSync(join(tmpdir(), "dome-git-index-race-"));
+    try {
+      await initRepo(path);
+      await write(path, "Dome.md", "base\n");
+      const base = await commit({ path, message: "base", files: ["Dome.md"] });
+      await write(path, "Dome.md", "owner staged\n");
+      await expect(commitFilesOnHead({
+        path,
+        files: [{ filepath: "Dome.md", content: "dome candidate\n" }],
+        message: "candidate",
+        expectedHead: base,
+        beforeRefAdvance: async () => {
+          const add = Bun.spawn(["git", "-C", path, "add", "--", "Dome.md"], { stderr: "pipe" });
+          expect(await add.exited).toBe(0);
+        },
+      })).rejects.toThrow("index changed before exact transition");
+      expect(await resolveRef({ path, ref: "refs/heads/main" })).toBe(base);
+      const staged = Bun.spawn(["git", "-C", path, "show", ":Dome.md"], { stdout: "pipe" });
+      expect(await new Response(staged.stdout).text()).toBe("owner staged\n");
+      expect(await staged.exited).toBe(0);
+    } finally { await rm(path, { recursive: true, force: true }); }
+  });
+
+  test("an existing owner index lock blocks Dome before branch mutation", async () => {
+    const path = mkdtempSync(join(tmpdir(), "dome-git-index-lock-"));
+    try {
+      await initRepo(path);
+      await write(path, "base.md", "base\n");
+      const base = await commit({ path, message: "base", files: ["base.md"] });
+      const ownerLock = join(path, ".git/index.lock");
+      await writeFile(ownerLock, "owner lock\n");
+      await expect(commitFilesOnHead({
+        path,
+        files: [{ filepath: "Dome.md", content: "dome\n" }],
+        message: "candidate",
+        expectedHead: base,
+      })).rejects.toThrow("could not lock index");
+      expect(await resolveRef({ path, ref: "refs/heads/main" })).toBe(base);
+      expect(await readFile(ownerLock, "utf8")).toBe("owner lock\n");
+      await unlink(ownerLock);
+    } finally { await rm(path, { recursive: true, force: true }); }
+  });
+
+  test("replays ref-parent durability after the branch rename is visible", async () => {
+    const path = mkdtempSync(join(tmpdir(), "dome-git-ref-durability-"));
+    try {
+      await initRepo(path);
+      await write(path, "base.md", "base\n");
+      const base = await commit({ path, message: "base", files: ["base.md"] });
+      let faults = 0;
+      const candidate = await commitFilesOnHead({
+        path,
+        files: [{ filepath: "Dome.md", content: "dome\n" }],
+        message: "candidate",
+        expectedHead: base,
+        beforeRefParentSync: async () => { faults += 1; throw new Error("injected ref parent fault"); },
+      });
+      expect(faults).toBe(1);
+      expect(await resolveRef({ path, ref: "refs/heads/main" })).toBe(candidate);
+    } finally { await rm(path, { recursive: true, force: true }); }
+  });
+
+  test("replays exact branch durability when Git has packed the ref", async () => {
+    const path = mkdtempSync(join(tmpdir(), "dome-git-packed-ref-"));
+    try {
+      await initRepo(path);
+      await write(path, "base.md", "base\n");
+      const head = await commit({ path, message: "base", files: ["base.md"] });
+      const packed = Bun.spawn(["git", "-C", path, "pack-refs", "--all", "--prune"], { stderr: "pipe" });
+      expect(await packed.exited).toBe(0);
+      expect(await Bun.file(join(path, ".git/refs/heads/main")).exists()).toBeFalse();
+      await replayBranchRefDurability({ path, branch: "main", value: head });
+      expect(await resolveRef({ path, ref: "refs/heads/main" })).toBe(head);
+    } finally { await rm(path, { recursive: true, force: true }); }
+  });
+
+  test("recovery preserves owner staging and replays a published index rename", async () => {
+    const path = mkdtempSync(join(tmpdir(), "dome-git-index-recovery-"));
+    try {
+      await initRepo(path);
+      await write(path, "Dome.md", "base\n");
+      const base = await commit({ path, message: "base", files: ["Dome.md"] });
+      let candidate = "";
+      await expect(commitFilesOnHead({
+        path,
+        files: [{ filepath: "Dome.md", content: "dome committed\n" }],
+        message: "candidate",
+        expectedHead: base,
+        onCandidate: async (row) => { candidate = row.commit; },
+        beforeIndexParentSync: async () => { throw new Error("injected after index rename"); },
+      })).rejects.toThrow("injected after index rename");
+      expect(await resolveRef({ path, ref: "refs/heads/main" })).toBe(candidate);
+      await recoverIndexAfterExactCommit({ path, commit: candidate, parent: base, files: ["Dome.md"] });
+
+      await write(path, "Dome.md", "owner staged\n");
+      const add = Bun.spawn(["git", "-C", path, "add", "--", "Dome.md"], { stderr: "pipe" });
+      expect(await add.exited).toBe(0);
+      await expect(recoverIndexAfterExactCommit({
+        path, commit: candidate, parent: base, files: ["Dome.md"],
+      })).rejects.toThrow("conflicting staged owner state");
+      const staged = Bun.spawn(["git", "-C", path, "show", ":Dome.md"], { stdout: "pipe" });
+      expect(await new Response(staged.stdout).text()).toBe("owner staged\n");
+      expect(await staged.exited).toBe(0);
+    } finally { await rm(path, { recursive: true, force: true }); }
   });
 
   test("commitInitialFiles rejects an unborn symbolic HEAD switch", async () => {
