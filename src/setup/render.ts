@@ -21,6 +21,14 @@ export function renderSetupPlanHuman(input: SetupPlan): string {
       lines.push(`- ${blocker.message}`, `  Next: ${blocker.nextAction}`);
     }
   } else {
+    if (plan.assessment.git.state === "absent") {
+      const baseline = plan.assessment.repository.baselineTracked;
+      lines.push(
+        "Proposed owner baseline:",
+        ...(baseline.length === 0 ? ["- No pre-existing owner files"] : baseline.map((path) => `- ${path}`)),
+        "",
+      );
+    }
     lines.push("Planned actions:");
     for (const action of plan.actions) lines.push(`- ${describeAction(action)}`);
     if (plan.optionalSteps.length > 0) {
@@ -31,6 +39,13 @@ export function renderSetupPlanHuman(input: SetupPlan): string {
   if (plan.warnings.length > 0) {
     lines.push("", "Warnings:");
     for (const warning of plan.warnings) lines.push(`- ${warning.message}`);
+  }
+  const excluded = plan.assessment.repository.candidates.filter((candidate) => candidate.disposition !== "baseline");
+  if (excluded.length > 0) {
+    lines.push("", "Repository inventory not proposed for the owner baseline:");
+    for (const candidate of excluded) {
+      lines.push(`- ${candidate.path} (${candidate.reason}; ${candidate.disposition})`);
+    }
   }
   lines.push("", "No changes were made.");
   return lines.join("\n");

@@ -4,6 +4,7 @@ import { CONTENT_SCOPE_MAX_GLOBS } from "../core/content-scope";
 
 export const SETUP_CONTRACT_LIMITS = Object.freeze({
   markdownPaths: 100_000,
+  repositoryCandidates: 100_000,
   scopeGlobs: CONTENT_SCOPE_MAX_GLOBS,
   actions: 8,
   blockers: 12,
@@ -15,7 +16,11 @@ export const SETUP_CONTRACT_LIMITS = Object.freeze({
 
 const MAX_OBJECT_KEYS = 64;
 const MAX_DEPTH = 12;
-const MAX_NODES = SETUP_CONTRACT_LIMITS.markdownPaths * 2 + 4_096;
+// A maximum candidate contributes one object plus its six primitive fields;
+// the two Markdown inventories and baseline path inventory contribute three
+// more primitive rows. Keep one aggregate budget rather than per-field walks.
+const MAX_NODES = SETUP_CONTRACT_LIMITS.repositoryCandidates * 7 +
+  SETUP_CONTRACT_LIMITS.markdownPaths * 3 + 4_096;
 
 /**
  * Compile untrusted contract input into inert data before Zod can traverse it.
@@ -112,7 +117,10 @@ function snapshotObject(
 
 function arrayCap(path: ReadonlyArray<string | number>): number {
   const key = path.at(-1);
-  if (key === "tracked" || key === "untracked") return SETUP_CONTRACT_LIMITS.markdownPaths;
+  if (key === "tracked" || key === "untracked" || key === "baselineTracked") {
+    return SETUP_CONTRACT_LIMITS.markdownPaths;
+  }
+  if (key === "candidates") return SETUP_CONTRACT_LIMITS.repositoryCandidates;
   if (key === "include" || key === "exclude") return SETUP_CONTRACT_LIMITS.scopeGlobs;
   if (key === "actions") return SETUP_CONTRACT_LIMITS.actions;
   if (key === "blockers") return SETUP_CONTRACT_LIMITS.blockers;

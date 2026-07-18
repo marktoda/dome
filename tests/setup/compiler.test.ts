@@ -18,6 +18,19 @@ function input(kind: SetupCompilerInput["source"]["kind"]): SetupCompilerInput {
   const gitPresent = kind === "existing-git-vault" || kind === "existing-dome-vault" ||
     kind === "incompatible-active-operation" || kind === "unsafe-or-ambiguous-state";
   const blocked = kind === "incompatible-active-operation" || kind === "unsafe-or-ambiguous-state";
+  const repository = kind === "existing-non-git-vault" ? {
+    candidates: [{
+      path: "Journal.md", kind: "file" as const, bytes: 12, tracking: "other" as const,
+      disposition: "baseline" as const, reason: "safe-owner-file" as const,
+    }],
+    baselineTracked: ["Journal.md"],
+  } : gitPresent ? {
+    candidates: [{
+      path: "notes/hello.md", kind: "file" as const, bytes: 12, tracking: "tracked" as const,
+      disposition: "already-tracked" as const, reason: "safe-owner-file" as const,
+    }],
+    baselineTracked: [],
+  } : { candidates: [], baselineTracked: [] };
   return {
     source: {
       schema: "dome.setup.vault-source-inspection/v1",
@@ -40,6 +53,7 @@ function input(kind: SetupCompilerInput["source"]["kind"]): SetupCompilerInput {
         tracked: gitPresent ? ["notes/hello.md"] : [],
         untracked: kind === "existing-non-git-vault" ? ["Journal.md"] : [],
       },
+      repository,
       blockers: kind === "incompatible-active-operation" ? [{
         code: "active-git-operation",
         message: "A Git operation is active.",

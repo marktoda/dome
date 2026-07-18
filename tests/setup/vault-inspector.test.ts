@@ -383,6 +383,68 @@ content_scope:
     expect(inspected.blockers.map((blocker) => blocker.code)).toEqual(["unsafe-path"]);
   });
 
+  test("exposes a content-free baseline inventory and never reads sensitive-name candidates", async () => {
+    const root = await temporary();
+    await mkdir(join(root, "notes"));
+    await writeFile(join(root, "notes", "safe.md"), "#\n");
+    await writeFile(join(root, ".env.production"), "TOP_SECRET=must-not-be-read\n");
+    await writeFile(join(root, "private-key.pem"), "must-not-be-read\n");
+    await mkdir(join(root, "secrets"));
+    await writeFile(join(root, "secrets", "opaque.bin"), "must-not-be-read\n");
+
+    const inspected = await inspectSetupVaultSource(root, {
+      // Both sensitive files exceed this read budget. Their name policy must
+      // classify them before hashing, so setup remains ready and content-free.
+      caps: { fileBytes: 8 },
+    });
+
+    expect(inspected.blockers).toEqual([]);
+    expect(inspected.repository.baselineTracked).toEqual(["notes/safe.md"]);
+    expect(inspected.repository.candidates).toEqual([
+      {
+        path: ".env.production", kind: "file", bytes: 28, tracking: "other",
+        disposition: "preserve-untracked", reason: "sensitive-name",
+      },
+      {
+        path: "notes", kind: "directory", bytes: 0, tracking: "other",
+        disposition: "preserve-untracked", reason: "directory-not-tracked",
+      },
+      {
+        path: "notes/safe.md", kind: "file", bytes: 2, tracking: "other",
+        disposition: "baseline", reason: "safe-owner-file",
+      },
+      {
+        path: "private-key.pem", kind: "file", bytes: 17, tracking: "other",
+        disposition: "preserve-untracked", reason: "sensitive-name",
+      },
+      {
+        path: "secrets", kind: "directory", bytes: 0, tracking: "other",
+        disposition: "preserve-untracked", reason: "directory-not-tracked",
+      },
+      {
+        path: "secrets/opaque.bin", kind: "file", bytes: 17, tracking: "other",
+        disposition: "preserve-untracked", reason: "sensitive-name",
+      },
+    ]);
+  });
+
+  test("proposes only bounded direct owner files for a non-Git baseline", async () => {
+    const root = await temporary();
+    await mkdir(join(root, "notes"));
+    await writeFile(join(root, "notes", "one.md"), "# One\n");
+    await writeFile(join(root, "attachment.png"), "png bytes\n");
+    await writeFile(join(root, "credentials.json"), "{}\n");
+
+    const inspected = await inspectSetupVaultSource(root);
+    expect(inspected.repository.baselineTracked).toEqual(["attachment.png", "notes/one.md"]);
+    expect(inspected.repository.candidates.map(({ path, disposition, reason }) => ({ path, disposition, reason }))).toEqual([
+      { path: "attachment.png", disposition: "baseline", reason: "safe-owner-file" },
+      { path: "credentials.json", disposition: "preserve-untracked", reason: "sensitive-name" },
+      { path: "notes", disposition: "preserve-untracked", reason: "directory-not-tracked" },
+      { path: "notes/one.md", disposition: "baseline", reason: "safe-owner-file" },
+    ]);
+  });
+
   test("does not invoke a configured Git filesystem monitor", async () => {
     const root = await gitFixture();
     const marker = join(root, ".git", "fsmonitor-ran");
@@ -611,6 +673,7 @@ function validateInspectionAssessment(
       untracked: inspected.markdown.untracked,
       proposedScope: { version: 1, include: ["**/*.md"], exclude: [".dome/**"] },
     },
+    repository: inspected.repository,
     blockers: inspected.blockers,
   });
 }

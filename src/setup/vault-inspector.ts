@@ -13,6 +13,18 @@ import {
   VAULT_KINDS,
   type SetupTargetState,
 } from "./classification";
+import {
+  SETUP_REPOSITORY_CANDIDATE_KINDS,
+  SETUP_REPOSITORY_DISPOSITIONS,
+  SETUP_REPOSITORY_REASONS,
+  type SetupRepositoryCandidate,
+} from "./repository-policy";
+export {
+  SETUP_REPOSITORY_CANDIDATE_KINDS,
+  SETUP_REPOSITORY_DISPOSITIONS,
+  SETUP_REPOSITORY_REASONS,
+  type SetupRepositoryCandidate,
+} from "./repository-policy";
 
 export const SETUP_VAULT_INSPECTION_SCHEMA = "dome.setup.vault-source-inspection/v1" as const;
 
@@ -64,6 +76,10 @@ export type SetupVaultSourceInspection = Readonly<{
     tracked: ReadonlyArray<string>;
     untracked: ReadonlyArray<string>;
   }>;
+  repository: Readonly<{
+    candidates: ReadonlyArray<SetupRepositoryCandidate>;
+    baselineTracked: ReadonlyArray<string>;
+  }>;
   blockers: ReadonlyArray<VaultAssessment["blockers"][number]>;
   worktreeFingerprint: string;
 }>;
@@ -93,6 +109,7 @@ type FileEvidence = Readonly<{
   filesystemIdentitySha256: string;
   linkTarget: string | null;
   tracking: "tracked" | "untracked" | "ignored" | "other";
+  safetyReason: SetupRepositoryCandidate["reason"];
 }>;
 
 type GitEvidence = Readonly<{
@@ -191,6 +208,10 @@ export async function inspectSetupVaultSource(
     ? markdownPaths(git.untracked)
     : tree.filter((entry) => entry.kind !== "directory" && entry.path.endsWith(".md"))
       .map((entry) => entry.path).sort(compareStrings);
+  const repositoryCandidates = repositoryInventory(tree, git.direct);
+  const baselineTracked = repositoryCandidates
+    .filter((candidate) => candidate.disposition === "baseline")
+    .map((candidate) => candidate.path);
   if (trackedMarkdown.length > caps.entries || untrackedMarkdown.length > caps.entries) {
     addBlocker("unsafe-path", "Markdown inventory exceeds the setup assessment budget.",
       "Narrow the selected vault boundary, then reassess.");
@@ -255,6 +276,10 @@ export async function inspectSetupVaultSource(
       tracked: Object.freeze(trackedMarkdown.slice(0, caps.entries)),
       untracked: Object.freeze(untrackedMarkdown.slice(0, caps.entries)),
     }),
+    repository: Object.freeze({
+      candidates: Object.freeze(repositoryCandidates),
+      baselineTracked: Object.freeze(baselineTracked),
+    }),
     blockers: blockerList,
     worktreeFingerprint: fingerprint,
   }));
@@ -263,7 +288,7 @@ export async function inspectSetupVaultSource(
 /** Validate injected discovery evidence before the setup compiler trusts it. */
 export function validateSetupVaultSourceInspection(value: unknown): SetupVaultSourceInspection {
   const source = exactObject(value, "setup source inspection", [
-    "schema", "targetPath", "targetState", "kind", "git", "dome", "markdown", "blockers", "worktreeFingerprint",
+    "schema", "targetPath", "targetState", "kind", "git", "dome", "markdown", "repository", "blockers", "worktreeFingerprint",
   ]);
   if (source["schema"] !== SETUP_VAULT_INSPECTION_SCHEMA) throw new Error("setup source inspection schema is invalid");
   const targetPath = normalizedAbsolutePath(source["targetPath"], "setup source target path");
@@ -313,6 +338,18 @@ export function validateSetupVaultSourceInspection(value: unknown): SetupVaultSo
   const markdown = exactObject(source["markdown"], "setup source Markdown evidence", ["tracked", "untracked"]);
   const tracked = validatedMarkdownPaths(markdown["tracked"], "tracked Markdown");
   const untracked = validatedMarkdownPaths(markdown["untracked"], "untracked Markdown");
+  const repository = exactObject(source["repository"], "setup source repository evidence", [
+    "candidates", "baselineTracked",
+  ]);
+  const candidates = validatedRepositoryCandidates(repository["candidates"]);
+  const baselineTracked = sortedUniqueSafePaths(
+    repository["baselineTracked"], "setup source baseline tracked paths", SETUP_CONTRACT_CAPS.repositoryCandidates,
+  );
+  const expectedBaseline = candidates.filter((candidate) => candidate.disposition === "baseline")
+    .map((candidate) => candidate.path);
+  if (JSON.stringify(baselineTracked) !== JSON.stringify(expectedBaseline)) {
+    throw new Error("setup source baseline inventory disagrees with repository candidates");
+  }
   const blockerCodes = [
     "unsupported-host", "missing-prerequisite", "dirty-worktree", "active-git-operation", "active-home-upgrade",
     "conflicting-home-owner", "symlink-ambiguity", "unsafe-path", "ambiguous-state", "detached-head",
@@ -399,6 +436,44 @@ function validatedMarkdownPaths(value: unknown, label: string): ReadonlyArray<st
     throw new Error(`${label} contains an invalid path`);
   }
   return paths;
+}
+
+function sortedUniqueSafePaths(value: unknown, label: string, maximum: number): ReadonlyArray<string> {
+  const paths = sortedUniqueStrings(value, label, maximum);
+  if (paths.some((path) => !safeRelativePath(path))) throw new Error(`${label} contains an invalid path`);
+  return paths;
+}
+
+function validatedRepositoryCandidates(value: unknown): ReadonlyArray<SetupRepositoryCandidate> {
+  if (!Array.isArray(value) || value.length > SETUP_CONTRACT_CAPS.repositoryCandidates) {
+    throw new Error("setup source repository candidates exceed their budget");
+  }
+  let previous = "";
+  const candidates: SetupRepositoryCandidate[] = [];
+  for (const raw of value) {
+    const candidate = exactObject(raw, "setup source repository candidate", [
+      "path", "kind", "bytes", "tracking", "disposition", "reason",
+    ]);
+    const path = candidate["path"];
+    if (typeof path !== "string" || !safeRelativePath(path) || path <= previous) {
+      throw new Error("setup source repository candidates are invalid or not canonically ordered");
+    }
+    if (!SETUP_REPOSITORY_CANDIDATE_KINDS.includes(candidate["kind"] as SetupRepositoryCandidate["kind"]) ||
+      !SETUP_REPOSITORY_DISPOSITIONS.includes(candidate["disposition"] as SetupRepositoryCandidate["disposition"]) ||
+      !SETUP_REPOSITORY_REASONS.includes(candidate["reason"] as SetupRepositoryCandidate["reason"]) ||
+      !["tracked", "untracked", "ignored", "other"].includes(String(candidate["tracking"])) ||
+      !Number.isSafeInteger(candidate["bytes"]) || (candidate["bytes"] as number) < 0) {
+      throw new Error("setup source repository candidate is invalid");
+    }
+    const normalized = candidate as SetupRepositoryCandidate;
+    if (normalized.disposition === "baseline" &&
+      (normalized.kind !== "file" || normalized.reason !== "safe-owner-file")) {
+      throw new Error("setup source baseline candidate is not a safe owner file");
+    }
+    candidates.push(normalized);
+    previous = path;
+  }
+  return candidates;
 }
 
 async function inspectTarget(
@@ -668,7 +743,8 @@ async function inspectTree(
       if (prefix === "") {
         entries.push(Object.freeze({ path: "", kind: "directory", mode: directoryBefore.mode & 0o777,
           bytes: 0, sha256: null, gitBlobId: null,
-          filesystemIdentitySha256: filesystemIdentityHash(directoryBefore), linkTarget: null, tracking: "other" }));
+          filesystemIdentitySha256: filesystemIdentityHash(directoryBefore), linkTarget: null, tracking: "other",
+          safetyReason: "directory-not-tracked" }));
       }
       const names = (await readdir(directory)).sort(compareStrings);
       for (const name of names) {
@@ -691,16 +767,24 @@ async function inspectTree(
         if (name === ".git" && prefix !== "") {
           addBlocker("unsafe-path", `The vault contains a nested Git control path at ${path}.`,
             "Remove the nested repository marker or choose one repository boundary, then reassess.");
+          if (info.isFile() && !info.isSymbolicLink()) {
+            entries.push(Object.freeze({ path, kind: "file", mode, bytes: info.size, sha256: null,
+              gitBlobId: null, filesystemIdentitySha256: filesystemIdentityHash(info), linkTarget: null, tracking,
+              safetyReason: "nested-repository" }));
+            continue;
+          }
         }
         if (path === ".dome/state") {
           if (info.isDirectory() && !info.isSymbolicLink()) {
             entries.push(Object.freeze({ path, kind: "directory", mode, bytes: 0, sha256: null,
-              gitBlobId: null, filesystemIdentitySha256: filesystemIdentityHash(info), linkTarget: null, tracking }));
+              gitBlobId: null, filesystemIdentitySha256: filesystemIdentityHash(info), linkTarget: null, tracking,
+              safetyReason: "dome-private" }));
           } else if (info.isSymbolicLink()) {
             const linkTarget = await readStableLinkTarget(absolute, info);
             entries.push(Object.freeze({ path, kind: "symlink", mode, bytes: Buffer.byteLength(linkTarget),
               sha256: sha256(Buffer.from(linkTarget)), gitBlobId: gitBlobId(Buffer.from(linkTarget)),
-              filesystemIdentitySha256: filesystemIdentityHash(info), linkTarget, tracking }));
+              filesystemIdentitySha256: filesystemIdentityHash(info), linkTarget, tracking,
+              safetyReason: "dome-private" }));
             addBlocker("symlink-ambiguity", "The reserved .dome/state path is a symbolic link.",
               "Replace it with a direct private directory, then reassess.");
             addBlocker("unsafe-path", "The reserved .dome/state path is not a direct directory.",
@@ -708,7 +792,7 @@ async function inspectTree(
           } else {
             entries.push(Object.freeze({ path, kind: info.isFile() ? "file" : "special", mode, bytes: info.size,
               sha256: null, gitBlobId: null, filesystemIdentitySha256: filesystemIdentityHash(info),
-              linkTarget: null, tracking }));
+              linkTarget: null, tracking, safetyReason: "dome-private" }));
             addBlocker("unsafe-path", "The reserved .dome/state path is not a direct directory.",
               "Replace it with a direct private directory, then reassess.");
           }
@@ -718,14 +802,17 @@ async function inspectTree(
           const linkTarget = await readStableLinkTarget(absolute, info);
           entries.push(Object.freeze({ path, kind: "symlink", mode, bytes: Buffer.byteLength(linkTarget),
             sha256: sha256(Buffer.from(linkTarget)), gitBlobId: gitBlobId(Buffer.from(linkTarget)),
-            filesystemIdentitySha256: filesystemIdentityHash(info), linkTarget, tracking }));
+            filesystemIdentitySha256: filesystemIdentityHash(info), linkTarget, tracking,
+            safetyReason: symlinkSafetyReason(path, linkTarget) }));
           addBlocker("symlink-ambiguity", `The vault contains a symbolic link at ${path}.`,
             "Remove or explicitly replace the link, then reassess.");
           continue;
         }
         if (info.isDirectory()) {
           entries.push(Object.freeze({ path, kind: "directory", mode, bytes: 0, sha256: null,
-            gitBlobId: null, filesystemIdentitySha256: filesystemIdentityHash(info), linkTarget: null, tracking }));
+            gitBlobId: null, filesystemIdentitySha256: filesystemIdentityHash(info), linkTarget: null, tracking,
+            safetyReason: name === ".git" ? "nested-repository" :
+              tracking === "ignored" ? "ignored-by-owner" : "directory-not-tracked" }));
           if (name === ".git") {
             addBlocker("unsafe-path", `The vault contains a nested repository at ${path}.`,
               "Choose one repository boundary, then reassess.");
@@ -737,21 +824,36 @@ async function inspectTree(
         }
         if (!info.isFile()) {
           entries.push(Object.freeze({ path, kind: "special", mode, bytes: info.size, sha256: null,
-            gitBlobId: null, filesystemIdentitySha256: filesystemIdentityHash(info), linkTarget: null, tracking }));
+            gitBlobId: null, filesystemIdentitySha256: filesystemIdentityHash(info), linkTarget: null, tracking,
+            safetyReason: "special-file" }));
           addBlocker("unsafe-path", `The vault contains a special file at ${path}.`,
             "Remove the special file from the vault boundary, then reassess.");
           continue;
         }
-        if (info.nlink !== 1) addBlocker("unsafe-path", `The vault contains a hard-linked file at ${path}.`,
-          "Replace the hard link with a direct file, then reassess.");
+        if (info.nlink !== 1) {
+          entries.push(Object.freeze({ path, kind: "file", mode, bytes: info.size, sha256: null,
+            gitBlobId: null, filesystemIdentitySha256: filesystemIdentityHash(info), linkTarget: null, tracking,
+            safetyReason: "hard-linked-file" }));
+          addBlocker("unsafe-path", `The vault contains a hard-linked file at ${path}.`,
+            "Replace the hard link with a direct file, then reassess.");
+          continue;
+        }
         if (tracking === "ignored") {
           entries.push(Object.freeze({ path, kind: "file", mode, bytes: info.size, sha256: null,
-            gitBlobId: null, filesystemIdentitySha256: filesystemIdentityHash(info), linkTarget: null, tracking }));
+            gitBlobId: null, filesystemIdentitySha256: filesystemIdentityHash(info), linkTarget: null, tracking,
+            safetyReason: "ignored-by-owner" }));
+          continue;
+        }
+        if (isSensitiveRepositoryPath(path)) {
+          entries.push(Object.freeze({ path, kind: "file", mode, bytes: info.size, sha256: null,
+            gitBlobId: null, filesystemIdentitySha256: filesystemIdentityHash(info), linkTarget: null, tracking,
+            safetyReason: "sensitive-name" }));
           continue;
         }
         if (info.size > caps.fileBytes || hashedBytes + info.size > caps.totalBytes) {
           entries.push(Object.freeze({ path, kind: "file", mode, bytes: info.size, sha256: null,
-            gitBlobId: null, filesystemIdentitySha256: filesystemIdentityHash(info), linkTarget: null, tracking }));
+            gitBlobId: null, filesystemIdentitySha256: filesystemIdentityHash(info), linkTarget: null, tracking,
+            safetyReason: "large-file" }));
           addBlocker("unsafe-path", "The vault exceeds the setup content-hashing budget.",
             "Exclude or relocate large files, then reassess.");
           continue;
@@ -760,7 +862,7 @@ async function inspectTree(
         hashedBytes += info.size;
         entries.push(Object.freeze({ path, kind: "file", mode, bytes: info.size, sha256: sha256(bytes),
           gitBlobId: gitBlobId(bytes), filesystemIdentitySha256: filesystemIdentityHash(info),
-          linkTarget: null, tracking }));
+          linkTarget: null, tracking, safetyReason: isDomePrivatePath(path) ? "dome-private" : "safe-owner-file" }));
       }
       const directoryAfter = await lstat(directory);
       const descriptorAfter = await directoryHandle.stat();
@@ -829,6 +931,52 @@ function setupTargetState(target: Readonly<{ exists: boolean; isDirectory: boole
 
 function markdownPaths(paths: ReadonlySet<string>): string[] {
   return [...paths].filter((path) => path.endsWith(".md")).sort(compareStrings);
+}
+
+function repositoryInventory(tree: ReadonlyArray<FileEvidence>, gitDirect: boolean): SetupRepositoryCandidate[] {
+  return tree.filter((entry) => entry.path !== "").map((entry) => Object.freeze({
+    path: entry.path,
+    kind: entry.kind,
+    bytes: entry.bytes,
+    tracking: entry.tracking,
+    disposition: repositoryDisposition(entry, gitDirect),
+    reason: entry.safetyReason,
+  })).sort((left, right) => compareStrings(left.path, right.path));
+}
+
+function repositoryDisposition(entry: FileEvidence, gitDirect: boolean): SetupRepositoryCandidate["disposition"] {
+  if (entry.kind === "symlink" || entry.kind === "special" ||
+    (entry.path === ".dome/state" && entry.kind !== "directory") ||
+    ["nested-repository", "hard-linked-file"].includes(entry.safetyReason)) return "blocked";
+  if (entry.tracking === "tracked") return "already-tracked";
+  if (!gitDirect && entry.kind === "file" && entry.safetyReason === "safe-owner-file" &&
+    (entry.tracking === "other" || entry.tracking === "untracked")) return "baseline";
+  return "preserve-untracked";
+}
+
+function isSensitiveRepositoryPath(path: string): boolean {
+  const names = path.split("/").map((part) => part.toLowerCase());
+  return names.some((name) => name === ".env" || name.startsWith(".env.") ||
+    /(?:^|[._-])(credential|credentials|secret|secrets|token|tokens|password|passwd|private[._-]?key)(?:[._-]|$)/i.test(name)) ||
+    /^(?:id_(?:rsa|dsa|ecdsa|ed25519)|.*\.(?:pem|p12|pfx|key|keystore))$/i.test(names.at(-1)!);
+}
+
+function isDomePrivatePath(path: string): boolean {
+  return path === ".dome/state" || path.startsWith(".dome/state/");
+}
+
+function symlinkSafetyReason(path: string, target: string): "symlink-internal" | "symlink-external" {
+  if (target.startsWith("/")) return "symlink-external";
+  const parts = [...path.split("/").slice(0, -1), ...target.split("/")];
+  let depth = 0;
+  for (const part of parts) {
+    if (part === "" || part === ".") continue;
+    if (part === "..") {
+      if (depth === 0) return "symlink-external";
+      depth -= 1;
+    } else depth += 1;
+  }
+  return "symlink-internal";
 }
 
 function trackingFor(path: string, git: GitEvidence): FileEvidence["tracking"] {

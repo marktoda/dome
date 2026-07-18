@@ -34,6 +34,11 @@ vault path. It contains:
   proposed versioned content scope. Case-variant `.MD` files remain ordinary
   source bytes for revision binding but are outside version 1's owner-Markdown
   universe; `.dome/**` and `.git/**` remain the non-overridable private floor;
+- one bounded, content-free repository inventory. Every row reports only its
+  relative path, kind, byte count, Git tracking classification, proposed
+  baseline disposition, and one closed safety reason. `baselineTracked` is the
+  exact sorted set of direct bounded owner files proposed for a future non-Git
+  owner baseline; an existing Git repository never gets a second baseline;
 - the observed Dome content-scope state: `absent`, `configured`, or
   `incompatible`; and
 - zero or more canonically ordered blockers, each with exactly one next action.
@@ -115,8 +120,9 @@ It hashes bounded tracked and untracked regular-file bytes and modes, exact
 symlink targets, Git index/HEAD and derived dirty evidence, ignore results,
 direct `info/exclude` bytes, the linked-worktree gitfile, Dome configuration, and
 injected package or Home selector evidence. It excludes Git internals and
-`.dome/state`; ignored content bytes are deliberately not read, while their
-paths and ignore behavior remain bound. Entry, file, total-content, command,
+`.dome/state`; ignored and sensitive-name content bytes are deliberately not
+read, while their paths, byte counts, filesystem identity, and safety/ignore
+classifications remain bound. Entry, file, total-content, command,
 and command-time budgets fail closed rather than silently truncating evidence.
 Caller-provided cap overrides may only lower production limits, and injected
 package/Home evidence has its own bounded inventory.
@@ -230,14 +236,28 @@ The action's service label is not caller-selected. Setup and the Home lifecycle
 derive it through the neutral `src/core/vault-service-identity.ts` Module, and
 the plan validator recomputes the exact label from the assessed vault path.
 
-For an existing non-Git vault, the M3 inspector already revision-binds every
-bounded, nonignored regular-file byte and mode—not only Markdown—and blocks
+For an existing non-Git vault, the inspector revision-binds every bounded,
+nonsensitive, nonignored regular-file byte and mode—not only Markdown—and blocks
 symlinks, nested repositories, special files, and unsafe hard links. M3 does
 not yet emit a baseline-commit action. M5 must first define the exact safe Git
 inventory, ignore/exclusion behavior, and commit boundary so owner attachments,
 configuration, and other non-Markdown files are preserved. Only then may apply
 initialize and baseline that repository; the preview must never imply a
 Markdown-only baseline.
+
+M5's first read-side checkpoint exposes that exact proposed tracked set in both
+assessment presentations. The policy is deliberately conservative: a regular
+file enters the proposal only when it is direct, bounded, nonignored, outside
+`.dome/state/**`, and its path does not match the closed sensitive-name policy
+(`.env*`, credential/secret/token/password/private-key names, private-key
+stems, or common key-container suffixes). Directories, ignored paths,
+sensitive-name files, large files, and Dome-private paths are
+`preserve-untracked`; paths already in an existing Git index are
+`already-tracked`. Nested repositories, symlinks (classified lexically as
+internal or external without following them), special files, and hard-linked
+files are `blocked`. The rows contain no source bytes. The apply checkpoint
+must consume this exact inventory under explicit consent; it may not rediscover
+a broader tracked set.
 
 The plan is a preview and a revision binding, not an execution log. Apply may
 consume a successfully revalidated plan in a later slice, but it must not

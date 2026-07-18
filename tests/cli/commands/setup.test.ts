@@ -18,6 +18,7 @@ function evidence(blocked = false): SetupCompilerInput {
       },
       dome: { state: "absent", contentScope: "absent" },
       markdown: { tracked: [], untracked: [] },
+      repository: { candidates: [], baselineTracked: [] },
       blockers: blocked ? [{
         code: "symlink-ambiguity",
         message: "The selected path is redirected.",

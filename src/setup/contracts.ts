@@ -14,6 +14,11 @@ import {
   SETUP_TARGET_STATES,
   VAULT_KINDS,
 } from "./classification";
+import {
+  SETUP_REPOSITORY_CANDIDATE_KINDS,
+  SETUP_REPOSITORY_DISPOSITIONS,
+  SETUP_REPOSITORY_REASONS,
+} from "./repository-policy";
 
 export type { ContentScopeConfig };
 
@@ -58,6 +63,18 @@ const relativePath = nonEmpty.refine(
   "must be a normalized relative path",
 );
 const markdownPath = relativePath.refine((value) => value.endsWith(".md"), "must identify lowercase-suffix Markdown");
+const repositoryCandidateSchema = z.object({
+  path: relativePath,
+  kind: z.enum(SETUP_REPOSITORY_CANDIDATE_KINDS),
+  bytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  tracking: z.enum(["tracked", "untracked", "ignored", "other"]),
+  disposition: z.enum(SETUP_REPOSITORY_DISPOSITIONS),
+  reason: z.enum(SETUP_REPOSITORY_REASONS),
+}).strict().refine(
+  (candidate) => candidate.disposition !== "baseline" ||
+    (candidate.kind === "file" && candidate.reason === "safe-owner-file"),
+  "only safe owner files may enter the proposed baseline",
+);
 
 function sortedUnique<T extends z.ZodType<string>>(item: T) {
   return z.array(item).superRefine((values, context) => {
@@ -189,6 +206,10 @@ const assessmentSchemaBase = z.object({
     untracked: sortedUnique(markdownPath).max(SETUP_CONTRACT_CAPS.markdownPaths),
     proposedScope: contentScopeSchema,
   }).strict(),
+  repository: z.object({
+    candidates: z.array(repositoryCandidateSchema).max(SETUP_CONTRACT_CAPS.repositoryCandidates),
+    baselineTracked: sortedUnique(relativePath).max(SETUP_CONTRACT_CAPS.repositoryCandidates),
+  }).strict(),
   blockers: z.array(blockerSchema).max(SETUP_CONTRACT_CAPS.blockers),
 }).strict();
 
@@ -284,6 +305,20 @@ export const vaultAssessmentSchema = assessmentSchemaBase.superRefine((assessmen
   }
   if (assessment.git.state === "absent" && assessment.markdown.tracked.length > 0) {
     context.addIssue({ code: "custom", path: ["markdown", "tracked"], message: "a non-Git target cannot contain tracked Markdown" });
+  }
+  const candidatePaths = assessment.repository.candidates.map((candidate) => candidate.path);
+  if (new Set(candidatePaths).size !== candidatePaths.length ||
+    candidatePaths.some((path, index) => index > 0 && candidatePaths[index - 1]! >= path)) {
+    context.addIssue({ code: "custom", path: ["repository", "candidates"], message: "must be sorted and unique by path" });
+  }
+  const expectedBaseline = assessment.repository.candidates
+    .filter((candidate) => candidate.disposition === "baseline")
+    .map((candidate) => candidate.path);
+  if (JSON.stringify(assessment.repository.baselineTracked) !== JSON.stringify(expectedBaseline)) {
+    context.addIssue({ code: "custom", path: ["repository", "baselineTracked"], message: "must match baseline candidates" });
+  }
+  if (assessment.git.state !== "absent" && assessment.repository.baselineTracked.length > 0) {
+    context.addIssue({ code: "custom", path: ["repository", "baselineTracked"], message: "an existing Git repository cannot propose an owner baseline" });
   }
   if (assessment.dome.state === "configured" && assessment.target.state !== "existing") {
     context.addIssue({ code: "custom", path: ["target", "state"], message: "configured Dome evidence requires an existing target" });

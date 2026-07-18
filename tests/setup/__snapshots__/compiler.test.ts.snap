@@ -14,7 +14,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "revision": {
         "head": null,
-        "worktreeFingerprint": "bdde782f01fe957df37ac328d55f00c3a75749331a51349cec7128f49a3f039e"
+        "worktreeFingerprint": "3e4a882745b09101189a5b471d54fbb92c11458039d89dc61296d2096dd10252"
       },
       "host": {
         "platform": "darwin",
@@ -74,6 +74,10 @@ exports[`setup compiler compiles every closed classification into one exact plan
             ".git/**"
           ]
         }
+      },
+      "repository": {
+        "candidates": [],
+        "baselineTracked": []
       },
       "blockers": []
     },
@@ -182,7 +186,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "revision": {
         "head": null,
-        "worktreeFingerprint": "8ee15756437babb0463149811f184468c625aeea845df52073193e4c77b616cd"
+        "worktreeFingerprint": "4965f73724dd53c66f48c5cdc2c00ac611ede4d2a791081763b70844a19a02b5"
       },
       "host": {
         "platform": "darwin",
@@ -242,6 +246,10 @@ exports[`setup compiler compiles every closed classification into one exact plan
             ".git/**"
           ]
         }
+      },
+      "repository": {
+        "candidates": [],
+        "baselineTracked": []
       },
       "blockers": []
     },
@@ -343,7 +351,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "revision": {
         "head": null,
-        "worktreeFingerprint": "800cb69df02d802ebfe5cfb597e7a9ef40e771691ec7f85c552e5590bac57678"
+        "worktreeFingerprint": "4c6b9057f0902c2b5be5d8e946670d7e45fb7818848d207ff4114fbd7cb30776"
       },
       "host": {
         "platform": "darwin",
@@ -405,6 +413,21 @@ exports[`setup compiler compiles every closed classification into one exact plan
             ".git/**"
           ]
         }
+      },
+      "repository": {
+        "candidates": [
+          {
+            "path": "Journal.md",
+            "kind": "file",
+            "bytes": 12,
+            "tracking": "other",
+            "disposition": "baseline",
+            "reason": "safe-owner-file"
+          }
+        ],
+        "baselineTracked": [
+          "Journal.md"
+        ]
       },
       "blockers": []
     },
@@ -511,7 +534,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "revision": {
         "head": "1111111111111111111111111111111111111111",
-        "worktreeFingerprint": "ae3314bc6b50c9c8984b260c712c8e08b37d9b1c03b8fcfd30425818e2d99bd6"
+        "worktreeFingerprint": "5118decb07dd68321ddd124985e18ab1e161e8220c6c83715fdacae444561a2c"
       },
       "host": {
         "platform": "darwin",
@@ -573,6 +596,19 @@ exports[`setup compiler compiles every closed classification into one exact plan
             ".git/**"
           ]
         }
+      },
+      "repository": {
+        "candidates": [
+          {
+            "path": "notes/hello.md",
+            "kind": "file",
+            "bytes": 12,
+            "tracking": "tracked",
+            "disposition": "already-tracked",
+            "reason": "safe-owner-file"
+          }
+        ],
+        "baselineTracked": []
       },
       "blockers": []
     },
@@ -673,7 +709,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "revision": {
         "head": "1111111111111111111111111111111111111111",
-        "worktreeFingerprint": "8e4c7962ee6d3a0415410642fa7fa18bdb5bbf1c717600bf9daa3d3a1125dfed"
+        "worktreeFingerprint": "323697ec96c6ca01b4bdfbca97bb11407ba798e5b5699a2ef7f8b70a192c2f1c"
       },
       "host": {
         "platform": "darwin",
@@ -736,6 +772,19 @@ exports[`setup compiler compiles every closed classification into one exact plan
           ]
         }
       },
+      "repository": {
+        "candidates": [
+          {
+            "path": "notes/hello.md",
+            "kind": "file",
+            "bytes": 12,
+            "tracking": "tracked",
+            "disposition": "already-tracked",
+            "reason": "safe-owner-file"
+          }
+        ],
+        "baselineTracked": []
+      },
       "blockers": []
     },
     "actions": [
@@ -781,7 +830,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "revision": {
         "head": "1111111111111111111111111111111111111111",
-        "worktreeFingerprint": "beeb77da7524d9ca8cb3b06b41b0244d629d9e2086656eaadc05d22c2328e4fb"
+        "worktreeFingerprint": "74d32e175a4fc5477e86dabcadc7212982b9f32d87fd76b965f3f0bfbe9c032d"
       },
       "host": {
         "platform": "darwin",
@@ -844,6 +893,19 @@ exports[`setup compiler compiles every closed classification into one exact plan
           ]
         }
       },
+      "repository": {
+        "candidates": [
+          {
+            "path": "notes/hello.md",
+            "kind": "file",
+            "bytes": 12,
+            "tracking": "tracked",
+            "disposition": "already-tracked",
+            "reason": "safe-owner-file"
+          }
+        ],
+        "baselineTracked": []
+      },
       "blockers": [
         {
           "code": "active-git-operation",
@@ -871,7 +933,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "revision": {
         "head": "1111111111111111111111111111111111111111",
-        "worktreeFingerprint": "2b66be3b72230c4c91dd428f3b99a7957093e5c06827d69e158076a45f6bb7f5"
+        "worktreeFingerprint": "89028feb83472715803636e9ba06d8ea49b6abf818a7d7593ba150f6020d4c53"
       },
       "host": {
         "platform": "darwin",
@@ -934,6 +996,19 @@ exports[`setup compiler compiles every closed classification into one exact plan
           ]
         }
       },
+      "repository": {
+        "candidates": [
+          {
+            "path": "notes/hello.md",
+            "kind": "file",
+            "bytes": 12,
+            "tracking": "tracked",
+            "disposition": "already-tracked",
+            "reason": "safe-owner-file"
+          }
+        ],
+        "baselineTracked": []
+      },
       "blockers": [
         {
           "code": "symlink-ambiguity",
@@ -957,7 +1032,10 @@ exports[`setup compiler renders human and JSON forms from the same validated pla
 Vault: /Users/example/Vault
 Status: ready
 Classification: existing-non-git-vault
-Revision: no Git HEAD / 800cb69df02d802ebfe5cfb597e7a9ef40e771691ec7f85c552e5590bac57678
+Revision: no Git HEAD / 4c6b9057f0902c2b5be5d8e946670d7e45fb7818848d207ff4114fbd7cb30776
+
+Proposed owner baseline:
+- Journal.md
 
 Planned actions:
 - Initialize Git at /Users/example/Vault

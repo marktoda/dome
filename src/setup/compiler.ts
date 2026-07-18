@@ -120,6 +120,10 @@ export function compileSetupAssessment(input: SetupCompilerInput): VaultAssessme
       untracked: [...input.source.markdown.untracked],
       proposedScope: cloneContentScope(contentScope),
     },
+    repository: {
+      candidates: input.source.repository.candidates.map((candidate) => ({ ...candidate })),
+      baselineTracked: [...input.source.repository.baselineTracked],
+    },
     blockers: blockerRows,
   });
 }

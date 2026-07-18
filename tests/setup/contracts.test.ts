@@ -53,6 +53,7 @@ function assessment(): VaultAssessment {
       untracked: [],
       proposedScope: { version: 1, include: ["**/*.md"], exclude: [".dome/**", ".git/**"] },
     },
+    repository: { candidates: [], baselineTracked: [] },
     blockers: [],
   });
 }
@@ -229,17 +230,18 @@ describe("SetupPlan contract", () => {
 
   test("enforces one aggregate budget across primitive elements and holes", () => {
     for (const populated of [true, false]) {
-      const first = populated ? new Array(100_000).fill("same.md") : new Array(100_000);
-      const second = populated ? new Array(100_000).fill("same.md") : new Array(100_000);
-      const third = populated ? new Array(100_000).fill("same.md") : new Array(100_000);
+      const oversized = () => populated ? new Array(100_000).fill("same.md") : new Array(100_000);
       const value = plan();
+      const surplus = Object.fromEntries(Array.from({ length: 12 }, (_, index) => [
+        `surplus${index}`, { tracked: oversized() },
+      ]));
       expect(() => validateSetupPlan({
         ...value,
+        ...surplus,
         assessment: {
           ...value.assessment,
-          markdown: { ...value.assessment.markdown, tracked: first, untracked: second },
+          markdown: { ...value.assessment.markdown, tracked: oversized(), untracked: oversized() },
         },
-        surplus: { tracked: third },
       })).toThrow("exceeds the passive data budget");
     }
   });
