@@ -419,5 +419,8 @@ describe("git boundary in a linked worktree", () => {
       ledger.close();
       await rm(fixture, { recursive: true, force: true });
     }
-  });
+  // This end-to-end case owns linked-worktree creation, seven native Git
+  // children, two capture attempts, and adoption. Bun's 5s unit default is
+  // narrower than that integration boundary on hosted macOS.
+  }, 10_000);
 });

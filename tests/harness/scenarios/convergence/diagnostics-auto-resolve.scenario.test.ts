@@ -223,7 +223,16 @@ scenario(
       { kind: "trigger", trigger: "signal" },
       { kind: "route", route: "adoption" },
     ],
-    harness: { bundles: ["dome.markdown"] },
+    harness: {
+      bundles: ["dome.markdown"],
+      // Keep every processor-owned deadline inside the 30s scenario
+      // watchdog. If a snapshot/Git read stalls, the engine must first
+      // return a structured processor.timeout instead of letting Bun own
+      // the failure ambiguously.
+      initialFiles: {
+        ".dome/config.yaml": markdownConfigWithProcessorTimeout(5_000),
+      },
+    },
   },
   async (h) => {
     const seed = await h.tick();
@@ -382,6 +391,14 @@ scenario(
 
 function markdownConfig(): string {
   return markdownConfigWithPatchPaths(["**/*.md"]);
+}
+
+function markdownConfigWithProcessorTimeout(timeoutMs: number): string {
+  return [
+    "engine:",
+    `  processor_timeout_ms: ${timeoutMs}`,
+    markdownConfig(),
+  ].join("\n");
 }
 
 function markdownConfigWithPatchPaths(paths: ReadonlyArray<string>): string {

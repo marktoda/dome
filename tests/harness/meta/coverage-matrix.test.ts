@@ -243,7 +243,7 @@ const DEFERRED_TRIGGERS: ReadonlySet<TriggerKind> = new Set<TriggerKind>([
   // Phase 13a unblocked: command (`dome run orphan-pages`).
   // Harness operational-work coverage unblocked: schedule.
   // CLI-surface recovery coverage unblocked: answer.
-  "path",      // No shipped processor uses path triggers (signal triggers cover today's needs)
+  // Processor execution-cap coverage unblocked: path.
 ]);
 
 const DEFERRED_CAPABILITIES: ReadonlySet<CapabilityKind> = new Set<CapabilityKind>([

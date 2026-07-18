@@ -1,0 +1,16 @@
+id: test.stalled-adoption
+version: 0.1.0
+processors:
+  - id: test.stalled-adoption.wait-for-abort
+    version: 0.1.0
+    phase: adoption
+    triggers:
+      - kind: path
+        pattern: wiki/stalled.md
+    capabilities:
+      - kind: read
+        paths: ["wiki/**"]
+    execution:
+      class: deterministic
+      timeoutMs: 60000
+    module: processors/wait-for-abort.ts
