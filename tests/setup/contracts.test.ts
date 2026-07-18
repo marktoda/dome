@@ -1,489 +1,233 @@
 import { describe, expect, test } from "bun:test";
+
 import {
   SETUP_PLAN_SCHEMA,
   VAULT_ASSESSMENT_SCHEMA,
-  VAULT_KINDS,
-  type AdaptationAction,
-  type SetupPlan,
-  type VaultAssessment,
   validateSetupPlan,
   validateVaultAssessment,
+  type SetupPlan,
+  type VaultAssessment,
 } from "../../src/setup/contracts";
 
 const HEAD = "1".repeat(40);
 const FINGERPRINT = "2".repeat(64);
 const ARTIFACT = "3".repeat(64);
-const FILE_HASH = "4".repeat(64);
+const MANIFEST = "4".repeat(64);
+const SERVICE = "com.dome.home.example-vault";
 
-function fixture(kind: VaultAssessment["target"]["kind"]): VaultAssessment {
-  const gitPresent = kind === "existing-git-vault" || kind === "existing-dome-vault" ||
-    kind === "incompatible-active-operation" || kind === "unsafe-or-ambiguous-state";
-  const blocked = kind === "incompatible-active-operation" || kind === "unsafe-or-ambiguous-state";
-  const actions: AdaptationAction[] = [];
-  if (!blocked && kind !== "existing-dome-vault") {
-    if (kind === "new-path") actions.push({
-      kind: "create-vault-directory", id: "vault-directory", path: "/Users/example/Vault", mode: "0755", ifMissing: true,
-    });
-    if (!gitPresent) actions.push({
-      kind: "initialize-git", id: "git-repository", repositoryPath: "/Users/example/Vault", ifMissing: true,
-    });
-    actions.push(
-      { kind: "ensure-scaffold-directory", id: "dome-directory", path: ".dome", mode: "0755", ifMissing: true },
-      { kind: "ensure-scaffold-directory", id: "dome-state-directory", path: ".dome/state", mode: "0700", ifMissing: true },
-      {
-        kind: "write-scaffold-file", id: "agents-orientation", path: "AGENTS.md", bytes: 512,
-        sha256: FILE_HASH, mode: "0644", ifMissing: true,
-      },
-      {
-        kind: "write-scaffold-file", id: "gitignore", path: ".gitignore", bytes: 64,
-        sha256: FILE_HASH, mode: "0644", ifMissing: true,
-      },
-      {
-        kind: "set-content-scope",
-        id: "vault-config",
-        scope: { version: 1, include: ["**/*.md"], exclude: [".dome/**"] },
-        write: {
-          path: ".dome/config.yaml", operation: "create-file", bytes: 128,
-          sha256: FILE_HASH, mode: "0644", ifMissing: true,
-        },
-      },
-    );
-    if (kind === "existing-non-git-vault") actions.push({
-      kind: "create-baseline-commit", id: "baseline-commit", message: "Initialize Dome vault",
-      paths: ["Journal.md"],
-    });
-    actions.push(
-      {
-        kind: "install-home", id: "home-artifact", artifactId: ARTIFACT,
-        disposition: "install-or-resume",
-      },
-      { kind: "select-home-vault", id: "home-vault-selector", vaultPath: "/Users/example/Vault" },
-      {
-        kind: "install-home-service", id: "home-service", serviceLabel: "com.dome.home.example-vault", ifMissing: true,
-      },
-      { kind: "start-home", id: "home-start", serviceLabel: "com.dome.home.example-vault" },
-    );
-  }
+function assessment(): VaultAssessment {
   return validateVaultAssessment({
     schema: VAULT_ASSESSMENT_SCHEMA,
-    target: { path: "/Users/example/Vault", kind },
-    revision: { head: gitPresent ? HEAD : null, worktreeFingerprint: FINGERPRINT },
+    target: { path: "/Users/example/Vault", kind: "existing-git-vault" },
+    revision: { head: HEAD, worktreeFingerprint: FINGERPRINT },
     host: { platform: "darwin", architecture: "arm64", supported: true },
     product: {
       packageName: "@marktoda/dome",
       packageVersion: "0.4.0",
       sourceCommit: HEAD,
-      productManifestSha256: ARTIFACT,
+      productManifestSha256: MANIFEST,
       packagedHome: {
         artifactId: ARTIFACT,
         productVersion: "0.4.0",
         buildCommit: HEAD,
-        manifestSha256: FILE_HASH,
+        manifestSha256: MANIFEST,
       },
     },
     prerequisites: [
       { id: "bun", status: "available", version: "1.2.13" },
       { id: "git", status: "available", version: "2.50.1" },
     ],
-    git: {
-      state: kind === "incompatible-active-operation" ? "operation-active" : gitPresent ? "clean" : "absent",
-      branch: gitPresent ? "main" : null,
-    },
-    dome: { state: kind === "existing-dome-vault" ? "configured" : "absent" },
+    git: { state: "clean", branch: "main" },
+    dome: { state: "absent", contentScope: "absent" },
     installedHome: {
-      state: kind === "existing-dome-vault" ? "owned" : "absent",
-      artifactId: kind === "existing-dome-vault" ? ARTIFACT : null,
-      productVersion: kind === "existing-dome-vault" ? "0.4.0" : null,
-      buildCommit: kind === "existing-dome-vault" ? HEAD : null,
-      manifestSha256: kind === "existing-dome-vault" ? FILE_HASH : null,
-      selectedVaultPath: kind === "existing-dome-vault" ? "/Users/example/Vault" : null,
+      state: "absent",
+      artifactId: null,
+      productVersion: null,
+      buildCommit: null,
+      manifestSha256: null,
+      selectedVaultPath: null,
     },
     markdown: {
-      tracked: gitPresent ? ["notes/hello.md"] : [],
-      untracked: kind === "existing-non-git-vault" ? ["Journal.md"] : [],
-      proposedScope: { version: 1, include: ["**/*.md"], exclude: [".dome/**"] },
+      tracked: ["notes/hello.md"],
+      untracked: [],
+      proposedScope: { version: 1, include: ["**/*.md"], exclude: [".dome/**", ".git/**"] },
     },
-    actions,
-    blockers: kind === "incompatible-active-operation" ? [{
-      code: "active-git-operation",
-      message: "A Git operation is active.",
-      nextAction: "Finish or abort the Git operation, then reassess.",
-    }] : kind === "unsafe-or-ambiguous-state" ? [{
-      code: "symlink-ambiguity",
-      message: "The selected path contains an ambiguous link.",
-      nextAction: "Choose a canonical vault path with no escaping links, then reassess.",
-    }] : [],
+    blockers: [],
   });
 }
 
-function gitEdgeFixture(state: "detached" | "unborn"): VaultAssessment {
-  const unsafe = fixture("unsafe-or-ambiguous-state");
-  return validateVaultAssessment({
-    ...unsafe,
-    revision: { ...unsafe.revision, head: state === "detached" ? HEAD : null },
-    git: { state, branch: state === "detached" ? null : "main" },
-    blockers: state === "detached" ? [{
-      code: "detached-head",
-      message: "The repository has a detached HEAD.",
-      nextAction: "Check out the intended branch, then reassess.",
-    }] : [{
-      code: "unborn-repository",
-      message: "The repository has no first commit.",
-      nextAction: "Create or remove the incomplete repository, then reassess.",
-    }],
+function plan(): SetupPlan {
+  const assessed = assessment();
+  return validateSetupPlan({
+    schema: SETUP_PLAN_SCHEMA,
+    status: "ready",
+    assessment: assessed,
+    actions: [
+      { kind: "ensure-scaffold-directory", id: "dome-directory", path: ".dome", mode: "0755", ifMissing: true },
+      { kind: "ensure-scaffold-directory", id: "dome-state-directory", path: ".dome/state", mode: "0700", ifMissing: true },
+      {
+        kind: "write-scaffold-file", id: "agents-orientation", path: "AGENTS.md",
+        bytes: 10, sha256: FINGERPRINT, mode: "0644", ifMissing: true,
+      },
+      {
+        kind: "write-scaffold-file", id: "gitignore", path: ".gitignore",
+        bytes: 12, sha256: MANIFEST, mode: "0644", ifMissing: true,
+      },
+      {
+        kind: "set-content-scope",
+        id: "vault-config",
+        scope: assessed.markdown.proposedScope,
+        write: {
+          path: ".dome/config.yaml", operation: "create-file", bytes: 100,
+          sha256: ARTIFACT, mode: "0644", ifMissing: true,
+        },
+      },
+      {
+        kind: "activate-home",
+        id: "home-activation",
+        artifactId: ARTIFACT,
+        disposition: "install-or-resume",
+        vaultPath: assessed.target.path,
+        serviceLabel: SERVICE,
+        installServiceIfMissing: true,
+      },
+    ],
+    optionalSteps: [
+      { kind: "configure-integration", description: "Connect an optional source." },
+      { kind: "configure-model", description: "Configure a model provider." },
+    ],
+    recoveryCommands: ["dome setup --dry-run /Users/example/Vault"],
+    warnings: [{ code: "review-content-scope", message: "Review the scope." }],
   });
 }
 
 describe("VaultAssessment contract", () => {
-  test("every closed vault classification has an exact JSON fixture", () => {
-    const fixtures = Object.fromEntries(VAULT_KINDS.map((kind) => [kind, fixture(kind)]));
-    expect(JSON.stringify(fixtures, null, 2)).toMatchSnapshot();
+  test("accepts one canonical revision-bound observation with no action projection", () => {
+    const value = assessment();
+    expect(validateVaultAssessment(JSON.parse(JSON.stringify(value)))).toEqual(value);
+    expect(value).not.toHaveProperty("actions");
   });
 
-  test("detached and unborn Git states have exact fail-closed fixtures", () => {
-    expect(JSON.stringify({
-      detached: gitEdgeFixture("detached"),
-      unborn: gitEdgeFixture("unborn"),
-    }, null, 2)).toMatchSnapshot();
+  test("rejects unknown fields, non-canonical paths, and case-variant Markdown", () => {
+    const value = assessment();
+    expect(() => validateVaultAssessment({ ...value, surprise: true })).toThrow();
+    expect(() => validateVaultAssessment({
+      ...value,
+      markdown: { ...value.markdown, tracked: ["z.md", "a.md"] },
+    })).toThrow("must be sorted and unique");
+    expect(() => validateVaultAssessment({
+      ...value,
+      markdown: { ...value.markdown, tracked: ["notes/hello.MD"] },
+    })).toThrow("lowercase-suffix Markdown");
   });
 
-  test("rejects unknown fields and non-canonical inventories", () => {
-    const valid = fixture("existing-git-vault");
-    expect(() => validateVaultAssessment({ ...valid, surprise: true })).toThrow();
+  test("binds content-scope state to config presence and compatibility", () => {
+    const value = assessment();
     expect(() => validateVaultAssessment({
-      ...valid,
-      markdown: { ...valid.markdown, tracked: ["z.md", "a.md"] },
-    })).toThrow("sorted and unique");
-    const { version: _version, ...unversionedScope } = valid.markdown.proposedScope;
+      ...value,
+      dome: { state: "absent", contentScope: "configured" },
+    })).toThrow("cannot exist without Dome config");
     expect(() => validateVaultAssessment({
-      ...valid,
-      markdown: { ...valid.markdown, proposedScope: unversionedScope },
-    })).toThrow();
+      ...value,
+      dome: { state: "configured", contentScope: "incompatible" },
+    })).toThrow("must be incompatible exactly when Dome config is incompatible");
   });
 
-  test("blocks adaptation actions whenever assessment is unsafe", () => {
-    const unsafe = fixture("unsafe-or-ambiguous-state");
+  test("requires blockers to agree with unsafe evidence", () => {
+    const value = assessment();
     expect(() => validateVaultAssessment({
-      ...unsafe,
-      actions: [{
-        kind: "install-home", id: "home-artifact", artifactId: ARTIFACT,
-        disposition: "install-or-resume",
-      }],
-    })).toThrow("must be empty while assessment is blocked");
-  });
-
-  test("binds Git presence to HEAD evidence", () => {
-    const existing = fixture("existing-git-vault");
-    expect(() => validateVaultAssessment({ ...existing, revision: { ...existing.revision, head: null } })).toThrow(
-      "must match Git state clean",
-    );
-  });
-
-  test("requires fail-closed blockers for observed conflicts", () => {
-    const existing = fixture("existing-git-vault");
+      ...value,
+      host: { ...value.host, supported: false },
+    })).toThrow("unsupported-host");
     expect(() => validateVaultAssessment({
-      ...existing,
-      target: { ...existing.target, kind: "unsafe-or-ambiguous-state" },
-      git: { ...existing.git, state: "dirty" },
-    })).toThrow("must agree with dirty-worktree evidence");
-  });
-
-  test("binds package, Home artifact, and additive action evidence", () => {
-    const existing = fixture("existing-git-vault");
-    expect(() => validateVaultAssessment({
-      ...existing,
-      product: {
-        ...existing.product,
-        packagedHome: { ...existing.product.packagedHome, buildCommit: "9".repeat(40) },
-      },
-    })).toThrow("must match the packaged product version and source commit");
-    expect(() => validateVaultAssessment({
-      ...existing,
-      actions: existing.actions.map((action) => action.kind === "set-content-scope" ? {
-        ...action,
-        write: { ...action.write, path: "config.yaml" },
-      } : action),
-    })).toThrow();
-  });
-
-  test("binds directory and repository actions to compatible assessed targets", () => {
-    const fresh = fixture("new-path");
-    expect(() => validateVaultAssessment({
-      ...fresh,
-      actions: fresh.actions.map((action) => action.kind === "create-vault-directory" ?
-        { ...action, path: "/Users/example/Other" } : action),
-    })).toThrow("must equal the assessed vault path");
-    const nonGit = fixture("existing-non-git-vault");
-    expect(() => validateVaultAssessment({
-      ...nonGit,
-      actions: nonGit.actions.map((action) => action.kind === "initialize-git" ?
-        { ...action, repositoryPath: "/Users/example/Other" } : action),
-    })).toThrow("must equal the assessed vault path");
-    const existing = fixture("existing-git-vault");
-    expect(() => validateVaultAssessment({
-      ...existing,
-      actions: [{
-        kind: "initialize-git", id: "git-repository", repositoryPath: existing.target.path, ifMissing: true,
-      }, ...existing.actions],
-    })).toThrow("must initialize Git exactly for a compatible non-Git target");
-  });
-
-  test("distinguishes missing from observed-but-unsupported prerequisites", () => {
-    const unsafe = fixture("unsafe-or-ambiguous-state");
-    const unsupported = validateVaultAssessment({
-      ...unsafe,
-      prerequisites: [
-        { id: "bun", status: "unsupported", version: "1.1.0" },
-        { id: "git", status: "available", version: "2.50.1" },
-      ],
-      blockers: [{
-        code: "unsupported-prerequisite",
-        message: "The observed Bun version is unsupported.",
-        nextAction: "Install a supported Bun version, then reassess.",
-      }],
-    });
-    expect(unsupported.prerequisites[0]?.version).toBe("1.1.0");
-    expect(() => validateVaultAssessment({
-      ...unsupported,
-      prerequisites: [
-        { id: "bun", status: "unsupported", version: null },
-        { id: "git", status: "available", version: "2.50.1" },
-      ],
-    })).toThrow("must be null exactly when missing and observed otherwise");
-    expect(() => validateVaultAssessment({
-      ...unsafe,
-      prerequisites: [
-        { id: "bun", status: "missing", version: "1.2.13" },
-        { id: "git", status: "available", version: "2.50.1" },
-      ],
-      blockers: [{
-        code: "missing-prerequisite",
-        message: "Bun is missing.",
-        nextAction: "Install Bun, then reassess.",
-      }],
-    })).toThrow("must be null exactly when missing and observed otherwise");
+      ...value,
+      git: { ...value.git, state: "dirty" },
+    })).toThrow("dirty-worktree");
   });
 });
 
 describe("SetupPlan contract", () => {
-  test("accepts one self-contained deterministic plan", () => {
-    const assessment = fixture("existing-git-vault");
-    const plan = validateSetupPlan({
-      schema: SETUP_PLAN_SCHEMA,
-      status: "ready",
-      assessment,
-      writes: [
-        {
-          id: "agents-orientation", path: "AGENTS.md", operation: "create-file", bytes: 512,
-          sha256: FILE_HASH, mode: "0644", ifMissing: true,
-        },
-        {
-          id: "gitignore", path: ".gitignore", operation: "create-file", bytes: 64,
-          sha256: FILE_HASH, mode: "0644", ifMissing: true,
-        },
-        {
-          id: "vault-config", path: ".dome/config.yaml", operation: "create-file", bytes: 128,
-          sha256: FILE_HASH, mode: "0644", ifMissing: true,
-        },
-      ],
-      commits: [{
-        kind: "configuration",
-        message: "Configure Dome",
-        paths: [".dome/config.yaml", ".gitignore", "AGENTS.md"],
-      }],
-      serviceActions: [
-        { kind: "install-home", artifactId: ARTIFACT, disposition: "install-or-resume" },
-        { kind: "select-home-vault", vaultPath: "/Users/example/Vault" },
-        { kind: "install-home-service", serviceLabel: "com.dome.home.example-vault", ifMissing: true },
-        { kind: "start-home", serviceLabel: "com.dome.home.example-vault" },
-      ],
-      optionalSteps: [
-        { kind: "configure-integration", description: "Connect an optional source." },
-        { kind: "configure-model", description: "Configure a model provider." },
-      ],
-      recoveryCommands: ["dome check", "dome setup --dry-run /Users/example/Vault"],
-      warnings: [{ code: "scope-review", message: "Review the proposed Markdown scope." }],
-    });
-    expect(validateSetupPlan(JSON.parse(JSON.stringify(plan)))).toEqual(plan);
-    expect(() => validateSetupPlan({
-      ...plan,
-      writes: plan.writes.map((write) => write.id === "vault-config" ? { ...write, sha256: "8".repeat(64) } : write),
-    })).toThrow("must bind content-scope to its exact vault-config write");
-    expect(() => validateSetupPlan({
-      ...plan,
-      commits: [{
-        ...plan.commits[0]!,
-        paths: [...plan.commits[0]!.paths, "notes/private.md"],
-      }],
-    })).toThrow("configuration commit paths must equal applicable plan writes");
-    expect(() => validateSetupPlan({ ...plan, commits: [] })).toThrow(
-      "configuration commit must exist exactly when plan writes apply",
-    );
-    expect(() => validateSetupPlan({
-      ...plan,
-      writes: plan.writes.map((write) => write.id === "gitignore" ? { ...write, path: "AGENTS.md" } : write),
-    })).toThrow("must not contain duplicate target paths");
-    expect(() => validateSetupPlan({
-      ...plan,
-      serviceActions: plan.serviceActions.map((action) => action.kind === "start-home" ?
-        { ...action, serviceLabel: "com.dome.home.other-vault" } : action),
-    })).toThrow("must exactly project Home assessment actions");
-    expect(() => validateSetupPlan({
-      ...plan,
-      serviceActions: plan.serviceActions.map((action) => action.kind === "install-home" ?
-        { ...action, disposition: "upgrade" as const } : action),
-    })).toThrow("must exactly project Home assessment actions");
+  test("keeps one canonical action inventory and one atomic Home activation", () => {
+    const value = plan();
+    expect(validateSetupPlan(JSON.parse(JSON.stringify(value)))).toEqual(value);
+    expect(value).not.toHaveProperty("writes");
+    expect(value).not.toHaveProperty("commits");
+    expect(value).not.toHaveProperty("serviceActions");
+    expect(value.actions.filter((action) => action.kind === "activate-home")).toHaveLength(1);
   });
 
-  test("a blocked plan cannot carry applicable effects", () => {
-    const assessment = fixture("incompatible-active-operation");
-    expect(() => validateSetupPlan({
-      schema: SETUP_PLAN_SCHEMA,
+  test("a blocked plan carries no applicable action", () => {
+    const ready = plan();
+    const blockedAssessment = {
+      ...ready.assessment,
+      target: { ...ready.assessment.target, kind: "unsafe-or-ambiguous-state" as const },
+      blockers: [{
+        code: "symlink-ambiguity" as const,
+        message: "The vault path is redirected.",
+        nextAction: "Choose a direct path.",
+      }],
+    };
+    expect(validateSetupPlan({
+      ...ready,
       status: "blocked",
-      assessment,
-      writes: [{
-        id: "agents-orientation", path: "AGENTS.md", operation: "create-file", bytes: 1,
-        sha256: FILE_HASH, mode: "0644", ifMissing: true,
-      }],
-      commits: [],
-      serviceActions: [],
-      optionalSteps: [],
-      recoveryCommands: ["dome setup --dry-run /Users/example/Vault"],
-      warnings: [],
-    })).toThrow("must contain no applicable writes");
+      assessment: blockedAssessment,
+      actions: [],
+    }).actions).toEqual([]);
+    expect(() => validateSetupPlan({ ...ready, status: "blocked", assessment: blockedAssessment })).toThrow(
+      "blocked plan must contain no applicable actions",
+    );
   });
 
-  test("plan status must agree with the nested assessment", () => {
+  test("requires the complete canonical action set and unique write targets", () => {
+    const value = plan();
+    expect(() => validateSetupPlan({ ...value, actions: [...value.actions].reverse() })).toThrow("canonical order");
+    expect(() => validateSetupPlan({ ...value, actions: [...value.actions, value.actions[0]] })).toThrow();
     expect(() => validateSetupPlan({
-      schema: SETUP_PLAN_SCHEMA,
-      status: "ready",
-      assessment: fixture("unsafe-or-ambiguous-state"),
-      writes: [],
-      commits: [],
-      serviceActions: [],
-      optionalSteps: [],
-      recoveryCommands: [],
-      warnings: [],
-    })).toThrow("must agree with assessment blockers");
+      ...value,
+      actions: value.actions.filter((action) => action.id !== "agents-orientation"),
+    })).toThrow("must exactly match the assessed setup work");
+    const writes = value.actions.map((action) => action.kind === "write-scaffold-file" && action.id === "gitignore"
+      ? { ...action, path: "AGENTS.md" }
+      : action);
+    expect(() => validateSetupPlan({ ...value, actions: writes })).toThrow();
   });
 
-  test("service actions follow their operational order", () => {
-    const assessment = fixture("existing-git-vault");
+  test("binds scope migration operation to assessed config presence", () => {
+    const value = plan();
+    const existing = {
+      ...value,
+      assessment: { ...value.assessment, target: { ...value.assessment.target, kind: "existing-dome-vault" as const },
+        dome: { state: "configured" as const, contentScope: "absent" as const } },
+      actions: value.actions.filter((action) =>
+        action.kind !== "ensure-scaffold-directory" && action.kind !== "write-scaffold-file"
+      ).map((action) => action.kind === "set-content-scope" ? {
+        ...action,
+        write: { ...action.write, operation: "merge-managed-config" as const, ifMissing: false },
+      } : action),
+    };
+    expect(validateSetupPlan(existing).actions.find((action) => action.kind === "set-content-scope")?.write.operation)
+      .toBe("merge-managed-config");
     expect(() => validateSetupPlan({
-      schema: SETUP_PLAN_SCHEMA,
-      status: "ready",
-      assessment,
-      writes: [],
-      commits: [],
-      serviceActions: [
-        { kind: "select-home-vault", vaultPath: "/Users/example/Vault" },
-        { kind: "install-home", artifactId: ARTIFACT, disposition: "install-or-resume" },
-      ],
-      optionalSteps: [],
-      recoveryCommands: [],
-      warnings: [],
-    })).toThrow("canonical operation order");
+      ...existing,
+      actions: existing.actions.map((action) => action.kind === "set-content-scope" ? {
+        ...action,
+        write: { ...action.write, operation: "create-file" as const, ifMissing: true },
+      } : action),
+    })).toThrow("write operation must match config presence");
   });
 
-  test("Home install and start actions share one assessed service label", () => {
-    const assessment = fixture("existing-git-vault");
-    expect(() => validateVaultAssessment({
-      ...assessment,
-      actions: assessment.actions.map((action) => action.kind === "start-home" ?
-        { ...action, serviceLabel: "com.dome.home.other-vault" } : action),
-    })).toThrow("must use one service label");
-    expect(() => validateVaultAssessment({
-      ...assessment,
-      actions: assessment.actions.filter((action) => action.kind !== "start-home"),
-    })).toThrow("must appear as one complete intent");
-  });
-
-  test("Home disposition is derived from exact installed identity and vault ownership", () => {
-    const absent = fixture("existing-git-vault");
-    expect(() => validateVaultAssessment({
-      ...absent,
-      actions: absent.actions.map((action) => action.kind === "install-home" ?
-        { ...action, disposition: "upgrade" as const } : action),
-    })).toThrow("must match the assessed installed Home identity");
-
-    const candidate = absent.product.packagedHome;
-    const exact = validateVaultAssessment({
-      ...absent,
-      installedHome: {
-        state: "owned",
-        artifactId: candidate.artifactId,
-        productVersion: candidate.productVersion,
-        buildCommit: candidate.buildCommit,
-        manifestSha256: candidate.manifestSha256,
-        selectedVaultPath: absent.target.path,
-      },
-    });
-    expect(exact.actions.find((action) => action.kind === "install-home")?.disposition).toBe("install-or-resume");
-
-    const upgrade = validateVaultAssessment({
-      ...absent,
-      installedHome: {
-        state: "owned",
-        artifactId: "5".repeat(64),
-        productVersion: "0.3.0",
-        buildCommit: "6".repeat(40),
-        manifestSha256: "7".repeat(64),
-        selectedVaultPath: absent.target.path,
-      },
-      actions: absent.actions.map((action) => action.kind === "install-home" ?
-        { ...action, disposition: "upgrade" as const } : action),
-    });
-    expect(upgrade.actions.find((action) => action.kind === "install-home")?.disposition).toBe("upgrade");
-    expect(() => validateVaultAssessment({
-      ...upgrade,
-      installedHome: { ...upgrade.installedHome, selectedVaultPath: "/Users/example/Other" },
-    })).toThrow("another vault is foreign ownership");
-  });
-
-  test("plan writes cannot drift from assessed content-scope bytes", () => {
-    const assessment = fixture("existing-git-vault");
-    const writes: Array<SetupPlan["writes"][number]> = [];
-    for (const action of assessment.actions) {
-      if (action.kind === "write-scaffold-file") writes.push({
-        id: action.id,
-        path: action.path,
-        operation: "create-file",
-        bytes: action.bytes,
-        sha256: action.sha256,
-        mode: action.mode,
-        ifMissing: action.ifMissing,
-      });
-      if (action.kind === "set-content-scope") writes.push({
-        id: action.id,
-        ...action.write,
-        bytes: action.write.bytes + 1,
-      });
+  test("binds atomic Home activation to exact package, vault, and disposition", () => {
+    const value = plan();
+    const activation = value.actions.find((action) => action.kind === "activate-home")!;
+    for (const changed of [
+      { ...activation, artifactId: MANIFEST },
+      { ...activation, vaultPath: "/Users/example/Other" },
+      { ...activation, disposition: "upgrade" as const },
+    ]) {
+      expect(() => validateSetupPlan({
+        ...value,
+        actions: value.actions.map((action) => action.kind === "activate-home" ? changed : action),
+      })).toThrow();
     }
-    const serviceActions: Array<SetupPlan["serviceActions"][number]> = [];
-    for (const action of assessment.actions) {
-      if (action.kind === "install-home") serviceActions.push({
-        kind: action.kind, artifactId: action.artifactId, disposition: action.disposition,
-      });
-      if (action.kind === "select-home-vault") serviceActions.push({ kind: action.kind, vaultPath: action.vaultPath });
-      if (action.kind === "install-home-service") serviceActions.push({
-        kind: action.kind, serviceLabel: action.serviceLabel, ifMissing: action.ifMissing,
-      });
-      if (action.kind === "start-home") serviceActions.push({ kind: action.kind, serviceLabel: action.serviceLabel });
-    }
-    expect(() => validateSetupPlan({
-      schema: SETUP_PLAN_SCHEMA,
-      status: "ready",
-      assessment,
-      writes,
-      commits: [{
-        kind: "configuration",
-        message: "Configure Dome",
-        paths: [...new Set(writes.map((write) => write.path))].sort(),
-      }],
-      serviceActions,
-      optionalSteps: [],
-      recoveryCommands: [],
-      warnings: [],
-    })).toThrow("must bind content-scope to its exact vault-config write");
   });
 });

@@ -7,6 +7,7 @@ import {
   canonicalContentScopeSchema,
   type ContentScopeConfig,
 } from "../core/content-scope";
+import { compareStrings } from "../core/compare";
 import { vaultServiceSlug } from "../surface/service-probe";
 import {
   SETUP_PLAN_SCHEMA,
@@ -42,6 +43,7 @@ export type SetupScaffoldEvidence = Readonly<{
   agentsOrientation: string;
   gitignore: string;
   vaultConfig: string;
+  contentScopeConfig: string;
 }>;
 
 /**
@@ -89,9 +91,8 @@ export function compileSetupAssessment(input: SetupCompilerInput): VaultAssessme
   });
   addHomeBlocker(blockers, input.installedHome);
 
-  const blockerRows = [...blockers.values()].sort((left, right) => left.code.localeCompare(right.code));
+  const blockerRows = [...blockers.values()].sort((left, right) => compareStrings(left.code, right.code));
   const kind = classify(input.source.kind, input.installedHome.state, blockerRows.length > 0);
-  const actions = blockerRows.length === 0 ? adaptationActions(input) : [];
 
   return validateVaultAssessment({
     schema: VAULT_ASSESSMENT_SCHEMA,
@@ -111,7 +112,6 @@ export function compileSetupAssessment(input: SetupCompilerInput): VaultAssessme
       untracked: [...input.source.markdown.untracked],
       proposedScope: cloneContentScope(contentScope),
     },
-    actions,
     blockers: blockerRows,
   });
 }
@@ -136,6 +136,7 @@ function fingerprintValidatedInput(input: SetupCompilerInput, contentScope: Cont
       agentsOrientationSha256: sha256(input.scaffold.agentsOrientation),
       gitignoreSha256: sha256(input.scaffold.gitignore),
       vaultConfigSha256: sha256(input.scaffold.vaultConfig),
+      contentScopeConfigSha256: sha256(input.scaffold.contentScopeConfig),
     },
   })).digest("hex");
 }
@@ -143,66 +144,28 @@ function fingerprintValidatedInput(input: SetupCompilerInput, contentScope: Cont
 export function compileSetupPlan(input: SetupCompilerInput): SetupPlan {
   const assessment = compileSetupAssessment(input);
   const blocked = assessment.blockers.length > 0;
-  const writes: SetupPlan["writes"] = [];
-  if (!blocked) for (const action of assessment.actions) {
-    if (action.kind === "write-scaffold-file") writes.push({
-      id: action.id,
-      path: action.path,
-      operation: "create-file" as const,
-      bytes: action.bytes,
-      sha256: action.sha256,
-      mode: action.mode,
-      ifMissing: action.ifMissing,
-    });
-    if (action.kind === "set-content-scope") writes.push({ id: action.id, ...action.write });
-  }
-  const baseline = assessment.actions.find((action): action is Extract<AdaptationAction, {
-    kind: "create-baseline-commit";
-  }> => action.kind === "create-baseline-commit");
-  const commits: SetupPlan["commits"] = blocked ? [] : [
-    ...(baseline === undefined ? [] : [{
-      kind: "baseline" as const,
-      message: baseline.message,
-      paths: baseline.paths,
-    }]),
-    ...(writes.length === 0 ? [] : [{
-      kind: "configuration" as const,
-      message: "Configure Dome vault",
-      paths: [...new Set(writes.map((write) => write.path))].sort(),
-    }]),
-  ];
-  const serviceActions: SetupPlan["serviceActions"] = [];
-  if (!blocked) for (const action of assessment.actions) {
-    if (action.kind === "install-home") serviceActions.push({
-      kind: action.kind,
-      artifactId: action.artifactId,
-      disposition: action.disposition,
-    });
-    if (action.kind === "select-home-vault") serviceActions.push({ kind: action.kind, vaultPath: action.vaultPath });
-    if (action.kind === "install-home-service") serviceActions.push({
-      kind: action.kind,
-      serviceLabel: action.serviceLabel,
-      ifMissing: action.ifMissing,
-    });
-    if (action.kind === "start-home") serviceActions.push({ kind: action.kind, serviceLabel: action.serviceLabel });
-  }
+  const actions = blocked ? [] : adaptationActions(input);
   const existingContent = assessment.target.kind.startsWith("existing-");
+  const warnings: SetupPlan["warnings"] = [];
+  if (assessment.dome.state === "configured" && assessment.dome.contentScope === "absent") warnings.push({
+    code: "content-scope-migration",
+    message: "This existing Dome config has no content scope; review the explicit managed config merge before applying.",
+  });
+  if (existingContent) warnings.push({
+    code: "review-content-scope",
+    message: "Review the proposed Markdown scope before applying setup to existing owner content.",
+  });
   return validateSetupPlan({
     schema: SETUP_PLAN_SCHEMA,
     status: blocked ? "blocked" : "ready",
     assessment,
-    writes,
-    commits,
-    serviceActions,
+    actions,
     optionalSteps: blocked ? [] : [
       { kind: "configure-integration", description: "Optionally connect calendar or Slack sources after setup." },
       { kind: "configure-model", description: "Optionally configure a local model provider after setup." },
     ],
     recoveryCommands: [`dome setup --dry-run ${JSON.stringify(assessment.target.path)}`],
-    warnings: existingContent ? [{
-      code: "review-content-scope",
-      message: "Review the proposed Markdown scope before applying setup to existing owner content.",
-    }] : [],
+    warnings,
   });
 }
 
@@ -273,16 +236,17 @@ function adaptationActions(input: SetupCompilerInput): AdaptationAction[] {
         kind: "set-content-scope",
         id: "vault-config",
         scope: cloneContentScope(input.contentScope),
-        write: fileWrite(".dome/config.yaml", input.scaffold.vaultConfig),
+        write: fileWrite(".dome/config.yaml", input.scaffold.vaultConfig, "create-file"),
       },
     );
+  } else if (input.source.dome.contentScope === "absent") {
+    actions.push({
+      kind: "set-content-scope",
+      id: "vault-config",
+      scope: cloneContentScope(input.contentScope),
+      write: fileWrite(".dome/config.yaml", input.scaffold.contentScopeConfig, "merge-managed-config"),
+    });
   }
-  if (input.source.git.state === "absent" && input.source.markdown.untracked.length > 0) actions.push({
-    kind: "create-baseline-commit",
-    id: "baseline-commit",
-    message: "Preserve existing vault content before Dome setup",
-    paths: [...input.source.markdown.untracked],
-  });
   const candidate = input.product.packagedHome;
   const sameCandidate = input.installedHome.state === "owned" &&
     input.installedHome.artifactId === candidate.artifactId &&
@@ -291,12 +255,15 @@ function adaptationActions(input: SetupCompilerInput): AdaptationAction[] {
     input.installedHome.manifestSha256 === candidate.manifestSha256;
   const disposition = input.installedHome.state === "owned" && !sameCandidate ? "upgrade" as const : "install-or-resume" as const;
   const serviceLabel = `com.dome.home.${vaultServiceSlug(target)}`;
-  actions.push(
-    { kind: "install-home", id: "home-artifact", artifactId: candidate.artifactId, disposition },
-    { kind: "select-home-vault", id: "home-vault-selector", vaultPath: target },
-    { kind: "install-home-service", id: "home-service", serviceLabel, ifMissing: true },
-    { kind: "start-home", id: "home-start", serviceLabel },
-  );
+  actions.push({
+    kind: "activate-home",
+    id: "home-activation",
+    artifactId: candidate.artifactId,
+    disposition,
+    vaultPath: target,
+    serviceLabel,
+    installServiceIfMissing: true,
+  });
   return actions;
 }
 
@@ -305,19 +272,23 @@ function scaffoldAction(
   path: "AGENTS.md" | ".gitignore",
   body: string,
 ): Extract<AdaptationAction, { kind: "write-scaffold-file" }> {
-  const write = fileWrite(path, body);
+  const write = fileWrite(path, body, "create-file");
   return { kind: "write-scaffold-file", id, path, ...withoutPath(write) };
 }
 
-function fileWrite<Path extends ".dome/config.yaml" | "AGENTS.md" | ".gitignore">(path: Path, body: string) {
+function fileWrite<Path extends ".dome/config.yaml" | "AGENTS.md" | ".gitignore">(
+  path: Path,
+  body: string,
+  operation: "create-file" | "merge-managed-config",
+) {
   const bytes = Buffer.byteLength(body);
   return Object.freeze({
     path,
-    operation: "create-file" as const,
+    operation,
     bytes,
     sha256: sha256(body),
     mode: "0644" as const,
-    ifMissing: true,
+    ifMissing: operation === "create-file",
   });
 }
 
@@ -344,15 +315,20 @@ function assertScaffoldBindsScope(scaffold: SetupScaffoldEvidence, scope: Conten
       throw new Error(`setup ${name} scaffold exceeds the write budget`);
     }
   }
-  let decoded: unknown;
-  try { decoded = parseYaml(scaffold.vaultConfig); }
-  catch { throw new Error("setup vault config scaffold is invalid YAML"); }
-  const rawPersisted = typeof decoded === "object" && decoded !== null && !Array.isArray(decoded)
-    ? (decoded as Record<string, unknown>)["content_scope"]
-    : undefined;
-  const persisted = canonicalContentScopeSchema.safeParse(rawPersisted);
-  if (!persisted.success || stableJson(persisted.data) !== stableJson(scope)) {
-    throw new Error("setup vault config scaffold does not encode the proposed content scope");
+  for (const [name, body] of [
+    ["vault config", scaffold.vaultConfig],
+    ["content-scope merge", scaffold.contentScopeConfig],
+  ] as const) {
+    let decoded: unknown;
+    try { decoded = parseYaml(body); }
+    catch { throw new Error(`setup ${name} scaffold is invalid YAML`); }
+    const rawPersisted = typeof decoded === "object" && decoded !== null && !Array.isArray(decoded)
+      ? (decoded as Record<string, unknown>)["content_scope"]
+      : undefined;
+    const persisted = canonicalContentScopeSchema.safeParse(rawPersisted);
+    if (!persisted.success || stableJson(persisted.data) !== stableJson(scope)) {
+      throw new Error(`setup ${name} scaffold does not encode the proposed content scope`);
+    }
   }
 }
 
@@ -361,6 +337,6 @@ function withoutPath(write: ReturnType<typeof fileWrite>) {
     bytes: write.bytes,
     sha256: write.sha256,
     mode: write.mode,
-    ifMissing: write.ifMissing,
+    ifMissing: true as const,
   };
 }

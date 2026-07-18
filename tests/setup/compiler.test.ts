@@ -31,7 +31,10 @@ function input(kind: SetupCompilerInput["source"]["kind"]): SetupCompilerInput {
         ancestorRoot: null,
         operationMarkers: kind === "incompatible-active-operation" ? ["MERGE_HEAD"] : [],
       },
-      dome: { state: kind === "existing-dome-vault" ? "configured" : "absent" },
+      dome: {
+        state: kind === "existing-dome-vault" ? "configured" : "absent",
+        contentScope: kind === "existing-dome-vault" ? "configured" : "absent",
+      },
       markdown: {
         tracked: gitPresent ? ["notes/hello.md"] : [],
         untracked: kind === "existing-non-git-vault" ? ["Journal.md"] : [],
@@ -74,6 +77,7 @@ function input(kind: SetupCompilerInput["source"]["kind"]): SetupCompilerInput {
       agentsOrientation: "# Dome vault\n",
       gitignore: ".dome/state/\n",
       vaultConfig: "content_scope:\n  version: 1\n  include: [\"**/*.md\"]\n  exclude: [\".dome/**\", \".git/**\"]\n",
+      contentScopeConfig: "content_scope:\n  version: 1\n  include: [\"**/*.md\"]\n  exclude: [\".dome/**\", \".git/**\"]\n",
     },
   };
 }
@@ -102,6 +106,7 @@ describe("setup compiler", () => {
         scaffold: {
           ...evidence.scaffold,
           vaultConfig: "content_scope:\n  version: 1\n  include: [\"notes/**/*.md\"]\n  exclude: [\".dome/**\", \".git/**\"]\n",
+          contentScopeConfig: "content_scope:\n  version: 1\n  include: [\"notes/**/*.md\"]\n  exclude: [\".dome/**\", \".git/**\"]\n",
         },
       },
     ];
@@ -133,7 +138,7 @@ describe("setup compiler", () => {
       installedHome: { ...base.installedHome, state: "upgrade-active" },
     });
     expect(active.assessment.target.kind).toBe("incompatible-active-operation");
-    expect(active.assessment.actions).toEqual([]);
+    expect(active.actions).toEqual([]);
     expect(active.assessment.blockers.map((row) => row.code)).toEqual(["active-home-upgrade"]);
 
     const unsupported = compileSetupPlan({ ...base, host: { platform: "linux", architecture: "x64" } });
@@ -152,7 +157,7 @@ describe("setup compiler", () => {
       selectedVaultPath: base.source.targetPath,
     };
     const plan = compileSetupPlan({ ...base, installedHome: installed });
-    expect(plan.serviceActions[0]).toMatchObject({ kind: "install-home", disposition: "upgrade" });
+    expect(plan.actions.at(-1)).toMatchObject({ kind: "activate-home", disposition: "upgrade" });
 
     const exact = compileSetupPlan({
       ...base,
@@ -165,7 +170,26 @@ describe("setup compiler", () => {
         selectedVaultPath: base.source.targetPath,
       },
     });
-    expect(exact.serviceActions[0]).toMatchObject({ kind: "install-home", disposition: "install-or-resume" });
+    expect(exact.actions.at(-1)).toMatchObject({ kind: "activate-home", disposition: "install-or-resume" });
+  });
+
+  test("plans one explicit managed scope migration for a configured pre-scope vault", () => {
+    const base = input("existing-dome-vault");
+    const plan = compileSetupPlan({
+      ...base,
+      source: { ...base.source, dome: { state: "configured", contentScope: "absent" } },
+    });
+    const scopeActions = plan.actions.filter((action) => action.kind === "set-content-scope");
+    expect(scopeActions).toHaveLength(1);
+    expect(scopeActions[0]?.write).toMatchObject({
+      path: ".dome/config.yaml",
+      operation: "merge-managed-config",
+      ifMissing: false,
+    });
+    expect(plan.warnings.map((warning) => warning.code)).toEqual([
+      "content-scope-migration",
+      "review-content-scope",
+    ]);
   });
 
   test("renders human and JSON forms from the same validated plan", () => {

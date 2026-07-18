@@ -26,11 +26,7 @@ export const ADAPTATION_ACTION_KINDS = [
   "ensure-scaffold-directory",
   "write-scaffold-file",
   "set-content-scope",
-  "create-baseline-commit",
-  "install-home",
-  "select-home-vault",
-  "install-home-service",
-  "start-home",
+  "activate-home",
 ] as const;
 
 export const ADAPTATION_ACTION_IDS = [
@@ -41,11 +37,7 @@ export const ADAPTATION_ACTION_IDS = [
   "agents-orientation",
   "gitignore",
   "vault-config",
-  "baseline-commit",
-  "home-artifact",
-  "home-vault-selector",
-  "home-service",
-  "home-start",
+  "home-activation",
 ] as const;
 
 export const SETUP_CONTRACT_CAPS = Object.freeze({
@@ -120,22 +112,14 @@ const actionSchemas = [
     write: contentScopeWriteSchema,
   }).strict(),
   z.object({
-    kind: z.literal("create-baseline-commit"), id: z.literal("baseline-commit"),
-    message: nonEmpty,
-    paths: sortedUnique(relativePath).min(1).max(SETUP_CONTRACT_CAPS.markdownPaths),
-  }).strict(),
-  z.object({
-    kind: z.literal("install-home"), id: z.literal("home-artifact"), artifactId: sha256,
+    kind: z.literal("activate-home"),
+    id: z.literal("home-activation"),
+    artifactId: sha256,
     disposition: z.enum(["install-or-resume", "upgrade"]),
+    vaultPath: absolutePath,
+    serviceLabel,
+    installServiceIfMissing: z.literal(true),
   }).strict(),
-  z.object({
-    kind: z.literal("select-home-vault"), id: z.literal("home-vault-selector"), vaultPath: absolutePath,
-  }).strict(),
-  z.object({
-    kind: z.literal("install-home-service"), id: z.literal("home-service"), serviceLabel,
-    ifMissing: z.literal(true),
-  }).strict(),
-  z.object({ kind: z.literal("start-home"), id: z.literal("home-start"), serviceLabel }).strict(),
 ] as const;
 
 export const adaptationActionSchema = z.discriminatedUnion("kind", actionSchemas);
@@ -195,6 +179,7 @@ const assessmentSchemaBase = z.object({
   }).strict(),
   dome: z.object({
     state: z.enum(["absent", "partial", "configured", "incompatible"]),
+    contentScope: z.enum(["absent", "configured", "incompatible"]),
   }).strict(),
   installedHome: z.object({
     state: z.enum(["absent", "owned", "foreign-owner", "upgrade-active", "ambiguous"]),
@@ -209,7 +194,6 @@ const assessmentSchemaBase = z.object({
     untracked: sortedUnique(markdownPath).max(SETUP_CONTRACT_CAPS.markdownPaths),
     proposedScope: contentScopeSchema,
   }).strict(),
-  actions: z.array(adaptationActionSchema).max(ADAPTATION_ACTION_IDS.length),
   blockers: z.array(blockerSchema).max(12),
 }).strict();
 
@@ -241,44 +225,6 @@ export const vaultAssessmentSchema = assessmentSchemaBase.superRefine((assessmen
       });
     }
   }
-  const actionIds = assessment.actions.map((action) => action.id);
-  const actionOrder = new Map(ADAPTATION_ACTION_IDS.map((id, index) => [id, index]));
-  if (new Set(actionIds).size !== actionIds.length || actionIds.some((id, index) =>
-    index > 0 && actionOrder.get(actionIds[index - 1]!)! >= actionOrder.get(id)!
-  )) {
-    context.addIssue({ code: "custom", path: ["actions"], message: "must contain unique action IDs in canonical order" });
-  }
-  for (const [index, action] of assessment.actions.entries()) {
-    const path = ["actions", index] as const;
-    if (action.kind === "create-vault-directory" && action.path !== assessment.target.path) {
-      context.addIssue({ code: "custom", path: [...path, "path"], message: "must equal the assessed vault path" });
-    }
-    if (action.kind === "initialize-git" && action.repositoryPath !== assessment.target.path) {
-      context.addIssue({ code: "custom", path: [...path, "repositoryPath"], message: "must equal the assessed vault path" });
-    }
-    if (action.kind === "ensure-scaffold-directory") {
-      const expected = action.id === "dome-directory" ? { path: ".dome", mode: "0755" } :
-        { path: ".dome/state", mode: "0700" };
-      if (action.path !== expected.path || action.mode !== expected.mode) {
-        context.addIssue({ code: "custom", path: [...path], message: `${action.id} has non-canonical path or mode` });
-      }
-    }
-    if (action.kind === "write-scaffold-file") {
-      const expectedPath = action.id === "agents-orientation" ? "AGENTS.md" : ".gitignore";
-      if (action.path !== expectedPath) {
-        context.addIssue({ code: "custom", path: [...path, "path"], message: `${action.id} has a non-canonical path` });
-      }
-    }
-    if (action.kind === "set-content-scope" && JSON.stringify(action.scope) !== JSON.stringify(assessment.markdown.proposedScope)) {
-      context.addIssue({ code: "custom", path: [...path, "scope"], message: "must match the proposed Markdown scope" });
-    }
-    if (action.kind === "install-home" && action.artifactId !== assessment.product.packagedHome.artifactId) {
-      context.addIssue({ code: "custom", path: [...path, "artifactId"], message: "must select the packaged Home artifact" });
-    }
-    if (action.kind === "select-home-vault" && action.vaultPath !== assessment.target.path) {
-      context.addIssue({ code: "custom", path: [...path, "vaultPath"], message: "must select the assessed vault" });
-    }
-  }
   const blockerCodes = assessment.blockers.map((blocker) => blocker.code);
   if (new Set(blockerCodes).size !== blockerCodes.length || blockerCodes.some((code, index) => index > 0 && blockerCodes[index - 1]! >= code)) {
     context.addIssue({ code: "custom", path: ["blockers"], message: "must be sorted and unique by code" });
@@ -286,9 +232,6 @@ export const vaultAssessmentSchema = assessmentSchemaBase.superRefine((assessmen
   const blockedKind = assessment.target.kind === "incompatible-active-operation" || assessment.target.kind === "unsafe-or-ambiguous-state";
   if (blockedKind !== (assessment.blockers.length > 0)) {
     context.addIssue({ code: "custom", path: ["blockers"], message: "must agree with the vault classification" });
-  }
-  if (assessment.blockers.length > 0 && assessment.actions.length > 0) {
-    context.addIssue({ code: "custom", path: ["actions"], message: "must be empty while assessment is blocked" });
   }
   if (assessment.host.supported === assessment.blockers.some((blocker) => blocker.code === "unsupported-host")) {
     context.addIssue({ code: "custom", path: ["host", "supported"], message: "must agree with unsupported-host blocker" });
@@ -343,88 +286,32 @@ export const vaultAssessmentSchema = assessmentSchemaBase.superRefine((assessmen
   if (assessment.target.kind === "existing-dome-vault" && assessment.dome.state !== "configured") {
     context.addIssue({ code: "custom", path: ["dome", "state"], message: "an existing Dome vault must be configured" });
   }
+  if ((assessment.dome.state === "absent" || assessment.dome.state === "partial") &&
+    assessment.dome.contentScope !== "absent") {
+    context.addIssue({ code: "custom", path: ["dome", "contentScope"], message: "cannot exist without Dome config" });
+  }
+  if ((assessment.dome.state === "incompatible") !== (assessment.dome.contentScope === "incompatible")) {
+    context.addIssue({
+      code: "custom",
+      path: ["dome", "contentScope"],
+      message: "must be incompatible exactly when Dome config is incompatible",
+    });
+  }
   const targetRequiresGit = assessment.target.kind === "existing-git-vault" || assessment.target.kind === "existing-dome-vault";
   const targetForbidsGit = assessment.target.kind === "new-path" || assessment.target.kind === "empty-directory" ||
     assessment.target.kind === "existing-non-git-vault";
   if ((targetRequiresGit && assessment.git.state === "absent") || (targetForbidsGit && assessment.git.state !== "absent")) {
     context.addIssue({ code: "custom", path: ["git", "state"], message: "must agree with the vault classification" });
   }
-  if (assessment.target.kind === "new-path" !== assessment.actions.some((action) => action.kind === "create-vault-directory")) {
-    context.addIssue({ code: "custom", path: ["actions"], message: "must create the vault directory exactly for a new path" });
-  }
-  const canInitializeGit = assessment.target.kind === "new-path" || assessment.target.kind === "empty-directory" ||
-    assessment.target.kind === "existing-non-git-vault";
-  if (assessment.actions.some((action) => action.kind === "initialize-git") !== canInitializeGit) {
-    context.addIssue({ code: "custom", path: ["actions"], message: "must initialize Git exactly for a compatible non-Git target" });
-  }
-  const serviceLabels = assessment.actions.flatMap((action) =>
-    action.kind === "install-home-service" || action.kind === "start-home" ? [action.serviceLabel] : []
-  );
-  const homeActionCount = assessment.actions.filter((action) =>
-    action.kind === "install-home" || action.kind === "select-home-vault" ||
-    action.kind === "install-home-service" || action.kind === "start-home"
-  ).length;
-  if (homeActionCount !== 0 && homeActionCount !== 4) {
-    context.addIssue({ code: "custom", path: ["actions"], message: "Home activation actions must appear as one complete intent" });
-  }
-  if (new Set(serviceLabels).size > 1) {
-    context.addIssue({ code: "custom", path: ["actions"], message: "Home install and start actions must use one service label" });
-  }
-  const installHome = assessment.actions.find((action): action is Extract<AdaptationAction, { kind: "install-home" }> =>
-    action.kind === "install-home"
-  );
-  if (installHome !== undefined) {
-    const candidate = assessment.product.packagedHome;
-    const installedMatchesCandidate = assessment.installedHome.state === "owned" &&
-      assessment.installedHome.artifactId === candidate.artifactId &&
-      assessment.installedHome.productVersion === candidate.productVersion &&
-      assessment.installedHome.buildCommit === candidate.buildCommit &&
-      assessment.installedHome.manifestSha256 === candidate.manifestSha256;
-    const expectedDisposition = installedMatchesCandidate || assessment.installedHome.state === "absent" ?
-      "install-or-resume" : assessment.installedHome.state === "owned" ? "upgrade" : null;
-    if (installHome.disposition !== expectedDisposition) {
-      context.addIssue({
-        code: "custom",
-        path: ["actions", assessment.actions.indexOf(installHome), "disposition"],
-        message: "must match the assessed installed Home identity",
-      });
-    }
-  }
 });
 
 export type VaultAssessment = z.infer<typeof vaultAssessmentSchema>;
-
-const writeSchema = z.object({
-  id: z.enum(["gitignore", "agents-orientation", "vault-config"]),
-  path: relativePath,
-  operation: z.enum(["create-file", "merge-managed-config", "append-managed-block"]),
-  bytes: z.number().int().nonnegative().max(SETUP_CONTRACT_CAPS.writeBytes),
-  sha256,
-  mode: z.literal("0644"),
-  ifMissing: z.boolean(),
-}).strict();
 
 const setupPlanSchemaBase = z.object({
   schema: z.literal(SETUP_PLAN_SCHEMA),
   status: z.enum(["ready", "blocked"]),
   assessment: vaultAssessmentSchema,
-  writes: z.array(writeSchema).max(SETUP_CONTRACT_CAPS.writes),
-  commits: z.array(z.object({
-    kind: z.enum(["baseline", "configuration"]),
-    message: nonEmpty,
-    paths: sortedUnique(relativePath).min(1).max(SETUP_CONTRACT_CAPS.markdownPaths),
-  }).strict()).max(2),
-  serviceActions: z.array(z.discriminatedUnion("kind", [
-    z.object({
-      kind: z.literal("install-home"), artifactId: sha256,
-      disposition: z.enum(["install-or-resume", "upgrade"]),
-    }).strict(),
-    z.object({ kind: z.literal("select-home-vault"), vaultPath: absolutePath }).strict(),
-    z.object({
-      kind: z.literal("install-home-service"), serviceLabel, ifMissing: z.literal(true),
-    }).strict(),
-    z.object({ kind: z.literal("start-home"), serviceLabel }).strict(),
-  ])).max(4),
+  actions: z.array(adaptationActionSchema).max(ADAPTATION_ACTION_IDS.length),
   optionalSteps: z.array(z.object({
     kind: z.enum(["configure-model", "configure-integration"]),
     description: nonEmpty,
@@ -438,83 +325,104 @@ export const setupPlanSchema = setupPlanSchemaBase.superRefine((plan, context) =
   if ((plan.status === "blocked") !== shouldBeBlocked) {
     context.addIssue({ code: "custom", path: ["status"], message: "must agree with assessment blockers" });
   }
-  if (shouldBeBlocked && (plan.writes.length > 0 || plan.commits.length > 0 || plan.serviceActions.length > 0)) {
-    context.addIssue({ code: "custom", message: "a blocked plan must contain no applicable writes, commits, or service actions" });
+  if (shouldBeBlocked && plan.actions.length > 0) {
+    context.addIssue({ code: "custom", path: ["actions"], message: "a blocked plan must contain no applicable actions" });
   }
-  sortedByUniqueKey(plan.writes, (entry) => entry.id, ["writes"], context);
-  uniqueByKey(plan.writes, (entry) => entry.path, ["writes"], context);
-  orderedUnique(plan.commits, (entry) => entry.kind, ["baseline", "configuration"], ["commits"], context);
-  orderedUnique(
-    plan.serviceActions,
-    (entry) => entry.kind,
-    ["install-home", "select-home-vault", "install-home-service", "start-home"],
-    ["serviceActions"],
-    context,
-  );
+  const actionIds = plan.actions.map((action) => action.id);
+  const actionOrder = new Map(ADAPTATION_ACTION_IDS.map((id, index) => [id, index]));
+  if (new Set(actionIds).size !== actionIds.length || actionIds.some((id, index) =>
+    index > 0 && actionOrder.get(actionIds[index - 1]!)! >= actionOrder.get(id)!
+  )) {
+    context.addIssue({ code: "custom", path: ["actions"], message: "must contain unique action IDs in canonical order" });
+  }
+  const expectedActionIds = expectedSetupActionIds(plan.assessment);
+  if (JSON.stringify(actionIds) !== JSON.stringify(expectedActionIds)) {
+    context.addIssue({ code: "custom", path: ["actions"], message: "must exactly match the assessed setup work" });
+  }
   sortedByUniqueKey(plan.optionalSteps, (entry) => entry.kind, ["optionalSteps"], context);
   sortedByUniqueKey(plan.warnings, (entry) => entry.code, ["warnings"], context);
-  const expectedScaffoldWrites = plan.assessment.actions
-    .filter((action): action is Extract<AdaptationAction, { kind: "write-scaffold-file" }> =>
-      action.kind === "write-scaffold-file"
-    )
-    .map((action) => ({
-      id: action.id,
-      path: action.path,
-      operation: "create-file" as const,
-      bytes: action.bytes,
-      sha256: action.sha256,
-      mode: action.mode,
-      ifMissing: action.ifMissing,
-    }));
-  const actualScaffoldWrites = plan.writes.filter((write) => write.id !== "vault-config");
-  if (JSON.stringify(actualScaffoldWrites) !== JSON.stringify(expectedScaffoldWrites)) {
-    context.addIssue({ code: "custom", path: ["writes"], message: "must exactly project scaffold-file assessment actions" });
+  const writePaths: string[] = [];
+  for (const [index, action] of plan.actions.entries()) {
+    const path = ["actions", index] as const;
+    if (action.kind === "create-vault-directory" && action.path !== plan.assessment.target.path) {
+      context.addIssue({ code: "custom", path: [...path, "path"], message: "must equal the assessed vault path" });
+    }
+    if (action.kind === "initialize-git" && action.repositoryPath !== plan.assessment.target.path) {
+      context.addIssue({ code: "custom", path: [...path, "repositoryPath"], message: "must equal the assessed vault path" });
+    }
+    if (action.kind === "ensure-scaffold-directory") {
+      const expected = action.id === "dome-directory" ? { path: ".dome", mode: "0755" } :
+        { path: ".dome/state", mode: "0700" };
+      if (action.path !== expected.path || action.mode !== expected.mode) {
+        context.addIssue({ code: "custom", path: [...path], message: `${action.id} has non-canonical path or mode` });
+      }
+    }
+    if (action.kind === "write-scaffold-file") {
+      writePaths.push(action.path);
+      const expectedPath = action.id === "agents-orientation" ? "AGENTS.md" : ".gitignore";
+      if (action.path !== expectedPath) {
+        context.addIssue({ code: "custom", path: [...path, "path"], message: `${action.id} has a non-canonical path` });
+      }
+    }
+    if (action.kind === "set-content-scope") {
+      writePaths.push(action.write.path);
+      if (JSON.stringify(action.scope) !== JSON.stringify(plan.assessment.markdown.proposedScope)) {
+        context.addIssue({ code: "custom", path: [...path, "scope"], message: "must match the proposed Markdown scope" });
+      }
+    }
+    if (action.kind === "activate-home") validateHomeActivation(plan.assessment, action, path, context);
   }
-  const scopeAction = plan.assessment.actions.find((action): action is Extract<AdaptationAction, {
-    kind: "set-content-scope";
-  }> => action.kind === "set-content-scope");
-  const scopeWrite = plan.writes.find((write) => write.id === "vault-config");
-  if ((scopeAction === undefined) !== (scopeWrite === undefined) ||
-    (scopeAction !== undefined && scopeWrite !== undefined && JSON.stringify(scopeWrite) !== JSON.stringify({
-      id: scopeWrite.id,
-      ...scopeAction.write,
-    }))) {
-    context.addIssue({ code: "custom", path: ["writes"], message: "must bind content-scope to its exact vault-config write" });
+  if (new Set(writePaths).size !== writePaths.length) {
+    context.addIssue({ code: "custom", path: ["actions"], message: "must not write the same path twice" });
   }
-  const baselineAction = plan.assessment.actions.find((action): action is Extract<AdaptationAction, {
-    kind: "create-baseline-commit";
-  }> => action.kind === "create-baseline-commit");
-  const baselineCommit = plan.commits.find((commit) => commit.kind === "baseline");
-  if ((baselineAction === undefined) !== (baselineCommit === undefined) ||
-    (baselineAction !== undefined && baselineCommit !== undefined &&
-      (baselineAction.message !== baselineCommit.message || JSON.stringify(baselineAction.paths) !== JSON.stringify(baselineCommit.paths)))) {
-    context.addIssue({ code: "custom", path: ["commits"], message: "must exactly project the baseline-commit assessment action" });
-  }
-  const configurationCommit = plan.commits.find((commit) => commit.kind === "configuration");
-  const applicableWritePaths = [...new Set(plan.writes.map((write) => write.path))].sort();
-  if ((configurationCommit !== undefined) !== (plan.writes.length > 0)) {
-    context.addIssue({ code: "custom", path: ["commits"], message: "configuration commit must exist exactly when plan writes apply" });
-  } else if (configurationCommit !== undefined &&
-    JSON.stringify(configurationCommit.paths) !== JSON.stringify(applicableWritePaths)) {
-    context.addIssue({ code: "custom", path: ["commits"], message: "configuration commit paths must equal applicable plan writes" });
-  }
-  const expectedServices: Array<(typeof plan.serviceActions)[number]> = [];
-  for (const action of plan.assessment.actions) {
-    if (action.kind === "install-home") expectedServices.push({
-      kind: action.kind, artifactId: action.artifactId, disposition: action.disposition,
-    });
-    if (action.kind === "select-home-vault") expectedServices.push({ kind: action.kind, vaultPath: action.vaultPath });
-    if (action.kind === "install-home-service") expectedServices.push({
-      kind: action.kind, serviceLabel: action.serviceLabel, ifMissing: action.ifMissing,
-    });
-    if (action.kind === "start-home") expectedServices.push({ kind: action.kind, serviceLabel: action.serviceLabel });
-  }
-  if (JSON.stringify(plan.serviceActions) !== JSON.stringify(expectedServices)) {
-    context.addIssue({ code: "custom", path: ["serviceActions"], message: "must exactly project Home assessment actions" });
+  const scopeAction = plan.actions.find((action): action is Extract<AdaptationAction, { kind: "set-content-scope" }> =>
+    action.kind === "set-content-scope"
+  );
+  if (scopeAction !== undefined) {
+    const expectedOperation = plan.assessment.dome.state === "configured" ? "merge-managed-config" : "create-file";
+    if (scopeAction.write.operation !== expectedOperation) {
+      context.addIssue({ code: "custom", path: ["actions"], message: "content-scope write operation must match config presence" });
+    }
   }
 });
 
 export type SetupPlan = z.infer<typeof setupPlanSchema>;
+
+function expectedSetupActionIds(assessment: VaultAssessment): ReadonlyArray<AdaptationAction["id"]> {
+  if (assessment.blockers.length > 0) return [];
+  const ids: AdaptationAction["id"][] = [];
+  if (assessment.target.kind === "new-path") ids.push("vault-directory");
+  if (assessment.git.state === "absent") ids.push("git-repository");
+  if (assessment.dome.state !== "configured") {
+    ids.push("dome-directory", "dome-state-directory", "agents-orientation", "gitignore", "vault-config");
+  } else if (assessment.dome.contentScope === "absent") {
+    ids.push("vault-config");
+  }
+  ids.push("home-activation");
+  return ids;
+}
+
+function validateHomeActivation(
+  assessment: VaultAssessment,
+  action: Extract<AdaptationAction, { kind: "activate-home" }>,
+  path: ReadonlyArray<string | number>,
+  context: z.RefinementCtx,
+): void {
+  const candidate = assessment.product.packagedHome;
+  if (action.artifactId !== candidate.artifactId || action.vaultPath !== assessment.target.path) {
+    context.addIssue({ code: "custom", path: [...path], message: "must activate the packaged Home for the assessed vault" });
+  }
+  const installedMatchesCandidate = assessment.installedHome.state === "owned" &&
+    assessment.installedHome.artifactId === candidate.artifactId &&
+    assessment.installedHome.productVersion === candidate.productVersion &&
+    assessment.installedHome.buildCommit === candidate.buildCommit &&
+    assessment.installedHome.manifestSha256 === candidate.manifestSha256;
+  const expectedDisposition = installedMatchesCandidate || assessment.installedHome.state === "absent" ?
+    "install-or-resume" : assessment.installedHome.state === "owned" ? "upgrade" : null;
+  if (action.disposition !== expectedDisposition) {
+    context.addIssue({ code: "custom", path: [...path, "disposition"], message: "must match installed Home identity" });
+  }
+}
 
 export function validateVaultAssessment(value: unknown): VaultAssessment {
   return vaultAssessmentSchema.parse(value);
@@ -533,34 +441,6 @@ function sortedByUniqueKey<T>(
   const keys = values.map(key);
   if (new Set(keys).size !== keys.length || keys.some((value, index) => index > 0 && keys[index - 1]! >= value)) {
     context.addIssue({ code: "custom", path: [...path], message: "must be sorted and unique" });
-  }
-}
-
-function uniqueByKey<T>(
-  values: ReadonlyArray<T>,
-  key: (value: T) => string,
-  path: ReadonlyArray<string | number>,
-  context: z.RefinementCtx,
-): void {
-  const keys = values.map(key);
-  if (new Set(keys).size !== keys.length) {
-    context.addIssue({ code: "custom", path: [...path], message: "must not contain duplicate target paths" });
-  }
-}
-
-function orderedUnique<T, K extends string>(
-  values: ReadonlyArray<T>,
-  key: (value: T) => K,
-  order: ReadonlyArray<K>,
-  path: ReadonlyArray<string | number>,
-  context: z.RefinementCtx,
-): void {
-  const keys = values.map(key);
-  const positions = new Map(order.map((value, index) => [value, index]));
-  if (new Set(keys).size !== keys.length || keys.some((value, index) =>
-    index > 0 && positions.get(keys[index - 1]!)! >= positions.get(value)!
-  )) {
-    context.addIssue({ code: "custom", path: [...path], message: "must be unique and in canonical operation order" });
   }
 }
 

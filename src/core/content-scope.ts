@@ -40,6 +40,13 @@ export type ContentScopeResult =
   | Readonly<{ ok: true; scope: ContentScope }>
   | Readonly<{ ok: false; errors: ReadonlyArray<ContentScopeValidationError> }>;
 
+/** Broad visible-owner-Markdown policy written into newly configured vaults. */
+export const DEFAULT_CONTENT_SCOPE_CONFIG: ContentScopeConfig = Object.freeze({
+  version: CONTENT_SCOPE_VERSION,
+  include: Object.freeze(["**/*.md"]),
+  exclude: Object.freeze([".dome/**", ".git/**"]),
+});
+
 const PRIVATE_PATH_PREFIXES = Object.freeze([".dome", ".git"] as const);
 const MAX_GLOB_LENGTH = 8_192;
 
@@ -126,6 +133,20 @@ export function selectContentScope(
     if (path !== null && contentScopeContains(scope, path)) selected.add(path);
   }
   return Object.freeze([...selected].sort());
+}
+
+/** Deterministic YAML mapping shared by fresh config and setup migration renderers. */
+export function renderContentScopeYaml(input: ContentScopeConfig): string {
+  const scope = canonicalContentScopeSchema.parse(input);
+  return [
+    "content_scope:",
+    `  version: ${scope.version}`,
+    "  include:",
+    ...scope.include.map((glob) => `    - ${JSON.stringify(glob)}`),
+    "  exclude:",
+    ...scope.exclude.map((glob) => `    - ${JSON.stringify(glob)}`),
+    "",
+  ].join("\n");
 }
 
 function freezeContentScope(scope: {

@@ -7,6 +7,7 @@ import {
   computeCapabilityPolicyHash,
   DEFAULT_RUNTIME_CONFIG,
   loadCapabilityPolicy,
+  parseCapabilityPolicy,
 } from "../../src/engine/core/capability-policy";
 
 const roots: string[] = [];
@@ -19,6 +20,43 @@ afterEach(() => {
 });
 
 describe("loadCapabilityPolicy", () => {
+  test("parses canonical content scope and includes it in the policy hash", () => {
+    const broad = parseCapabilityPolicy(`
+content_scope:
+  version: 1
+  include: ["**/*.md"]
+  exclude: [".dome/**", ".git/**"]
+`);
+    const narrow = parseCapabilityPolicy(`
+content_scope:
+  version: 1
+  include: ["notes/**/*.md"]
+  exclude: [".dome/**", ".git/**"]
+`);
+    expect(broad.ok).toBe(true);
+    expect(narrow.ok).toBe(true);
+    if (!broad.ok || !narrow.ok) return;
+    expect(broad.value.contentScope).toEqual({
+      version: 1,
+      include: ["**/*.md"],
+      exclude: [".dome/**", ".git/**"],
+    });
+    expect(computeCapabilityPolicyHash(broad.value)).not.toBe(computeCapabilityPolicyHash(narrow.value));
+
+    const missing = parseCapabilityPolicy("grants: standard\n");
+    expect(missing.ok && missing.value.contentScope).toBeNull();
+    const noncanonical = parseCapabilityPolicy(`
+content_scope:
+  version: 1
+  include: ["**/*.md", "**/*.md"]
+  exclude: []
+`);
+    expect(noncanonical).toEqual({
+      ok: false,
+      error: ".dome/config.yaml content_scope.include must be sorted and unique",
+    });
+  });
+
   test("missing config returns an empty not-found policy", async () => {
     const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
     roots.push(root);

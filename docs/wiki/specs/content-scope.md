@@ -112,13 +112,16 @@ and one matcher cache.
 ## Rollout status
 
 The version-1 policy Module and setup-contract binding ship in the first M4
-checkpoint. The read-only setup compiler now validates both its in-memory
-proposal and the generated YAML `content_scope` through the canonical schema;
-its inspector inventories only lowercase-`.md` candidates. Runtime vault-config
-parsing, processor enumeration, scope inference for arbitrary layouts,
-explicit migration consent, and projection rebuild behavior remain later M4
-checkpoints. Until those land, this contract does not claim that existing
-processors already consume ContentScope.
+checkpoint. The read-only setup compiler validates both its in-memory proposal
+and exact rendered YAML `content_scope` through the canonical schema. The
+runtime capability-policy parser consumes the same config seam, and content
+scope participates in its deterministic policy hash. Existing Dome vaults
+without a scope receive an explicit reviewed merge action; malformed scope
+blocks setup. The inspector inventories only lowercase-`.md` candidates.
+Processor enumeration, scope inference for arbitrary layouts, explicit apply
+consent, and projection rebuild behavior remain later M4 checkpoints. Until
+those land, this contract does not claim that existing processors already
+consume ContentScope.
 
 The setup inspector fixture contains both `lowercase.md` and
 `case-variant.MD`: only the former enters its tracked or untracked Markdown

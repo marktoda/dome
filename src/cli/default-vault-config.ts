@@ -22,6 +22,12 @@ import {
   type DefaultSourceKind,
   type FirstPartyExtensionDefault,
 } from "../first-party-defaults";
+import {
+  canonicalContentScopeSchema,
+  DEFAULT_CONTENT_SCOPE_CONFIG,
+  renderContentScopeYaml,
+  type ContentScopeConfig,
+} from "../core/content-scope";
 
 export { DEFAULT_SOURCE_KINDS, FIRST_PARTY_EXTENSION_DEFAULTS, defaultSourceSubscription };
 export type {
@@ -33,11 +39,16 @@ export type {
 
 export type DefaultModelProvider = "anthropic";
 
-export function defaultConfigRecord(opts: {
+type DefaultConfigOptions = Readonly<{
   readonly modelProvider?: DefaultModelProvider | undefined;
   readonly sources?: ReadonlyArray<DefaultSourceKind> | undefined;
-} = {}): Record<string, unknown> {
+  readonly contentScope?: ContentScopeConfig | undefined;
+}>;
+
+export function defaultConfigRecord(opts: DefaultConfigOptions = {}): Record<string, unknown> {
+  const contentScope = canonicalContentScopeSchema.parse(opts.contentScope ?? DEFAULT_CONTENT_SCOPE_CONFIG);
   const record: Record<string, unknown> = {
+    content_scope: structuredClone(contentScope),
     // The one-line preset. The loader expands it to each enabled bundle's
     // shipped default grants; a bundle carrying an explicit grant/processors
     // block opts out and uses only that block.
@@ -70,12 +81,11 @@ export function defaultConfigRecord(opts: {
   return record;
 }
 
-export function defaultConfigYaml(opts: {
-  readonly modelProvider?: DefaultModelProvider | undefined;
-  readonly sources?: ReadonlyArray<DefaultSourceKind> | undefined;
-} = {}): string {
+export function defaultConfigYaml(opts: DefaultConfigOptions = {}): string {
+  const contentScope = canonicalContentScopeSchema.parse(opts.contentScope ?? DEFAULT_CONTENT_SCOPE_CONFIG);
   return (
     DEFAULT_CONFIG_HEADER +
+    renderContentScope(contentScope) +
     renderModelProviderConfig(opts.modelProvider) +
     DEFAULT_GRANTS_PRESET +
     "extensions:\n" +
@@ -85,6 +95,11 @@ export function defaultConfigYaml(opts: {
     "\n" +
     DEFAULT_CONFIG_FOOTER
   );
+}
+
+function renderContentScope(scope: ContentScopeConfig): string {
+  return "# Owner Markdown included in Dome's compiled knowledge universe.\n" +
+    renderContentScopeYaml(scope) + "\n";
 }
 
 /**

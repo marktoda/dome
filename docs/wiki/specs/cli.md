@@ -205,8 +205,8 @@ boundary. Human and `--json` output render the same validated plan.
 
 Exit `0` means the preview is ready, exit `1` means it is valid but blocked,
 and exit `64` means the required preview grammar was not supplied. Blocked
-plans carry specific next actions and no applicable writes, commits, or Home
-service actions. No setup database or workflow state is created.
+plans carry specific next actions and no applicable actions. No setup database
+or workflow state is created.
 
 ### `dome init [path] [--refresh-config] [--refresh-instructions] [--with-model-provider anthropic] [--with-source <kind>]...`
 

@@ -5,7 +5,7 @@ import { defaultConfigYaml } from "../default-vault-config";
 import { compileSetupPlan, type SetupCompilerInput } from "../../setup/compiler";
 import { discoverSetupCompilerInput, type SetupDiscoveryDeps } from "../../setup/discovery";
 import { renderSetupPlanHuman, renderSetupPlanJson } from "../../setup/render";
-import { DEFAULT_SETUP_CONTENT_SCOPE, renderSetupVaultConfig } from "../../setup/scaffold";
+import { DEFAULT_SETUP_CONTENT_SCOPE, renderSetupContentScopeConfig } from "../../setup/scaffold";
 import { EX_USAGE } from "../exit-codes";
 
 export type RunSetupOptions = Readonly<{
@@ -37,7 +37,8 @@ function withSetupDefaults(deps: RunSetupDeps): SetupDiscoveryDeps {
     scaffold: deps.scaffold ?? {
       agentsOrientation: DEFAULT_AGENTS_MD,
       gitignore: DEFAULT_GITIGNORE,
-      vaultConfig: renderSetupVaultConfig(defaultConfigYaml(), contentScope),
+      vaultConfig: defaultConfigYaml({ contentScope }),
+      contentScopeConfig: renderSetupContentScopeConfig(contentScope),
     },
   };
 }

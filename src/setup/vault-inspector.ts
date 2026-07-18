@@ -284,9 +284,13 @@ export function validateSetupVaultSourceInspection(value: unknown): SetupVaultSo
     state === "detached" ? "head" : state === "ambiguous" ? shape : "both";
   if (shape !== expectedShape) throw new Error("setup source Git revision evidence is inconsistent");
 
-  const dome = exactObject(source["dome"], "setup source Dome evidence", ["state"]);
+  const dome = exactObject(source["dome"], "setup source Dome evidence", ["state", "contentScope"]);
   const domeStates = ["absent", "partial", "configured", "incompatible"] as const;
   if (!domeStates.includes(dome["state"] as typeof domeStates[number])) throw new Error("setup source Dome state is invalid");
+  const contentScopeStates = ["absent", "configured", "incompatible"] as const;
+  if (!contentScopeStates.includes(dome["contentScope"] as typeof contentScopeStates[number])) {
+    throw new Error("setup source content-scope state is invalid");
+  }
   const markdown = exactObject(source["markdown"], "setup source Markdown evidence", ["tracked", "untracked"]);
   const tracked = validatedMarkdownPaths(markdown["tracked"], "tracked Markdown");
   const untracked = validatedMarkdownPaths(markdown["untracked"], "untracked Markdown");
@@ -316,6 +320,10 @@ export function validateSetupVaultSourceInspection(value: unknown): SetupVaultSo
   if (requiresGit && !git["direct"] || forbidsGit && (git["direct"] || state !== "absent") ||
     kind === "existing-dome-vault" && dome["state"] !== "configured") {
     throw new Error("setup source classification disagrees with its evidence");
+  }
+  if ((dome["state"] === "absent" || dome["state"] === "partial") && dome["contentScope"] !== "absent" ||
+    (dome["state"] === "incompatible") !== (dome["contentScope"] === "incompatible")) {
+    throw new Error("setup source content-scope evidence is inconsistent");
   }
   if ((kind === "new-path" || kind === "empty-directory") && (tracked.length > 0 || untracked.length > 0) ||
     kind === "existing-non-git-vault" && tracked.length > 0) {
@@ -745,12 +753,15 @@ async function inspectDomeState(
 ): Promise<VaultAssessment["dome"]> {
   const config = tree.find((entry) => entry.path === ".dome/config.yaml");
   if (config === undefined) {
-    return Object.freeze({ state: tree.some((entry) => entry.path === ".dome" || entry.path.startsWith(".dome/")) ? "partial" : "absent" });
+    return Object.freeze({
+      state: tree.some((entry) => entry.path === ".dome" || entry.path.startsWith(".dome/")) ? "partial" : "absent",
+      contentScope: "absent",
+    });
   }
   if (config.kind !== "file" || config.sha256 === null) {
     addBlocker("ambiguous-state", "Dome configuration is not a bounded direct file.",
       "Repair .dome/config.yaml, then reassess.");
-    return Object.freeze({ state: "incompatible" });
+    return Object.freeze({ state: "incompatible", contentScope: "incompatible" });
   }
   const configPath = join(targetPath, ".dome", "config.yaml");
   const current = await lstat(configPath);
@@ -758,22 +769,25 @@ async function inspectDomeState(
     filesystemIdentityHash(current) !== config.filesystemIdentitySha256) {
     addBlocker("ambiguous-state", "Dome configuration changed during setup inspection.",
       "Wait for concurrent changes to finish, then reassess.");
-    return Object.freeze({ state: "incompatible" });
+    return Object.freeze({ state: "incompatible", contentScope: "incompatible" });
   }
   const bytes = await readDirectFile(configPath, current);
   if (sha256(bytes) !== config.sha256) {
     addBlocker("ambiguous-state", "Dome configuration changed during setup inspection.",
       "Wait for concurrent changes to finish, then reassess.");
-    return Object.freeze({ state: "incompatible" });
+    return Object.freeze({ state: "incompatible", contentScope: "incompatible" });
   }
   const body = bytes.toString("utf8");
   const parsed = parseCapabilityPolicy(body, ".dome/config.yaml");
   if (!parsed.ok) {
     addBlocker("ambiguous-state", "Dome configuration is invalid.",
       "Repair .dome/config.yaml, then reassess.");
-    return Object.freeze({ state: "incompatible" });
+    return Object.freeze({ state: "incompatible", contentScope: "incompatible" });
   }
-  return Object.freeze({ state: "configured" });
+  return Object.freeze({
+    state: "configured",
+    contentScope: parsed.value.contentScope === null ? "absent" : "configured",
+  });
 }
 
 function classifyTarget(

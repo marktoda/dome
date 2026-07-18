@@ -21,6 +21,10 @@ import {
   type ExtensionConfig,
 } from "../../core/processor";
 import {
+  canonicalContentScopeSchema,
+  type ContentScopeConfig,
+} from "../../core/content-scope";
+import {
   FIRST_PARTY_EXTENSION_DEFAULTS,
   type FirstPartyExtensionDefault,
 } from "../../first-party-defaults";
@@ -38,6 +42,8 @@ const FIRST_PARTY_DEFAULTS_BY_ID: ReadonlyMap<string, FirstPartyExtensionDefault
 
 export type CapabilityPolicy = {
   readonly foundConfig: boolean;
+  /** Canonical owner-Markdown policy; null means an explicit migration is still required. */
+  readonly contentScope: ContentScopeConfig | null;
   readonly runtime: RuntimeConfig;
   readonly configuredExtensions: ReadonlyArray<ExtensionPolicyStatus>;
   readonly enabledExtensionIds: ReadonlyArray<string>;
@@ -134,6 +140,7 @@ export function computeCapabilityPolicyHash(policy: CapabilityPolicy): string {
   return sha256(
     stableJsonStringify({
       foundConfig: policy.foundConfig,
+      contentScope: policy.contentScope,
       runtime: policy.runtime,
       sharedConfig: stableJsonValue(policy.sharedConfig),
       extensions: extensionGrants,
@@ -191,6 +198,8 @@ export function parseCapabilityPolicy(
   const presetEnabled = grantsPreset.value;
   const runtimeConfig = parseRuntimeConfig(root, path);
   if (!runtimeConfig.ok) return err(runtimeConfig.error);
+  const contentScope = parseContentScope(root.content_scope, path);
+  if (!contentScope.ok) return err(contentScope.error);
 
   const sharedConfig = parseExtensionConfig(root.shared_config, "shared_config");
   if (!sharedConfig.ok) return err(`${path} ${sharedConfig.error}`);
@@ -291,6 +300,7 @@ export function parseCapabilityPolicy(
   return ok(
     Object.freeze({
       foundConfig: true,
+      contentScope: contentScope.value,
       runtime: runtimeConfig.value,
       configuredExtensions: sortExtensionStatuses(configuredExtensions),
       enabledExtensionIds: Object.freeze([...enabled]),
@@ -315,6 +325,7 @@ export function parseCapabilityPolicy(
 function emptyPolicy(foundConfig: boolean): CapabilityPolicy {
   return Object.freeze({
     foundConfig,
+    contentScope: null,
     runtime: DEFAULT_RUNTIME_CONFIG,
     configuredExtensions: Object.freeze([]),
     enabledExtensionIds: Object.freeze([]),
@@ -427,6 +438,7 @@ function mergedConfigResolver(
 }
 
 const ROOT_KEYS = new Set([
+  "content_scope",
   "extensions",
   "grants",
   "engine",
@@ -435,6 +447,15 @@ const ROOT_KEYS = new Set([
   "model_provider",
   "shared_config",
 ]);
+
+function parseContentScope(raw: unknown, path: string): Result<ContentScopeConfig | null, string> {
+  if (raw === undefined) return ok(null);
+  const parsed = canonicalContentScopeSchema.safeParse(raw);
+  if (parsed.success) return ok(parsed.data);
+  const issue = parsed.error.issues[0];
+  const location = issue?.path.length ? `.${issue.path.join(".")}` : "";
+  return err(`${path} content_scope${location} ${issue?.message ?? "is invalid"}`);
+}
 
 /**
  * The top-level `grants:` preset. Only the string literal `standard` is

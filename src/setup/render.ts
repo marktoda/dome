@@ -22,7 +22,7 @@ export function renderSetupPlanHuman(input: SetupPlan): string {
     }
   } else {
     lines.push("Planned actions:");
-    for (const action of plan.assessment.actions) lines.push(`- ${describeAction(action)}`);
+    for (const action of plan.actions) lines.push(`- ${describeAction(action)}`);
     if (plan.optionalSteps.length > 0) {
       lines.push("", "Optional after setup:");
       for (const step of plan.optionalSteps) lines.push(`- ${step.description}`);
@@ -36,15 +36,11 @@ export function renderSetupPlanHuman(input: SetupPlan): string {
   return lines.join("\n");
 }
 
-function describeAction(action: SetupPlan["assessment"]["actions"][number]): string {
+function describeAction(action: SetupPlan["actions"][number]): string {
   if (action.kind === "create-vault-directory") return `Create vault directory ${action.path}`;
   if (action.kind === "initialize-git") return `Initialize Git at ${action.repositoryPath}`;
   if (action.kind === "ensure-scaffold-directory") return `Ensure ${action.path}`;
   if (action.kind === "write-scaffold-file") return `Create ${action.path} if missing`;
   if (action.kind === "set-content-scope") return `Configure Markdown scope in ${action.write.path}`;
-  if (action.kind === "create-baseline-commit") return `Baseline ${action.paths.length} existing Markdown file(s)`;
-  if (action.kind === "install-home") return `${action.disposition === "upgrade" ? "Upgrade" : "Install or resume"} packaged Dome Home`;
-  if (action.kind === "select-home-vault") return "Select this vault for Dome Home";
-  if (action.kind === "install-home-service") return `Install service ${action.serviceLabel} if missing`;
-  return `Start service ${action.serviceLabel}`;
+  return `${action.disposition === "upgrade" ? "Upgrade" : "Install or resume"} packaged Dome Home and activate ${action.serviceLabel}`;
 }

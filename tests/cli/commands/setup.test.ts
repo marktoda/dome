@@ -15,7 +15,7 @@ function evidence(blocked = false): SetupCompilerInput {
       git: {
         state: "absent", head: null, branch: null, direct: false, ancestorRoot: null, operationMarkers: [],
       },
-      dome: { state: "absent" },
+      dome: { state: "absent", contentScope: "absent" },
       markdown: { tracked: [], untracked: [] },
       blockers: blocked ? [{
         code: "symlink-ambiguity",
@@ -42,6 +42,7 @@ function evidence(blocked = false): SetupCompilerInput {
       agentsOrientation: "# Vault\n",
       gitignore: ".dome/state/\n",
       vaultConfig: "content_scope:\n  version: 1\n  include: [\"**/*.md\"]\n  exclude: [\".dome/**\", \".git/**\"]\n",
+      contentScopeConfig: "content_scope:\n  version: 1\n  include: [\"**/*.md\"]\n  exclude: [\".dome/**\", \".git/**\"]\n",
     },
   };
 }

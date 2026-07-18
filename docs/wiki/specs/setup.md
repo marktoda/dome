@@ -33,7 +33,8 @@ vault path. It contains:
   proposed versioned content scope. Case-variant `.MD` files remain ordinary
   source bytes for revision binding but are outside version 1's owner-Markdown
   universe; `.dome/**` and `.git/**` remain the non-overridable private floor;
-- a closed, canonically ordered union of additive adaptation actions; and
+- the observed Dome content-scope state: `absent`, `configured`, or
+  `incompatible`; and
 - zero or more canonically ordered blockers, each with exactly one next action.
 
 The vault classification is one of:
@@ -48,8 +49,8 @@ The vault classification is one of:
 | `incompatible-active-operation` | Git or Home has an operation that setup must not cross. |
 | `unsafe-or-ambiguous-state` | Ownership, path, symlink, host, or another safety fact is unresolved. |
 
-The last two classifications are blocked and therefore carry no adaptation
-actions. A ready classification carries no blockers. Dirty worktrees, an
+The last two classifications are blocked. A ready classification carries no
+blockers. Dirty worktrees, an
 active Git operation, an active Home upgrade, conflicting Home ownership,
 symlink ambiguity, an unsupported host, and missing prerequisites are modeled
 as blockers instead of implicit choices.
@@ -59,19 +60,16 @@ tool has no observed version and a `missing-prerequisite` blocker; an observed
 but unsupported tool retains its version and has an
 `unsupported-prerequisite` blocker.
 
-`AdaptationAction` is intentionally additive and closed:
+The assessment contains observations and blockers only. The `SetupPlan` owns
+the single closed, canonically ordered `AdaptationAction` inventory:
 
 - `create-vault-directory`
 - `initialize-git`
 - `ensure-scaffold-directory`
 - `write-scaffold-file`
 - `set-content-scope`
-- `create-baseline-commit`
-- `install-home` (`install-or-resume` or `upgrade`, derived from exact installed
-  artifact identity)
-- `select-home-vault`
-- `install-home-service`
-- `start-home`
+- `activate-home` (`install-or-resume` or `upgrade`, derived from exact
+  installed artifact identity)
 
 Directory and scaffold-file actions have closed IDs, normalized modes, and
 literal `ifMissing` guards. File actions also bind exact byte counts and
@@ -166,53 +164,55 @@ neither.
 ## Plan contract
 
 `dome.setup.plan/v1` is the single payload consumed by both JSON and human
-renderers. It embeds the complete validated assessment, then inventories:
-
-- proposed additive file writes, including operation, exact byte count, and
-  SHA-256 of the proposed bytes;
-- attributable commits and their exact path sets;
-- closed Home service actions;
-- optional model and integration setup steps;
-- recovery commands; and
-- structured warnings.
+renderers. It embeds the complete validated assessment and owns one closed,
+canonically ordered action inventory. Optional model and integration steps,
+recovery commands, and structured warnings remain separate presentation
+metadata. There are no duplicated write, commit, or service-action
+projections for the validator to keep in sync.
 
 Path inventories and unordered evidence are canonically sorted and
-duplicate-free. Commits and Home service actions follow their explicit
-operation order. Contract arrays have fixed budgets. A blocked plan has status
-`blocked` and cannot carry applicable writes, commits, or service actions. A
-ready plan has status `ready` and no assessment blockers. Unknown fields,
+duplicate-free. Actions follow their explicit operation order. Contract arrays
+have fixed budgets. A blocked plan has status `blocked` and carries no actions.
+A ready plan has status `ready` and no assessment blockers. Unknown fields,
 unknown discriminants, unsafe paths, inconsistent Git/HEAD evidence, and
 non-canonical arrays fail validation.
 
-The validator cross-checks exact scaffold writes, the baseline commit, and
-Home service actions against their assessment actions. Content scope owns the
-one exact `vault-config` write: its path, create-or-merge operation, bytes,
-hash, mode, and missing-file behavior are bound in the assessment and must be
-identical in the plan. `ContentScopeConfig.version` is the literal `1`, so a
-future matching-language change cannot silently reinterpret an accepted
-setup payload. The shape and matching semantics are owned by
+Write actions bind their exact path, create-or-merge operation, bytes, hash,
+mode, and missing-file behavior. `ContentScopeConfig.version` is the literal
+`1`, so a future matching-language change cannot silently reinterpret an
+accepted setup payload. The shape and matching semantics are owned by
 [[wiki/specs/content-scope]]; setup embeds that canonical contract rather than
 defining a second glob language. Both the in-memory proposal and the
 `content_scope` decoded from the exact rendered YAML pass through
 `canonicalContentScopeSchema`; unsorted, duplicate, unsupported, or malformed
-policies fail closed. The setup scaffold renderer refuses a base config that
-already owns `content_scope`, so it cannot append a second policy seam. A plan
-cannot express a second config write or two writes to the same path. Whenever
-writes apply, one configuration commit must name exactly those paths—never an
-unrelated owner file.
+policies fail closed. The same runtime config parser consumes generated setup
+config, and content scope participates in the capability-policy hash. A fresh
+vault gets one complete create-file config action. An existing Dome vault with
+no scope gets one explicit `merge-managed-config` action carrying the exact
+managed fragment plus a `content-scope-migration` warning; setup never treats
+that migration as already accepted. Malformed existing scope blocks as
+incompatible. A plan cannot express a second config write or two writes to the
+same path.
 
-Home plan evidence projects the assessed artifact ID, selected vault path,
-service label, and missing-service guard rather than replacing them with prose.
-Install and start must use the same service label. An `owned` installed Home
+The one atomic `activate-home` action projects the assessed artifact ID,
+selected vault path, service label, missing-service guard, and install
+disposition rather than replacing them with prose. An `owned` installed Home
 must select the assessed vault; another selector is foreign ownership and must
-be classified and blocked before planning. The install disposition is
+be classified and blocked before planning. The disposition is
 `install-or-resume` for no installed artifact or the exact candidate identity,
-and `upgrade` for a different owned artifact selecting the same vault.
+and `upgrade` for a different owned artifact selecting the same vault. M6 will
+consume this action through one deep Home activation call with rollback and
+recovery; there are no independently applicable install, select, service, or
+start rows.
 
-The four Home preview rows—install/upgrade artifact, select vault, install
-service, and start—are one atomic activation intent. M6 consumes them through
-one deep Home activation call with rollback and recovery; no caller may apply
-an individual row as an independent operation.
+For an existing non-Git vault, the M3 inspector already revision-binds every
+bounded, nonignored regular-file byte and mode—not only Markdown—and blocks
+symlinks, nested repositories, special files, and unsafe hard links. M3 does
+not yet emit a baseline-commit action. M5 must first define the exact safe Git
+inventory, ignore/exclusion behavior, and commit boundary so owner attachments,
+configuration, and other non-Markdown files are preserved. Only then may apply
+initialize and baseline that repository; the preview must never imply a
+Markdown-only baseline.
 
 The plan is a preview and a revision binding, not an execution log. Apply may
 consume a successfully revalidated plan in a later slice, but it must not

@@ -13,6 +13,7 @@ import {
   validateVaultAssessment,
   type VaultAssessment,
 } from "../../src/setup/contracts";
+import { defaultConfigYaml } from "../../src/cli/default-vault-config";
 
 const temporaryRoots: string[] = [];
 
@@ -103,7 +104,42 @@ describe("read-only setup vault inspector", () => {
     const inspected = await inspectSetupVaultSource(root);
     expect(inspected.kind).toBe("existing-dome-vault");
     expect(inspected.dome.state).toBe("configured");
+    expect(inspected.dome.contentScope).toBe("absent");
     expect(inspected.blockers).toEqual([]);
+  });
+
+  test("accepts the generated config through the canonical runtime parser on reassessment", async () => {
+    const root = await gitFixture();
+    await mkdir(join(root, ".dome"));
+    await writeFile(join(root, ".dome", "config.yaml"), defaultConfigYaml());
+    await git(root, "add", ".dome/config.yaml");
+    await git(root, "commit", "-m", "Configure Dome with content scope");
+
+    const first = await inspectSetupVaultSource(root);
+    const repeated = await inspectSetupVaultSource(root);
+    expect(repeated).toEqual(first);
+    expect(first.kind).toBe("existing-dome-vault");
+    expect(first.dome).toEqual({ state: "configured", contentScope: "configured" });
+    expect(first.blockers).toEqual([]);
+  });
+
+  test("fails closed when an existing config carries a malformed content scope", async () => {
+    const root = await gitFixture();
+    await mkdir(join(root, ".dome"));
+    await writeFile(join(root, ".dome", "config.yaml"), `
+grants: standard
+content_scope:
+  version: 1
+  include: ["**/*.md", "**/*.md"]
+  exclude: []
+`);
+    await git(root, "add", ".dome/config.yaml");
+    await git(root, "commit", "-m", "Add malformed content scope");
+
+    const inspected = await inspectSetupVaultSource(root);
+    expect(inspected.dome).toEqual({ state: "incompatible", contentScope: "incompatible" });
+    expect(inspected.kind).toBe("unsafe-or-ambiguous-state");
+    expect(inspected.blockers.map((blocker) => blocker.code)).toEqual(["ambiguous-state"]);
   });
 
   test("accepts a direct linked worktree without adopting its owner repository", async () => {
@@ -575,7 +611,6 @@ function validateInspectionAssessment(
       untracked: inspected.markdown.untracked,
       proposedScope: { version: 1, include: ["**/*.md"], exclude: [".dome/**"] },
     },
-    actions: [],
     blockers: inspected.blockers,
   });
 }

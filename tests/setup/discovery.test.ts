@@ -15,7 +15,7 @@ import {
 } from "../../src/setup/discovery";
 import {
   DEFAULT_SETUP_CONTENT_SCOPE,
-  renderSetupVaultConfig,
+  renderSetupContentScopeConfig,
 } from "../../src/setup/scaffold";
 
 describe("setup discovery adapters", () => {
@@ -210,20 +210,14 @@ describe("setup discovery adapters", () => {
   });
 
   test("renders the exact proposed scope into the planned config bytes", () => {
-    const body = renderSetupVaultConfig("grants: standard\n", DEFAULT_SETUP_CONTENT_SCOPE);
+    const body = renderSetupContentScopeConfig(DEFAULT_SETUP_CONTENT_SCOPE);
     expect(body).toContain("content_scope:\n  version: 1");
     expect(body).toContain('    - "**/*.md"');
     expect(body).toContain('    - ".dome/**"\n    - ".git/**"');
     const config = parseYaml(body) as Record<string, unknown>;
     expect(canonicalContentScopeSchema.parse(config.content_scope)).toEqual(DEFAULT_SETUP_CONTENT_SCOPE);
 
-    expect(() => renderSetupVaultConfig(body, DEFAULT_SETUP_CONTENT_SCOPE)).toThrow(
-      "already defines content_scope",
-    );
-    expect(() => renderSetupVaultConfig("- not\n- a\n- mapping\n", DEFAULT_SETUP_CONTENT_SCOPE)).toThrow(
-      "must be a mapping",
-    );
-    expect(() => renderSetupVaultConfig("grants: standard\n", {
+    expect(() => renderSetupContentScopeConfig({
       ...DEFAULT_SETUP_CONTENT_SCOPE,
       include: ["notes/**/*.md", "**/*.md"],
     })).toThrow("must be sorted and unique");

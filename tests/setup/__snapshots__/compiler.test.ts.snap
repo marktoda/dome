@@ -13,7 +13,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "revision": {
         "head": null,
-        "worktreeFingerprint": "89494f7d613cb72cfef0fb78133f303982695774603ddb091fd3301d5690ef21"
+        "worktreeFingerprint": "3df6ab08b3cbaafeb6e9ce6eadc44e41c7e75020f2eb66cab74b6acda3da7fe3"
       },
       "host": {
         "platform": "darwin",
@@ -49,7 +49,8 @@ exports[`setup compiler compiles every closed classification into one exact plan
         "branch": null
       },
       "dome": {
-        "state": "absent"
+        "state": "absent",
+        "contentScope": "absent"
       },
       "installedHome": {
         "state": "absent",
@@ -73,157 +74,84 @@ exports[`setup compiler compiles every closed classification into one exact plan
           ]
         }
       },
-      "actions": [
-        {
-          "kind": "create-vault-directory",
-          "id": "vault-directory",
-          "path": "/Users/example/Vault",
-          "mode": "0755",
-          "ifMissing": true
-        },
-        {
-          "kind": "initialize-git",
-          "id": "git-repository",
-          "repositoryPath": "/Users/example/Vault",
-          "ifMissing": true
-        },
-        {
-          "kind": "ensure-scaffold-directory",
-          "id": "dome-directory",
-          "path": ".dome",
-          "mode": "0755",
-          "ifMissing": true
-        },
-        {
-          "kind": "ensure-scaffold-directory",
-          "id": "dome-state-directory",
-          "path": ".dome/state",
-          "mode": "0700",
-          "ifMissing": true
-        },
-        {
-          "kind": "write-scaffold-file",
-          "id": "agents-orientation",
-          "path": "AGENTS.md",
-          "bytes": 13,
-          "sha256": "721430bc7a77d472ced403be3ca0e5ea881bcb8978104e5f305ea579c60c5ada",
-          "mode": "0644",
-          "ifMissing": true
-        },
-        {
-          "kind": "write-scaffold-file",
-          "id": "gitignore",
-          "path": ".gitignore",
-          "bytes": 13,
-          "sha256": "052d9cd9e8dcbeba35387d09721ca3814dc98006c66b05b6e3cfd29b06c7c733",
-          "mode": "0644",
-          "ifMissing": true
-        },
-        {
-          "kind": "set-content-scope",
-          "id": "vault-config",
-          "scope": {
-            "version": 1,
-            "include": [
-              "**/*.md"
-            ],
-            "exclude": [
-              ".dome/**",
-              ".git/**"
-            ]
-          },
-          "write": {
-            "path": ".dome/config.yaml",
-            "operation": "create-file",
-            "bytes": 86,
-            "sha256": "e7b5608767e4deca6e3a2237ab57f60b7be83269161055b2c723d07118271bf7",
-            "mode": "0644",
-            "ifMissing": true
-          }
-        },
-        {
-          "kind": "install-home",
-          "id": "home-artifact",
-          "artifactId": "3333333333333333333333333333333333333333333333333333333333333333",
-          "disposition": "install-or-resume"
-        },
-        {
-          "kind": "select-home-vault",
-          "id": "home-vault-selector",
-          "vaultPath": "/Users/example/Vault"
-        },
-        {
-          "kind": "install-home-service",
-          "id": "home-service",
-          "serviceLabel": "com.dome.home.vault-43ba0b40",
-          "ifMissing": true
-        },
-        {
-          "kind": "start-home",
-          "id": "home-start",
-          "serviceLabel": "com.dome.home.vault-43ba0b40"
-        }
-      ],
       "blockers": []
     },
-    "writes": [
+    "actions": [
       {
+        "kind": "create-vault-directory",
+        "id": "vault-directory",
+        "path": "/Users/example/Vault",
+        "mode": "0755",
+        "ifMissing": true
+      },
+      {
+        "kind": "initialize-git",
+        "id": "git-repository",
+        "repositoryPath": "/Users/example/Vault",
+        "ifMissing": true
+      },
+      {
+        "kind": "ensure-scaffold-directory",
+        "id": "dome-directory",
+        "path": ".dome",
+        "mode": "0755",
+        "ifMissing": true
+      },
+      {
+        "kind": "ensure-scaffold-directory",
+        "id": "dome-state-directory",
+        "path": ".dome/state",
+        "mode": "0700",
+        "ifMissing": true
+      },
+      {
+        "kind": "write-scaffold-file",
         "id": "agents-orientation",
         "path": "AGENTS.md",
-        "operation": "create-file",
         "bytes": 13,
         "sha256": "721430bc7a77d472ced403be3ca0e5ea881bcb8978104e5f305ea579c60c5ada",
         "mode": "0644",
         "ifMissing": true
       },
       {
+        "kind": "write-scaffold-file",
         "id": "gitignore",
         "path": ".gitignore",
-        "operation": "create-file",
         "bytes": 13,
         "sha256": "052d9cd9e8dcbeba35387d09721ca3814dc98006c66b05b6e3cfd29b06c7c733",
         "mode": "0644",
         "ifMissing": true
       },
       {
+        "kind": "set-content-scope",
         "id": "vault-config",
-        "path": ".dome/config.yaml",
-        "operation": "create-file",
-        "bytes": 86,
-        "sha256": "e7b5608767e4deca6e3a2237ab57f60b7be83269161055b2c723d07118271bf7",
-        "mode": "0644",
-        "ifMissing": true
-      }
-    ],
-    "commits": [
+        "scope": {
+          "version": 1,
+          "include": [
+            "**/*.md"
+          ],
+          "exclude": [
+            ".dome/**",
+            ".git/**"
+          ]
+        },
+        "write": {
+          "path": ".dome/config.yaml",
+          "operation": "create-file",
+          "bytes": 86,
+          "sha256": "e7b5608767e4deca6e3a2237ab57f60b7be83269161055b2c723d07118271bf7",
+          "mode": "0644",
+          "ifMissing": true
+        }
+      },
       {
-        "kind": "configuration",
-        "message": "Configure Dome vault",
-        "paths": [
-          ".dome/config.yaml",
-          ".gitignore",
-          "AGENTS.md"
-        ]
-      }
-    ],
-    "serviceActions": [
-      {
-        "kind": "install-home",
+        "kind": "activate-home",
+        "id": "home-activation",
         "artifactId": "3333333333333333333333333333333333333333333333333333333333333333",
-        "disposition": "install-or-resume"
-      },
-      {
-        "kind": "select-home-vault",
-        "vaultPath": "/Users/example/Vault"
-      },
-      {
-        "kind": "install-home-service",
+        "disposition": "install-or-resume",
+        "vaultPath": "/Users/example/Vault",
         "serviceLabel": "com.dome.home.vault-43ba0b40",
-        "ifMissing": true
-      },
-      {
-        "kind": "start-home",
-        "serviceLabel": "com.dome.home.vault-43ba0b40"
+        "installServiceIfMissing": true
       }
     ],
     "optionalSteps": [
@@ -252,7 +180,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "revision": {
         "head": null,
-        "worktreeFingerprint": "3f9f0dd9ad2831a0afa1c754b59cccd20a557aaa5f8ff485f79373c33477dc95"
+        "worktreeFingerprint": "1077fe5a5d0915975cb634bc80645fca61f134f7f8e27b5ce1ca62e8e7c33850"
       },
       "host": {
         "platform": "darwin",
@@ -288,7 +216,8 @@ exports[`setup compiler compiles every closed classification into one exact plan
         "branch": null
       },
       "dome": {
-        "state": "absent"
+        "state": "absent",
+        "contentScope": "absent"
       },
       "installedHome": {
         "state": "absent",
@@ -312,150 +241,77 @@ exports[`setup compiler compiles every closed classification into one exact plan
           ]
         }
       },
-      "actions": [
-        {
-          "kind": "initialize-git",
-          "id": "git-repository",
-          "repositoryPath": "/Users/example/Vault",
-          "ifMissing": true
-        },
-        {
-          "kind": "ensure-scaffold-directory",
-          "id": "dome-directory",
-          "path": ".dome",
-          "mode": "0755",
-          "ifMissing": true
-        },
-        {
-          "kind": "ensure-scaffold-directory",
-          "id": "dome-state-directory",
-          "path": ".dome/state",
-          "mode": "0700",
-          "ifMissing": true
-        },
-        {
-          "kind": "write-scaffold-file",
-          "id": "agents-orientation",
-          "path": "AGENTS.md",
-          "bytes": 13,
-          "sha256": "721430bc7a77d472ced403be3ca0e5ea881bcb8978104e5f305ea579c60c5ada",
-          "mode": "0644",
-          "ifMissing": true
-        },
-        {
-          "kind": "write-scaffold-file",
-          "id": "gitignore",
-          "path": ".gitignore",
-          "bytes": 13,
-          "sha256": "052d9cd9e8dcbeba35387d09721ca3814dc98006c66b05b6e3cfd29b06c7c733",
-          "mode": "0644",
-          "ifMissing": true
-        },
-        {
-          "kind": "set-content-scope",
-          "id": "vault-config",
-          "scope": {
-            "version": 1,
-            "include": [
-              "**/*.md"
-            ],
-            "exclude": [
-              ".dome/**",
-              ".git/**"
-            ]
-          },
-          "write": {
-            "path": ".dome/config.yaml",
-            "operation": "create-file",
-            "bytes": 86,
-            "sha256": "e7b5608767e4deca6e3a2237ab57f60b7be83269161055b2c723d07118271bf7",
-            "mode": "0644",
-            "ifMissing": true
-          }
-        },
-        {
-          "kind": "install-home",
-          "id": "home-artifact",
-          "artifactId": "3333333333333333333333333333333333333333333333333333333333333333",
-          "disposition": "install-or-resume"
-        },
-        {
-          "kind": "select-home-vault",
-          "id": "home-vault-selector",
-          "vaultPath": "/Users/example/Vault"
-        },
-        {
-          "kind": "install-home-service",
-          "id": "home-service",
-          "serviceLabel": "com.dome.home.vault-43ba0b40",
-          "ifMissing": true
-        },
-        {
-          "kind": "start-home",
-          "id": "home-start",
-          "serviceLabel": "com.dome.home.vault-43ba0b40"
-        }
-      ],
       "blockers": []
     },
-    "writes": [
+    "actions": [
       {
+        "kind": "initialize-git",
+        "id": "git-repository",
+        "repositoryPath": "/Users/example/Vault",
+        "ifMissing": true
+      },
+      {
+        "kind": "ensure-scaffold-directory",
+        "id": "dome-directory",
+        "path": ".dome",
+        "mode": "0755",
+        "ifMissing": true
+      },
+      {
+        "kind": "ensure-scaffold-directory",
+        "id": "dome-state-directory",
+        "path": ".dome/state",
+        "mode": "0700",
+        "ifMissing": true
+      },
+      {
+        "kind": "write-scaffold-file",
         "id": "agents-orientation",
         "path": "AGENTS.md",
-        "operation": "create-file",
         "bytes": 13,
         "sha256": "721430bc7a77d472ced403be3ca0e5ea881bcb8978104e5f305ea579c60c5ada",
         "mode": "0644",
         "ifMissing": true
       },
       {
+        "kind": "write-scaffold-file",
         "id": "gitignore",
         "path": ".gitignore",
-        "operation": "create-file",
         "bytes": 13,
         "sha256": "052d9cd9e8dcbeba35387d09721ca3814dc98006c66b05b6e3cfd29b06c7c733",
         "mode": "0644",
         "ifMissing": true
       },
       {
+        "kind": "set-content-scope",
         "id": "vault-config",
-        "path": ".dome/config.yaml",
-        "operation": "create-file",
-        "bytes": 86,
-        "sha256": "e7b5608767e4deca6e3a2237ab57f60b7be83269161055b2c723d07118271bf7",
-        "mode": "0644",
-        "ifMissing": true
-      }
-    ],
-    "commits": [
+        "scope": {
+          "version": 1,
+          "include": [
+            "**/*.md"
+          ],
+          "exclude": [
+            ".dome/**",
+            ".git/**"
+          ]
+        },
+        "write": {
+          "path": ".dome/config.yaml",
+          "operation": "create-file",
+          "bytes": 86,
+          "sha256": "e7b5608767e4deca6e3a2237ab57f60b7be83269161055b2c723d07118271bf7",
+          "mode": "0644",
+          "ifMissing": true
+        }
+      },
       {
-        "kind": "configuration",
-        "message": "Configure Dome vault",
-        "paths": [
-          ".dome/config.yaml",
-          ".gitignore",
-          "AGENTS.md"
-        ]
-      }
-    ],
-    "serviceActions": [
-      {
-        "kind": "install-home",
+        "kind": "activate-home",
+        "id": "home-activation",
         "artifactId": "3333333333333333333333333333333333333333333333333333333333333333",
-        "disposition": "install-or-resume"
-      },
-      {
-        "kind": "select-home-vault",
-        "vaultPath": "/Users/example/Vault"
-      },
-      {
-        "kind": "install-home-service",
+        "disposition": "install-or-resume",
+        "vaultPath": "/Users/example/Vault",
         "serviceLabel": "com.dome.home.vault-43ba0b40",
-        "ifMissing": true
-      },
-      {
-        "kind": "start-home",
-        "serviceLabel": "com.dome.home.vault-43ba0b40"
+        "installServiceIfMissing": true
       }
     ],
     "optionalSteps": [
@@ -484,7 +340,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "revision": {
         "head": null,
-        "worktreeFingerprint": "58f98aed986f36df39d4727dc565696a38796861a16f681d33e2aa3d8ccab621"
+        "worktreeFingerprint": "ec6d164a0532af5b793608b238883371999feeec82899a3ee8a796397d82f3df"
       },
       "host": {
         "platform": "darwin",
@@ -520,7 +376,8 @@ exports[`setup compiler compiles every closed classification into one exact plan
         "branch": null
       },
       "dome": {
-        "state": "absent"
+        "state": "absent",
+        "contentScope": "absent"
       },
       "installedHome": {
         "state": "absent",
@@ -546,165 +403,77 @@ exports[`setup compiler compiles every closed classification into one exact plan
           ]
         }
       },
-      "actions": [
-        {
-          "kind": "initialize-git",
-          "id": "git-repository",
-          "repositoryPath": "/Users/example/Vault",
-          "ifMissing": true
-        },
-        {
-          "kind": "ensure-scaffold-directory",
-          "id": "dome-directory",
-          "path": ".dome",
-          "mode": "0755",
-          "ifMissing": true
-        },
-        {
-          "kind": "ensure-scaffold-directory",
-          "id": "dome-state-directory",
-          "path": ".dome/state",
-          "mode": "0700",
-          "ifMissing": true
-        },
-        {
-          "kind": "write-scaffold-file",
-          "id": "agents-orientation",
-          "path": "AGENTS.md",
-          "bytes": 13,
-          "sha256": "721430bc7a77d472ced403be3ca0e5ea881bcb8978104e5f305ea579c60c5ada",
-          "mode": "0644",
-          "ifMissing": true
-        },
-        {
-          "kind": "write-scaffold-file",
-          "id": "gitignore",
-          "path": ".gitignore",
-          "bytes": 13,
-          "sha256": "052d9cd9e8dcbeba35387d09721ca3814dc98006c66b05b6e3cfd29b06c7c733",
-          "mode": "0644",
-          "ifMissing": true
-        },
-        {
-          "kind": "set-content-scope",
-          "id": "vault-config",
-          "scope": {
-            "version": 1,
-            "include": [
-              "**/*.md"
-            ],
-            "exclude": [
-              ".dome/**",
-              ".git/**"
-            ]
-          },
-          "write": {
-            "path": ".dome/config.yaml",
-            "operation": "create-file",
-            "bytes": 86,
-            "sha256": "e7b5608767e4deca6e3a2237ab57f60b7be83269161055b2c723d07118271bf7",
-            "mode": "0644",
-            "ifMissing": true
-          }
-        },
-        {
-          "kind": "create-baseline-commit",
-          "id": "baseline-commit",
-          "message": "Preserve existing vault content before Dome setup",
-          "paths": [
-            "Journal.md"
-          ]
-        },
-        {
-          "kind": "install-home",
-          "id": "home-artifact",
-          "artifactId": "3333333333333333333333333333333333333333333333333333333333333333",
-          "disposition": "install-or-resume"
-        },
-        {
-          "kind": "select-home-vault",
-          "id": "home-vault-selector",
-          "vaultPath": "/Users/example/Vault"
-        },
-        {
-          "kind": "install-home-service",
-          "id": "home-service",
-          "serviceLabel": "com.dome.home.vault-43ba0b40",
-          "ifMissing": true
-        },
-        {
-          "kind": "start-home",
-          "id": "home-start",
-          "serviceLabel": "com.dome.home.vault-43ba0b40"
-        }
-      ],
       "blockers": []
     },
-    "writes": [
+    "actions": [
       {
+        "kind": "initialize-git",
+        "id": "git-repository",
+        "repositoryPath": "/Users/example/Vault",
+        "ifMissing": true
+      },
+      {
+        "kind": "ensure-scaffold-directory",
+        "id": "dome-directory",
+        "path": ".dome",
+        "mode": "0755",
+        "ifMissing": true
+      },
+      {
+        "kind": "ensure-scaffold-directory",
+        "id": "dome-state-directory",
+        "path": ".dome/state",
+        "mode": "0700",
+        "ifMissing": true
+      },
+      {
+        "kind": "write-scaffold-file",
         "id": "agents-orientation",
         "path": "AGENTS.md",
-        "operation": "create-file",
         "bytes": 13,
         "sha256": "721430bc7a77d472ced403be3ca0e5ea881bcb8978104e5f305ea579c60c5ada",
         "mode": "0644",
         "ifMissing": true
       },
       {
+        "kind": "write-scaffold-file",
         "id": "gitignore",
         "path": ".gitignore",
-        "operation": "create-file",
         "bytes": 13,
         "sha256": "052d9cd9e8dcbeba35387d09721ca3814dc98006c66b05b6e3cfd29b06c7c733",
         "mode": "0644",
         "ifMissing": true
       },
       {
+        "kind": "set-content-scope",
         "id": "vault-config",
-        "path": ".dome/config.yaml",
-        "operation": "create-file",
-        "bytes": 86,
-        "sha256": "e7b5608767e4deca6e3a2237ab57f60b7be83269161055b2c723d07118271bf7",
-        "mode": "0644",
-        "ifMissing": true
-      }
-    ],
-    "commits": [
-      {
-        "kind": "baseline",
-        "message": "Preserve existing vault content before Dome setup",
-        "paths": [
-          "Journal.md"
-        ]
+        "scope": {
+          "version": 1,
+          "include": [
+            "**/*.md"
+          ],
+          "exclude": [
+            ".dome/**",
+            ".git/**"
+          ]
+        },
+        "write": {
+          "path": ".dome/config.yaml",
+          "operation": "create-file",
+          "bytes": 86,
+          "sha256": "e7b5608767e4deca6e3a2237ab57f60b7be83269161055b2c723d07118271bf7",
+          "mode": "0644",
+          "ifMissing": true
+        }
       },
       {
-        "kind": "configuration",
-        "message": "Configure Dome vault",
-        "paths": [
-          ".dome/config.yaml",
-          ".gitignore",
-          "AGENTS.md"
-        ]
-      }
-    ],
-    "serviceActions": [
-      {
-        "kind": "install-home",
+        "kind": "activate-home",
+        "id": "home-activation",
         "artifactId": "3333333333333333333333333333333333333333333333333333333333333333",
-        "disposition": "install-or-resume"
-      },
-      {
-        "kind": "select-home-vault",
-        "vaultPath": "/Users/example/Vault"
-      },
-      {
-        "kind": "install-home-service",
+        "disposition": "install-or-resume",
+        "vaultPath": "/Users/example/Vault",
         "serviceLabel": "com.dome.home.vault-43ba0b40",
-        "ifMissing": true
-      },
-      {
-        "kind": "start-home",
-        "serviceLabel": "com.dome.home.vault-43ba0b40"
+        "installServiceIfMissing": true
       }
     ],
     "optionalSteps": [
@@ -738,7 +507,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "revision": {
         "head": "1111111111111111111111111111111111111111",
-        "worktreeFingerprint": "9b1ea8f905a0c9a9a055b9fd6c7913d03ef8f986a1d9f5bd8887d186a3bf01af"
+        "worktreeFingerprint": "fd24497266a42f8620affc2718b3d8bd3801ad54a6b1efbb0ed519a06070eacf"
       },
       "host": {
         "platform": "darwin",
@@ -774,7 +543,8 @@ exports[`setup compiler compiles every closed classification into one exact plan
         "branch": "main"
       },
       "dome": {
-        "state": "absent"
+        "state": "absent",
+        "contentScope": "absent"
       },
       "installedHome": {
         "state": "absent",
@@ -800,144 +570,71 @@ exports[`setup compiler compiles every closed classification into one exact plan
           ]
         }
       },
-      "actions": [
-        {
-          "kind": "ensure-scaffold-directory",
-          "id": "dome-directory",
-          "path": ".dome",
-          "mode": "0755",
-          "ifMissing": true
-        },
-        {
-          "kind": "ensure-scaffold-directory",
-          "id": "dome-state-directory",
-          "path": ".dome/state",
-          "mode": "0700",
-          "ifMissing": true
-        },
-        {
-          "kind": "write-scaffold-file",
-          "id": "agents-orientation",
-          "path": "AGENTS.md",
-          "bytes": 13,
-          "sha256": "721430bc7a77d472ced403be3ca0e5ea881bcb8978104e5f305ea579c60c5ada",
-          "mode": "0644",
-          "ifMissing": true
-        },
-        {
-          "kind": "write-scaffold-file",
-          "id": "gitignore",
-          "path": ".gitignore",
-          "bytes": 13,
-          "sha256": "052d9cd9e8dcbeba35387d09721ca3814dc98006c66b05b6e3cfd29b06c7c733",
-          "mode": "0644",
-          "ifMissing": true
-        },
-        {
-          "kind": "set-content-scope",
-          "id": "vault-config",
-          "scope": {
-            "version": 1,
-            "include": [
-              "**/*.md"
-            ],
-            "exclude": [
-              ".dome/**",
-              ".git/**"
-            ]
-          },
-          "write": {
-            "path": ".dome/config.yaml",
-            "operation": "create-file",
-            "bytes": 86,
-            "sha256": "e7b5608767e4deca6e3a2237ab57f60b7be83269161055b2c723d07118271bf7",
-            "mode": "0644",
-            "ifMissing": true
-          }
-        },
-        {
-          "kind": "install-home",
-          "id": "home-artifact",
-          "artifactId": "3333333333333333333333333333333333333333333333333333333333333333",
-          "disposition": "install-or-resume"
-        },
-        {
-          "kind": "select-home-vault",
-          "id": "home-vault-selector",
-          "vaultPath": "/Users/example/Vault"
-        },
-        {
-          "kind": "install-home-service",
-          "id": "home-service",
-          "serviceLabel": "com.dome.home.vault-43ba0b40",
-          "ifMissing": true
-        },
-        {
-          "kind": "start-home",
-          "id": "home-start",
-          "serviceLabel": "com.dome.home.vault-43ba0b40"
-        }
-      ],
       "blockers": []
     },
-    "writes": [
+    "actions": [
       {
+        "kind": "ensure-scaffold-directory",
+        "id": "dome-directory",
+        "path": ".dome",
+        "mode": "0755",
+        "ifMissing": true
+      },
+      {
+        "kind": "ensure-scaffold-directory",
+        "id": "dome-state-directory",
+        "path": ".dome/state",
+        "mode": "0700",
+        "ifMissing": true
+      },
+      {
+        "kind": "write-scaffold-file",
         "id": "agents-orientation",
         "path": "AGENTS.md",
-        "operation": "create-file",
         "bytes": 13,
         "sha256": "721430bc7a77d472ced403be3ca0e5ea881bcb8978104e5f305ea579c60c5ada",
         "mode": "0644",
         "ifMissing": true
       },
       {
+        "kind": "write-scaffold-file",
         "id": "gitignore",
         "path": ".gitignore",
-        "operation": "create-file",
         "bytes": 13,
         "sha256": "052d9cd9e8dcbeba35387d09721ca3814dc98006c66b05b6e3cfd29b06c7c733",
         "mode": "0644",
         "ifMissing": true
       },
       {
+        "kind": "set-content-scope",
         "id": "vault-config",
-        "path": ".dome/config.yaml",
-        "operation": "create-file",
-        "bytes": 86,
-        "sha256": "e7b5608767e4deca6e3a2237ab57f60b7be83269161055b2c723d07118271bf7",
-        "mode": "0644",
-        "ifMissing": true
-      }
-    ],
-    "commits": [
+        "scope": {
+          "version": 1,
+          "include": [
+            "**/*.md"
+          ],
+          "exclude": [
+            ".dome/**",
+            ".git/**"
+          ]
+        },
+        "write": {
+          "path": ".dome/config.yaml",
+          "operation": "create-file",
+          "bytes": 86,
+          "sha256": "e7b5608767e4deca6e3a2237ab57f60b7be83269161055b2c723d07118271bf7",
+          "mode": "0644",
+          "ifMissing": true
+        }
+      },
       {
-        "kind": "configuration",
-        "message": "Configure Dome vault",
-        "paths": [
-          ".dome/config.yaml",
-          ".gitignore",
-          "AGENTS.md"
-        ]
-      }
-    ],
-    "serviceActions": [
-      {
-        "kind": "install-home",
+        "kind": "activate-home",
+        "id": "home-activation",
         "artifactId": "3333333333333333333333333333333333333333333333333333333333333333",
-        "disposition": "install-or-resume"
-      },
-      {
-        "kind": "select-home-vault",
-        "vaultPath": "/Users/example/Vault"
-      },
-      {
-        "kind": "install-home-service",
+        "disposition": "install-or-resume",
+        "vaultPath": "/Users/example/Vault",
         "serviceLabel": "com.dome.home.vault-43ba0b40",
-        "ifMissing": true
-      },
-      {
-        "kind": "start-home",
-        "serviceLabel": "com.dome.home.vault-43ba0b40"
+        "installServiceIfMissing": true
       }
     ],
     "optionalSteps": [
@@ -971,7 +668,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "revision": {
         "head": "1111111111111111111111111111111111111111",
-        "worktreeFingerprint": "25637d3c35f1dc4fbeacec4c7b6cd5f78a656a34f70c31d552bd9725922add01"
+        "worktreeFingerprint": "17791d1871692893b7362fab952928f18c928a4a074b1e0a3fdda5f76177137f"
       },
       "host": {
         "platform": "darwin",
@@ -1007,7 +704,8 @@ exports[`setup compiler compiles every closed classification into one exact plan
         "branch": "main"
       },
       "dome": {
-        "state": "configured"
+        "state": "configured",
+        "contentScope": "configured"
       },
       "installedHome": {
         "state": "absent",
@@ -1033,52 +731,17 @@ exports[`setup compiler compiles every closed classification into one exact plan
           ]
         }
       },
-      "actions": [
-        {
-          "kind": "install-home",
-          "id": "home-artifact",
-          "artifactId": "3333333333333333333333333333333333333333333333333333333333333333",
-          "disposition": "install-or-resume"
-        },
-        {
-          "kind": "select-home-vault",
-          "id": "home-vault-selector",
-          "vaultPath": "/Users/example/Vault"
-        },
-        {
-          "kind": "install-home-service",
-          "id": "home-service",
-          "serviceLabel": "com.dome.home.vault-43ba0b40",
-          "ifMissing": true
-        },
-        {
-          "kind": "start-home",
-          "id": "home-start",
-          "serviceLabel": "com.dome.home.vault-43ba0b40"
-        }
-      ],
       "blockers": []
     },
-    "writes": [],
-    "commits": [],
-    "serviceActions": [
+    "actions": [
       {
-        "kind": "install-home",
+        "kind": "activate-home",
+        "id": "home-activation",
         "artifactId": "3333333333333333333333333333333333333333333333333333333333333333",
-        "disposition": "install-or-resume"
-      },
-      {
-        "kind": "select-home-vault",
-        "vaultPath": "/Users/example/Vault"
-      },
-      {
-        "kind": "install-home-service",
+        "disposition": "install-or-resume",
+        "vaultPath": "/Users/example/Vault",
         "serviceLabel": "com.dome.home.vault-43ba0b40",
-        "ifMissing": true
-      },
-      {
-        "kind": "start-home",
-        "serviceLabel": "com.dome.home.vault-43ba0b40"
+        "installServiceIfMissing": true
       }
     ],
     "optionalSteps": [
@@ -1112,7 +775,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "revision": {
         "head": "1111111111111111111111111111111111111111",
-        "worktreeFingerprint": "e2bcd2e39532b44a42b4545dd536dfed9b69e6427e0927ec891077f8fab89b8a"
+        "worktreeFingerprint": "934d5787dc7b8b545fcf215aa589f5c2b8e14752411b8b631c0688a7045fceda"
       },
       "host": {
         "platform": "darwin",
@@ -1148,7 +811,8 @@ exports[`setup compiler compiles every closed classification into one exact plan
         "branch": "main"
       },
       "dome": {
-        "state": "absent"
+        "state": "absent",
+        "contentScope": "absent"
       },
       "installedHome": {
         "state": "absent",
@@ -1174,7 +838,6 @@ exports[`setup compiler compiles every closed classification into one exact plan
           ]
         }
       },
-      "actions": [],
       "blockers": [
         {
           "code": "active-git-operation",
@@ -1183,9 +846,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
         }
       ]
     },
-    "writes": [],
-    "commits": [],
-    "serviceActions": [],
+    "actions": [],
     "optionalSteps": [],
     "recoveryCommands": [
       "dome setup --dry-run \\"/Users/example/Vault\\""
@@ -1203,7 +864,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
       },
       "revision": {
         "head": "1111111111111111111111111111111111111111",
-        "worktreeFingerprint": "9e875491976149d85b338f71cb04d49c930a0635b6f5c88b1866aa95c2b53600"
+        "worktreeFingerprint": "d08571493fb5c7be4c41b254d36df53e2442bbde3d30000f366f77c1b8b276ce"
       },
       "host": {
         "platform": "darwin",
@@ -1239,7 +900,8 @@ exports[`setup compiler compiles every closed classification into one exact plan
         "branch": "main"
       },
       "dome": {
-        "state": "absent"
+        "state": "absent",
+        "contentScope": "absent"
       },
       "installedHome": {
         "state": "absent",
@@ -1265,7 +927,6 @@ exports[`setup compiler compiles every closed classification into one exact plan
           ]
         }
       },
-      "actions": [],
       "blockers": [
         {
           "code": "symlink-ambiguity",
@@ -1274,9 +935,7 @@ exports[`setup compiler compiles every closed classification into one exact plan
         }
       ]
     },
-    "writes": [],
-    "commits": [],
-    "serviceActions": [],
+    "actions": [],
     "optionalSteps": [],
     "recoveryCommands": [
       "dome setup --dry-run \\"/Users/example/Vault\\""
@@ -1291,7 +950,7 @@ exports[`setup compiler renders human and JSON forms from the same validated pla
 Vault: /Users/example/Vault
 Status: ready
 Classification: existing-non-git-vault
-Revision: no Git HEAD / 58f98aed986f36df39d4727dc565696a38796861a16f681d33e2aa3d8ccab621
+Revision: no Git HEAD / ec6d164a0532af5b793608b238883371999feeec82899a3ee8a796397d82f3df
 
 Planned actions:
 - Initialize Git at /Users/example/Vault
@@ -1300,11 +959,7 @@ Planned actions:
 - Create AGENTS.md if missing
 - Create .gitignore if missing
 - Configure Markdown scope in .dome/config.yaml
-- Baseline 1 existing Markdown file(s)
-- Install or resume packaged Dome Home
-- Select this vault for Dome Home
-- Install service com.dome.home.vault-43ba0b40 if missing
-- Start service com.dome.home.vault-43ba0b40
+- Install or resume packaged Dome Home and activate com.dome.home.vault-43ba0b40
 
 Optional after setup:
 - Optionally connect calendar or Slack sources after setup.
