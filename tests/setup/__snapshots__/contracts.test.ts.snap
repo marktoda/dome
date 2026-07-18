@@ -60,6 +60,7 @@ exports[`VaultAssessment contract every closed vault classification has an exact
       "tracked": [],
       "untracked": [],
       "proposedScope": {
+        "version": 1,
         "include": [
           "**/*.md"
         ],
@@ -118,6 +119,7 @@ exports[`VaultAssessment contract every closed vault classification has an exact
         "kind": "set-content-scope",
         "id": "vault-config",
         "scope": {
+          "version": 1,
           "include": [
             "**/*.md"
           ],
@@ -216,6 +218,7 @@ exports[`VaultAssessment contract every closed vault classification has an exact
       "tracked": [],
       "untracked": [],
       "proposedScope": {
+        "version": 1,
         "include": [
           "**/*.md"
         ],
@@ -267,6 +270,7 @@ exports[`VaultAssessment contract every closed vault classification has an exact
         "kind": "set-content-scope",
         "id": "vault-config",
         "scope": {
+          "version": 1,
           "include": [
             "**/*.md"
           ],
@@ -367,6 +371,7 @@ exports[`VaultAssessment contract every closed vault classification has an exact
         "Journal.md"
       ],
       "proposedScope": {
+        "version": 1,
         "include": [
           "**/*.md"
         ],
@@ -418,6 +423,7 @@ exports[`VaultAssessment contract every closed vault classification has an exact
         "kind": "set-content-scope",
         "id": "vault-config",
         "scope": {
+          "version": 1,
           "include": [
             "**/*.md"
           ],
@@ -526,6 +532,7 @@ exports[`VaultAssessment contract every closed vault classification has an exact
       ],
       "untracked": [],
       "proposedScope": {
+        "version": 1,
         "include": [
           "**/*.md"
         ],
@@ -571,6 +578,7 @@ exports[`VaultAssessment contract every closed vault classification has an exact
         "kind": "set-content-scope",
         "id": "vault-config",
         "scope": {
+          "version": 1,
           "include": [
             "**/*.md"
           ],
@@ -671,6 +679,7 @@ exports[`VaultAssessment contract every closed vault classification has an exact
       ],
       "untracked": [],
       "proposedScope": {
+        "version": 1,
         "include": [
           "**/*.md"
         ],
@@ -742,6 +751,7 @@ exports[`VaultAssessment contract every closed vault classification has an exact
       ],
       "untracked": [],
       "proposedScope": {
+        "version": 1,
         "include": [
           "**/*.md"
         ],
@@ -819,6 +829,7 @@ exports[`VaultAssessment contract every closed vault classification has an exact
       ],
       "untracked": [],
       "proposedScope": {
+        "version": 1,
         "include": [
           "**/*.md"
         ],
@@ -901,6 +912,7 @@ exports[`VaultAssessment contract detached and unborn Git states have exact fail
       ],
       "untracked": [],
       "proposedScope": {
+        "version": 1,
         "include": [
           "**/*.md"
         ],
@@ -978,6 +990,7 @@ exports[`VaultAssessment contract detached and unborn Git states have exact fail
       ],
       "untracked": [],
       "proposedScope": {
+        "version": 1,
         "include": [
           "**/*.md"
         ],

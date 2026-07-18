@@ -41,7 +41,7 @@ function fixture(kind: VaultAssessment["target"]["kind"]): VaultAssessment {
       {
         kind: "set-content-scope",
         id: "vault-config",
-        scope: { include: ["**/*.md"], exclude: [".dome/**"] },
+        scope: { version: 1, include: ["**/*.md"], exclude: [".dome/**"] },
         write: {
           path: ".dome/config.yaml", operation: "create-file", bytes: 128,
           sha256: FILE_HASH, mode: "0644", ifMissing: true,
@@ -98,7 +98,7 @@ function fixture(kind: VaultAssessment["target"]["kind"]): VaultAssessment {
     markdown: {
       tracked: gitPresent ? ["notes/hello.md"] : [],
       untracked: kind === "existing-non-git-vault" ? ["Journal.md"] : [],
-      proposedScope: { include: ["**/*.md"], exclude: [".dome/**"] },
+      proposedScope: { version: 1, include: ["**/*.md"], exclude: [".dome/**"] },
     },
     actions,
     blockers: kind === "incompatible-active-operation" ? [{
@@ -151,6 +151,11 @@ describe("VaultAssessment contract", () => {
       ...valid,
       markdown: { ...valid.markdown, tracked: ["z.md", "a.md"] },
     })).toThrow("sorted and unique");
+    const { version: _version, ...unversionedScope } = valid.markdown.proposedScope;
+    expect(() => validateVaultAssessment({
+      ...valid,
+      markdown: { ...valid.markdown, proposedScope: unversionedScope },
+    })).toThrow();
   });
 
   test("blocks adaptation actions whenever assessment is unsafe", () => {

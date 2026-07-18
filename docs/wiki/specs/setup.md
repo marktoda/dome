@@ -29,7 +29,7 @@ vault path. It contains:
   version, build commit, and manifest hash) is distinct from installed Home
   identity and vault-selector truth;
 - sorted tracked and untracked Markdown path inventories plus the proposed
-  content scope (the matching policy itself is specified in M4);
+  versioned content scope (the matching policy itself is specified in M4);
 - a closed, canonically ordered union of additive adaptation actions; and
 - zero or more canonically ordered blockers, each with exactly one next action.
 
@@ -86,10 +86,35 @@ content bytes and modes within the assessment budget, ignore behavior,
 symlink evidence, Dome configuration, and the Home vault selector and active
 operation evidence.
 
-The fingerprint algorithm and bounded inspector are implementation work for
-the next setup slice. Their contract is simple: equal relevant observations
-produce the same lowercase SHA-256 value, and any relevant change produces a
-different one. Apply compares both bindings and refuses a stale plan. It then
+The read-only inspector lives in `src/setup/vault-inspector.ts`. It selects a
+repository only when `.git` exists at the requested root; an ancestor
+repository is conflict evidence and is never silently adopted as the vault
+boundary. Direct Git directories and linked-worktree gitfiles are supported.
+Redirected `.git` symlinks, nested repositories, special files, hard links,
+detached or unborn history, active operations, and dirty worktrees fail
+closed with a specific blocker.
+
+The inspector validates every selected-path component and walks in byte-stable
+sorted order without following symlinks. This applies equally to an existing
+vault and to a missing leaf beneath an existing parent; an ancestor symlink is
+always ambiguity evidence, never an invitation to inspect its target.
+It hashes bounded tracked and untracked regular-file bytes and modes, exact
+symlink targets, Git index and status inventories, ignore results, direct
+`info/exclude` bytes, the linked-worktree gitfile, Dome configuration, and
+injected package or Home selector evidence. It excludes Git internals and
+`.dome/state`; ignored content bytes are deliberately not read, while their
+paths and ignore behavior remain bound. Entry, file, total-content, command,
+and command-time budgets fail closed rather than silently truncating evidence.
+Equal relevant observations produce the same lowercase SHA-256 value, and a
+relevant change produces a different one.
+
+Package, prerequisite, and installed-Home discovery remain separate injected
+adapters. Git subprocesses run with prompts, optional locks, hooks, filesystem
+monitors, and pagers disabled; the fixed command inventory cannot invoke a
+credential or network operation. The vault inspector does not read
+credentials, call a model, access the network, open the Dome runtime, or
+modify Git, files, services, or durable state. Apply compares both revision
+bindings and refuses a stale plan. It then
 returns a freshly assessed plan; it never applies actions inferred from the
 stale value.
 
@@ -124,7 +149,9 @@ The validator cross-checks exact scaffold writes, the baseline commit, and
 Home service actions against their assessment actions. Content scope owns the
 one exact `vault-config` write: its path, create-or-merge operation, bytes,
 hash, mode, and missing-file behavior are bound in the assessment and must be
-identical in the plan. A plan cannot express a second config write or two
+identical in the plan. `ContentScopeConfig.version` is the literal `1`, so a
+future matching-language change cannot silently reinterpret an accepted
+setup payload. A plan cannot express a second config write or two
 writes to the same path. Whenever writes apply, one configuration commit must
 name exactly those paths—never an unrelated owner file.
 

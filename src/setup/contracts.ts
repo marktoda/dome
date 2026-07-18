@@ -75,9 +75,11 @@ function sortedUnique<T extends z.ZodType<string>>(item: T) {
 }
 
 const contentScopeSchema = z.object({
+  version: z.literal(1),
   include: sortedUnique(scopeGlob).min(1).max(SETUP_CONTRACT_CAPS.scopeGlobs),
   exclude: sortedUnique(scopeGlob).max(SETUP_CONTRACT_CAPS.scopeGlobs),
 }).strict();
+export type ContentScopeConfig = z.infer<typeof contentScopeSchema>;
 
 const scaffoldFileId = z.enum(["gitignore", "agents-orientation"]);
 const scaffoldDirectoryId = z.enum(["dome-directory", "dome-state-directory"]);

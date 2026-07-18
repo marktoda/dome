@@ -1,0 +1,262 @@
+import { afterEach, describe, expect, test } from "bun:test";
+import { chmod, mkdir, mkdtemp, realpath, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { inspectSetupVaultSource } from "../../src/setup/vault-inspector";
+
+const temporaryRoots: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(temporaryRoots.splice(0).map((path) => rm(path, { recursive: true, force: true })));
+});
+
+describe("read-only setup vault inspector", () => {
+  test("classifies new, empty, and existing non-Git paths without creating state", async () => {
+    const root = await temporary();
+    const missing = join(root, "missing");
+    const empty = join(root, "empty");
+    const existing = join(root, "existing");
+    await mkdir(empty);
+    await mkdir(existing);
+    await writeFile(join(existing, "Note.md"), "# Existing\n");
+
+    expect((await inspectSetupVaultSource(missing)).kind).toBe("new-path");
+    expect((await inspectSetupVaultSource(empty)).kind).toBe("empty-directory");
+    const inspected = await inspectSetupVaultSource(existing);
+    expect(inspected.kind).toBe("existing-non-git-vault");
+    expect(inspected.markdown).toEqual({ tracked: [], untracked: ["Note.md"] });
+  });
+
+  test("uses only a direct repository boundary and blocks an ancestor repository", async () => {
+    const root = await gitFixture();
+    const direct = await inspectSetupVaultSource(root);
+    expect(direct.git.direct).toBe(true);
+    expect(direct.kind).toBe("existing-git-vault");
+
+    const child = join(root, "NestedVault");
+    await mkdir(child);
+    await writeFile(join(child, "Nested.md"), "# Nested\n");
+
+    const nested = await inspectSetupVaultSource(child);
+    expect(nested.git.direct).toBe(false);
+    expect(nested.git.ancestorRoot).toBe(root);
+    expect(nested.kind).toBe("unsafe-or-ambiguous-state");
+    expect(nested.blockers.map((blocker) => blocker.code)).toEqual(["unsafe-path"]);
+  });
+
+  test("recognizes a clean configured Dome vault without opening its runtime", async () => {
+    const root = await gitFixture();
+    await mkdir(join(root, ".dome"));
+    await writeFile(join(root, ".dome", "config.yaml"), "grants: standard\n");
+    await git(root, "add", ".dome/config.yaml");
+    await git(root, "commit", "-m", "Configure Dome");
+
+    const inspected = await inspectSetupVaultSource(root);
+    expect(inspected.kind).toBe("existing-dome-vault");
+    expect(inspected.dome.state).toBe("configured");
+    expect(inspected.blockers).toEqual([]);
+  });
+
+  test("accepts a direct linked worktree without adopting its owner repository", async () => {
+    const owner = await gitFixture();
+    const linked = `${owner}-linked`;
+    temporaryRoots.push(linked);
+    await git(owner, "worktree", "add", "-b", "linked", linked);
+
+    const inspected = await inspectSetupVaultSource(linked);
+    expect(inspected.git.direct).toBe(true);
+    expect(inspected.git.ancestorRoot).toBeNull();
+    expect(inspected.git.branch).toBe("linked");
+    expect(inspected.kind).toBe("existing-git-vault");
+    expect(inspected.blockers).toEqual([]);
+  });
+
+  test("is deterministic and changes for tracked worktree bytes", async () => {
+    const root = await gitFixture();
+    const first = await inspectSetupVaultSource(root);
+    const repeated = await inspectSetupVaultSource(root);
+    expect(repeated).toEqual(first);
+
+    await writeFile(join(root, "README.md"), "# Changed\n");
+    const changed = await inspectSetupVaultSource(root);
+    expect(changed.worktreeFingerprint).not.toBe(first.worktreeFingerprint);
+    expect(changed.git.state).toBe("dirty");
+    expect(changed.blockers.map((blocker) => blocker.code)).toEqual(["dirty-worktree"]);
+  });
+
+  test("changes for untracked bytes while keeping Markdown inventory exact", async () => {
+    const root = await gitFixture();
+    await writeFile(join(root, "Scratch.md"), "one\n");
+    const first = await inspectSetupVaultSource(root);
+    expect(first.markdown.untracked).toEqual(["Scratch.md"]);
+
+    await writeFile(join(root, "Scratch.md"), "two\n");
+    const changed = await inspectSetupVaultSource(root);
+    expect(changed.worktreeFingerprint).not.toBe(first.worktreeFingerprint);
+    expect(changed.markdown.untracked).toEqual(["Scratch.md"]);
+  });
+
+  test("binds ignore behavior and direct info/exclude bytes", async () => {
+    const root = await gitFixture();
+    await writeFile(join(root, "Secret.md"), "ignored owner content\n");
+    await writeFile(join(root, ".git", "info", "exclude"), "Secret.md\n");
+    const ignored = await inspectSetupVaultSource(root);
+    expect(ignored.markdown.untracked).toEqual([]);
+
+    await writeFile(join(root, ".git", "info", "exclude"), "Other.md\n");
+    const visible = await inspectSetupVaultSource(root);
+    expect(visible.worktreeFingerprint).not.toBe(ignored.worktreeFingerprint);
+    expect(visible.markdown.untracked).toEqual(["Secret.md"]);
+  });
+
+  test("never follows symlinks and fingerprints their exact targets", async () => {
+    const root = await temporary();
+    await writeFile(join(root, "A.md"), "A\n");
+    await writeFile(join(root, "B.md"), "B\n");
+    await symlink("A.md", join(root, "Pointer.md"));
+    const first = await inspectSetupVaultSource(root);
+    expect(first.blockers.map((blocker) => blocker.code)).toEqual(["symlink-ambiguity"]);
+
+    await unlink(join(root, "Pointer.md"));
+    await symlink("B.md", join(root, "Pointer.md"));
+    const changed = await inspectSetupVaultSource(root);
+    expect(changed.worktreeFingerprint).not.toBe(first.worktreeFingerprint);
+    expect(changed.kind).toBe("unsafe-or-ambiguous-state");
+  });
+
+  test("rejects existing and missing vaults beneath a symlinked ancestor", async () => {
+    const root = await temporary();
+    const direct = join(root, "direct");
+    const redirected = join(root, "redirected");
+    await mkdir(direct);
+    await mkdir(join(direct, "existing"));
+    await symlink(direct, redirected);
+
+    let redirectedExisting: Awaited<ReturnType<typeof inspectSetupVaultSource>> | undefined;
+    for (const target of [join(redirected, "existing"), join(redirected, "missing")]) {
+      const inspected = await inspectSetupVaultSource(target);
+      if (target.endsWith("/existing")) redirectedExisting = inspected;
+      expect(inspected.targetPath).toBe(target);
+      expect(inspected.kind).toBe("unsafe-or-ambiguous-state");
+      expect(inspected.blockers.map((blocker) => blocker.code)).toEqual(["symlink-ambiguity"]);
+    }
+
+    await unlink(redirected);
+    await mkdir(join(redirected, "existing"), { recursive: true });
+    const directExisting = await inspectSetupVaultSource(join(redirected, "existing"));
+    expect(directExisting.kind).toBe("empty-directory");
+    expect(directExisting.worktreeFingerprint).not.toBe(redirectedExisting?.worktreeFingerprint);
+  });
+
+  test("rejects a redirected direct .git entry", async () => {
+    const root = await temporary();
+    const gitDir = join(root, "git-data");
+    const vault = join(root, "vault");
+    await mkdir(gitDir);
+    await mkdir(vault);
+    await symlink(gitDir, join(vault, ".git"));
+
+    const inspected = await inspectSetupVaultSource(vault);
+    expect(inspected.git.state).toBe("ambiguous");
+    expect(inspected.kind).toBe("unsafe-or-ambiguous-state");
+    expect(inspected.blockers.map((blocker) => blocker.code)).toEqual(["ambiguous-state"]);
+  });
+
+  test("fails closed for active Git operations", async () => {
+    const root = await gitFixture();
+    await mkdir(join(root, ".git", "rebase-merge"));
+    const inspected = await inspectSetupVaultSource(root);
+    expect(inspected.git.state).toBe("operation-active");
+    expect(inspected.git.operationMarkers).toContain("rebase-merge");
+    expect(inspected.kind).toBe("incompatible-active-operation");
+    expect(inspected.blockers.map((blocker) => blocker.code)).toEqual(["active-git-operation"]);
+  });
+
+  test("distinguishes detached and unborn repositories", async () => {
+    const detachedRoot = await gitFixture();
+    await git(detachedRoot, "checkout", "--detach", "--quiet");
+    const detached = await inspectSetupVaultSource(detachedRoot);
+    expect(detached.git.state).toBe("detached");
+    expect(detached.git.head).toMatch(/^[0-9a-f]{40}$/);
+    expect(detached.git.branch).toBeNull();
+    expect(detached.blockers.map((blocker) => blocker.code)).toEqual(["detached-head"]);
+
+    const unbornRoot = await temporary();
+    await git(unbornRoot, "init", "-b", "main");
+    const unborn = await inspectSetupVaultSource(unbornRoot);
+    expect(unborn.git.state).toBe("unborn");
+    expect(unborn.git.head).toBeNull();
+    expect(unborn.git.branch).toBe("main");
+    expect(unborn.blockers.map((blocker) => blocker.code)).toEqual(["unborn-repository"]);
+  });
+
+  test("blocks bounded inventories instead of reading oversized content", async () => {
+    const root = await temporary();
+    await writeFile(join(root, "large.bin"), Buffer.alloc(32, 1));
+    const inspected = await inspectSetupVaultSource(root, {
+      caps: { fileBytes: 8, totalBytes: 16 },
+    });
+    expect(inspected.kind).toBe("unsafe-or-ambiguous-state");
+    expect(inspected.blockers.map((blocker) => blocker.code)).toEqual(["unsafe-path"]);
+  });
+
+  test("does not invoke a configured Git filesystem monitor", async () => {
+    const root = await gitFixture();
+    const marker = join(root, ".git", "fsmonitor-ran");
+    const monitor = join(root, ".git", "hostile-fsmonitor.sh");
+    await writeFile(monitor, `#!/bin/sh\ntouch '${marker}'\n`);
+    await chmod(monitor, 0o755);
+    await git(root, "config", "core.fsmonitor", monitor);
+
+    const inspected = await inspectSetupVaultSource(root);
+    expect(inspected.kind).toBe("existing-git-vault");
+    expect(await Bun.file(marker).exists()).toBe(false);
+  });
+
+  test("binds injected package or Home selector evidence without inspecting it", async () => {
+    const root = await temporary();
+    const first = await inspectSetupVaultSource(root, {
+      externalFingerprintEvidence: [{ id: "home.selector", sha256: "1".repeat(64) }],
+    });
+    const repeated = await inspectSetupVaultSource(root, {
+      externalFingerprintEvidence: [{ id: "home.selector", sha256: "1".repeat(64) }],
+    });
+    const changed = await inspectSetupVaultSource(root, {
+      externalFingerprintEvidence: [{ id: "home.selector", sha256: "2".repeat(64) }],
+    });
+    expect(repeated.worktreeFingerprint).toBe(first.worktreeFingerprint);
+    expect(changed.worktreeFingerprint).not.toBe(first.worktreeFingerprint);
+  });
+});
+
+async function temporary(): Promise<string> {
+  const path = await realpath(await mkdtemp(join(tmpdir(), "dome-setup-inspector-")));
+  temporaryRoots.push(path);
+  return path;
+}
+
+async function gitFixture(): Promise<string> {
+  const root = await temporary();
+  await git(root, "init", "-b", "main");
+  await git(root, "config", "user.name", "Dome Tests");
+  await git(root, "config", "user.email", "dome-tests@example.invalid");
+  await writeFile(join(root, "README.md"), "# Vault\n");
+  await git(root, "add", "README.md");
+  await git(root, "commit", "-m", "Initialize vault");
+  return root;
+}
+
+async function git(cwd: string, ...args: string[]): Promise<string> {
+  const process = Bun.spawn(["git", "-c", "commit.gpgsign=false", ...args], {
+    cwd,
+    env: { ...globalThis.process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_TERMINAL_PROMPT: "0" },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(process.stdout).text(), new Response(process.stderr).text(), process.exited,
+  ]);
+  if (exitCode !== 0) throw new Error(`git ${args.join(" ")} failed: ${stderr}`);
+  return stdout.trim();
+}
