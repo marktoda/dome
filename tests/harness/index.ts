@@ -14,6 +14,7 @@
 import { test } from "bun:test";
 
 import { HarnessImpl } from "./harness";
+import { scheduleScenarioDeadlineDiagnostic } from "./activity";
 import type {
   ScenarioBody,
   ScenarioRegistryEntry,
@@ -42,23 +43,41 @@ export function enableScenarioCatalogOnlyMode(): void {
  * Register a scenario and wrap it as a `bun:test` `test()` call.
  *
  * The body receives a fresh Harness. Cleanup runs in a `finally` so the
- * tmpdir + open DB handles are released even when the body throws.
+ * tmpdir + open DB handles are released even when the body throws. One
+ * diagnostic-only timer reports the currently awaited Harness owner shortly
+ * before Bun's unchanged scenario deadline; it never cancels or retries work.
  */
 export function scenario(spec: ScenarioSpec, body: ScenarioBody): void {
   SCENARIO_REGISTRY.push({ spec });
   if (catalogOnly) return;
 
   const runner = spec.skip !== undefined ? test.skip : test;
+  const timeoutMs = spec.timeoutMs ?? DEFAULT_SCENARIO_TIMEOUT_MS;
   const handler = async (): Promise<void> => {
-    const h = await HarnessImpl.create(spec.harness ?? {});
+    let h: HarnessImpl | null = null;
+    const cancelDeadlineDiagnostic = scheduleScenarioDeadlineDiagnostic({
+      scenarioName: spec.name,
+      timeoutMs,
+      activity: () => h === null
+        ? Object.freeze({
+          operation: "harness creation",
+          phase: "initialize fixture",
+        })
+        : h.deadlineActivity(),
+    });
     try {
+      h = await HarnessImpl.create(spec.harness ?? {});
       await body(h);
     } finally {
-      await h.cleanup();
+      try {
+        await h?.cleanup();
+      } finally {
+        cancelDeadlineDiagnostic();
+      }
     }
   };
 
-  runner(spec.name, handler, spec.timeoutMs ?? DEFAULT_SCENARIO_TIMEOUT_MS);
+  runner(spec.name, handler, timeoutMs);
 }
 
 /** Read-only access to the registry; consumed by the isolated catalog collector. */

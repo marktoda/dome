@@ -66,6 +66,7 @@ import { OutboxMatcherImpl } from "./assertions/outbox";
 import { ProjectionMatcherImpl } from "./assertions/projection";
 import { RefMatcherImpl } from "./assertions/refs";
 import { runAllAlwaysTrue } from "./assertions/always-true";
+import { HarnessActivity, type HarnessActivitySnapshot } from "./activity";
 import { TestClock } from "./test-clock";
 import type {
   BundleSpec,
@@ -110,6 +111,7 @@ export class HarnessImpl implements Harness {
   private readonly modelProvider: ModelProvider | undefined;
   private snapshotRefs: { head: string | null; adopted: string | null };
   private rewroteHistory = false;
+  private readonly activity = new HarnessActivity();
   readonly refs: RefsView;
   readonly git: GitView;
 
@@ -229,24 +231,37 @@ export class HarnessImpl implements Harness {
     return harness;
   }
 
+  /** Diagnostic-only ownership snapshot for the scenario deadline reporter. */
+  deadlineActivity(): HarnessActivitySnapshot | null {
+    return this.activity.snapshot();
+  }
+
   async cleanup(): Promise<void> {
+    const activity = this.activity.begin("harness cleanup", "close runtime");
     try {
       await this.runtime.close();
     } catch {
       // Best-effort close — a double-close from a prior cleanup-on-throw
       // is non-fatal.
     }
+    this.activity.advance(activity, "remove temporary vault");
     try {
       await rm(this.vaultPath, { recursive: true, force: true });
     } catch {
       // Best-effort rm. Tmpdir-scoped paths are auto-cleaned by the OS.
     }
+    this.activity.end(activity);
   }
 
   // ----- User moves --------------------------------------------------------
 
   async userCommit(input: UserCommitInput): Promise<CommitOid> {
+    const activity = this.activity.begin(
+      `userCommit(${input.message})`,
+      "snapshot vault",
+    );
     await this.snapshot();
+    this.activity.advance(activity, "write owner files");
     for (const [p, content] of Object.entries(input.files)) {
       const full = join(this.vaultPath, p);
       if (content === null) {
@@ -263,6 +278,7 @@ export class HarnessImpl implements Harness {
     }
     const author = input.author ?? DEFAULT_AUTHOR;
     const committer = input.committer ?? author;
+    this.activity.advance(activity, "publish Git commit");
     const sha = await gitCommit({
       path: this.vaultPath,
       message: input.message,
@@ -270,7 +286,9 @@ export class HarnessImpl implements Harness {
       author,
       committer,
     });
+    this.activity.advance(activity, "check always-true invariants");
     await runAllAlwaysTrue(this, `userCommit("${input.message}")`);
+    this.activity.end(activity);
     return commitOid(sha);
   }
 
@@ -334,7 +352,9 @@ export class HarnessImpl implements Harness {
   // ----- Daemon / engine moves --------------------------------------------
 
   async tick(): Promise<TickResult> {
+    const activity = this.activity.begin("tick", "snapshot vault");
     await this.snapshot();
+    this.activity.advance(activity, "detect Git drift");
     const drift = await detectDrift(this.vaultPath);
     if (
       drift.kind === "detached-head" ||
@@ -343,6 +363,7 @@ export class HarnessImpl implements Harness {
     ) {
       throw new Error(`harness.tick: unworkable state '${drift.kind}'`);
     }
+    this.activity.advance(activity, "run compiler host");
     const tick = await runCompilerHostTick({
       runtime: this.runtime,
       drift,
@@ -358,8 +379,10 @@ export class HarnessImpl implements Harness {
     if (tick.kind === "busy") {
       throw new Error(`harness.tick: compiler host busy for '${tick.branch}'`);
     }
+    this.activity.advance(activity, "check always-true invariants");
     if (tick.kind === "in-sync") {
       await runAllAlwaysTrue(this, "tick (in-sync operational drain)");
+      this.activity.end(activity);
       return {
         hadDrift: false,
         diagnosticCount: tick.operational?.diagnostics.length ?? 0,
@@ -375,6 +398,7 @@ export class HarnessImpl implements Harness {
       this,
       `tick (${adoptedBefore.slice(0, 7)}..${adoptedTargetBefore.slice(0, 7)})`,
     );
+    this.activity.end(activity);
     return {
       hadDrift: true,
       adoptedBefore,
@@ -550,6 +574,10 @@ export class HarnessImpl implements Harness {
     readonly stdout: string;
     readonly stderr: string;
   }> {
+    const activity = this.activity.begin(
+      `runCli(${args.join(" ")})`,
+      "snapshot vault",
+    );
     await this.snapshot();
     // Close the harness's runtime before invoking the CLI command — the
     // command opens its own VaultRuntime against the same SQLite files,
@@ -557,6 +585,7 @@ export class HarnessImpl implements Harness {
     // subtle corruption we'd rather not debug. SQLite's
     // `sqlite3_close_v2` is idempotent so a double-close on cleanup is
     // safe.
+    this.activity.advance(activity, "close harness runtime");
     await this.runtime.close();
 
     // Capture console output. `runCli` writes via `console.log` /
@@ -587,6 +616,7 @@ export class HarnessImpl implements Harness {
         "--bundles-root",
         join(this.vaultPath, ".dome", "extensions"),
       ];
+      this.activity.advance(activity, "dispatch CLI command");
       exitCode = await runCliDispatch(fullArgs);
     } finally {
       console.log = origLog;
@@ -594,10 +624,13 @@ export class HarnessImpl implements Harness {
       // Reopen the harness's runtime so subsequent matchers see the
       // post-command state. The command may have written rows to the
       // projection / ledger; reopening picks up the new SQLite state.
+      this.activity.advance(activity, "reopen harness runtime");
       this.runtime = await openRuntime(this.vaultPath, this.modelProvider);
     }
 
+    this.activity.advance(activity, "check always-true invariants");
     await runAllAlwaysTrue(this, `runCli([${args.join(" ")}])`);
+    this.activity.end(activity);
 
     return {
       exitCode,
