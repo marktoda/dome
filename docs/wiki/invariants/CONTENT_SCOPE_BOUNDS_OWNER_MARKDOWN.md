@@ -30,9 +30,9 @@ turning layout policy into processor authority.
 ContentScope membership implementation. It canonicalizes paths through the
 shared VaultPath constructor, gates lowercase Markdown, applies the private
 floor and exclusions before includes, and returns a deterministic selection.
-It imports only Zod plus the neutral path and glob primitives. The matcher
-cache exists once at `src/core/glob-match.ts`; the prior engine path is only a
-compatibility re-export.
+It imports only Node's trap-free Proxy detector, Zod, and the neutral path and
+glob primitives. The matcher cache exists once at `src/core/glob-match.ts`;
+the prior engine path is only a compatibility re-export.
 
 The invariant test proves the non-overridable floors and structurally fences
 the policy Module from engine, capability, filesystem, and Git imports. The

@@ -37,11 +37,20 @@ contracts are lexically sorted and duplicate-free. The ergonomic constructor
 accepts unordered duplicates and returns the canonical sorted, de-duplicated,
 recursively frozen value. Invalid input returns structured validation errors;
 it does not throw. Raw array lengths are checked before any element is
-validated, and at most 16 validation errors are returned, so hostile payloads
-cannot amplify validation work or diagnostics beyond the contract budgets.
+validated, and at most 16 validation errors are returned, so pattern/element
+validation and diagnostics cannot amplify beyond the contract budgets.
 Validation compiles a passive snapshot from already-inspected data
 descriptors; accessor-backed fields/elements are refused, and neither Zod nor
 canonicalization rereads the caller's object or arrays.
+
+JavaScript `Proxy` inputs are rejected through `node:util.types.isProxy`
+before any property, descriptor, or own-key trap can run. For non-Proxy plain
+objects and arrays, unknown **enumerable string keys** are rejected using one
+`Object.keys` pass. That pass is necessarily linear in the raw submitted key
+count; the contract makes no constant-work claim for an arbitrarily wide
+plain object. Non-enumerable and symbol metadata is ignored and never copied.
+This preserves strict unknown-field rejection for the canonical JSON/YAML
+shape without bulk descriptor enumeration.
 
 Globs are non-empty, vault-relative POSIX patterns of at most **8,192
 characters per glob**, interpreted by `Bun.Glob`. Absolute patterns,

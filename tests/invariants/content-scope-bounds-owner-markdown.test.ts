@@ -40,6 +40,6 @@ describe("CONTENT_SCOPE_BOUNDS_OWNER_MARKDOWN lockstep", () => {
   test("the pure policy module imports no engine, capability, filesystem, or Git machinery", async () => {
     const source = await readFile(join(REPO_ROOT, "src", "core", "content-scope.ts"), "utf8");
     const imports = [...source.matchAll(/from\s+["']([^"']+)["']/g)].map((match) => match[1]);
-    expect(imports).toEqual(["zod", "./glob-match", "./vault-path"]);
+    expect(imports).toEqual(["node:util", "zod", "./glob-match", "./vault-path"]);
   });
 });

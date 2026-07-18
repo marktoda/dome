@@ -4,6 +4,7 @@
 // Git, or authorize reads/writes. Callers supply candidate path strings; the
 // module validates one scope and returns a canonical, deterministic selection.
 
+import { types as utilTypes } from "node:util";
 import { z } from "zod";
 import { globMatch } from "./glob-match";
 import { canonicalVaultPath, type VaultPath } from "./vault-path";
@@ -213,29 +214,35 @@ function snapshotRawContentScope(input: unknown): RawContentScopeSnapshotResult 
     if (typeof input !== "object" || input === null) {
       return Object.freeze({ ok: true, value: input });
     }
+    if (utilTypes.isProxy(input)) return invalidRawContentScope("must not be a Proxy");
     if (Array.isArray(input)) return invalidRawContentScope("must be a plain data object");
 
     const prototype = Object.getPrototypeOf(input);
     if (prototype !== Object.prototype && prototype !== null) {
       return invalidRawContentScope("must be a plain data object");
     }
-    const descriptors = Object.getOwnPropertyDescriptors(input) as unknown as
-      Record<PropertyKey, PropertyDescriptor>;
-    const ownKeys = Reflect.ownKeys(descriptors);
-    if (ownKeys.some((key) => typeof key !== "string" || !["version", "include", "exclude"].includes(key))) {
+    const enumerableKeys = Object.keys(input);
+    if (enumerableKeys.some((key) => !["version", "include", "exclude"].includes(key))) {
       return invalidRawContentScope("must contain only version, include, and exclude");
-    }
-    if (Object.values(descriptors).some((descriptor) => descriptor.get !== undefined || descriptor.set !== undefined)) {
-      return invalidRawContentScope("must contain data properties only");
     }
 
     const errors: ContentScopeValidationError[] = [];
     const snapshot: Record<string, unknown> = {};
-    const version = descriptors.version;
-    if (version !== undefined) snapshot.version = version.value;
-    for (const key of ["include", "exclude"] as const) {
-      const descriptor = descriptors[key];
+    for (const key of ["version", "include", "exclude"] as const) {
+      const descriptor = Object.getOwnPropertyDescriptor(input, key);
       if (descriptor === undefined) continue;
+      if (!descriptor.enumerable || descriptor.get !== undefined || descriptor.set !== undefined) {
+        errors.push({
+          code: "invalid-shape",
+          path: key,
+          message: "must be an enumerable data property",
+        });
+        continue;
+      }
+      if (key === "version") {
+        snapshot.version = descriptor.value;
+        continue;
+      }
       if (!Array.isArray(descriptor.value)) {
         errors.push({
           code: "invalid-shape",
@@ -266,6 +273,7 @@ type PassiveArrayResult =
 
 function snapshotPassiveArray(input: unknown[], path: "include" | "exclude"): PassiveArrayResult {
   try {
+    if (utilTypes.isProxy(input)) return invalidPassiveArray(path, "must not be a Proxy");
     const lengthDescriptor = Object.getOwnPropertyDescriptor(input, "length");
     const length = lengthDescriptor?.value;
     if (!Number.isSafeInteger(length) || length < 0) {
@@ -282,19 +290,14 @@ function snapshotPassiveArray(input: unknown[], path: "include" | "exclude"): Pa
       });
     }
 
-    const descriptors = Object.getOwnPropertyDescriptors(input) as unknown as
-      Record<PropertyKey, PropertyDescriptor>;
-    if (descriptors.length?.value !== length) {
-      return invalidPassiveArray(path, "changed while it was inspected");
-    }
-    const allowedKeys = new Set(["length", ...Array.from({ length }, (_, index) => String(index))]);
-    if (Reflect.ownKeys(descriptors).some((key) => typeof key !== "string" || !allowedKeys.has(key))) {
+    const enumerableKeys = Object.keys(input);
+    if (enumerableKeys.some((key) => !isBoundedArrayIndex(key, length))) {
       return invalidPassiveArray(path, "must contain indexed elements only");
     }
 
     const snapshot: unknown[] = [];
     for (let index = 0; index < length; index += 1) {
-      const descriptor = descriptors[String(index)];
+      const descriptor = Object.getOwnPropertyDescriptor(input, String(index));
       if (descriptor === undefined) {
         snapshot.push(undefined);
       } else if (descriptor.get !== undefined || descriptor.set !== undefined) {
@@ -307,6 +310,12 @@ function snapshotPassiveArray(input: unknown[], path: "include" | "exclude"): Pa
   } catch {
     return invalidPassiveArray(path, "must be an inspectable data array");
   }
+}
+
+function isBoundedArrayIndex(key: string, length: number): boolean {
+  if (!/^(?:0|[1-9]\d*)$/.test(key)) return false;
+  const index = Number(key);
+  return Number.isSafeInteger(index) && index >= 0 && index < length;
 }
 
 function invalidPassiveArray(

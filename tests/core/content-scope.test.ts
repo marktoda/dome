@@ -102,16 +102,7 @@ describe("ContentScope contract", () => {
   });
 
   test("preflights hostile arrays before element validation and bounds all returned errors", () => {
-    let elementReads = 0;
-    const malformed = new Proxy(
-      Array.from({ length: 1_000 }, (_, index) => `bad\\${index}`),
-      {
-        get(target, property, receiver) {
-          if (property !== "length") elementReads += 1;
-          return Reflect.get(target, property, receiver);
-        },
-      },
-    );
+    const malformed = Array.from({ length: 1_000 }, (_, index) => `bad\\${index}`);
     const result = defineContentScope({ version: 1, include: malformed, exclude: malformed });
     expect(result).toMatchObject({
       ok: false,
@@ -120,13 +111,11 @@ describe("ContentScope contract", () => {
         { code: "too-many-globs", path: "exclude" },
       ],
     });
-    expect(elementReads).toBe(0);
     expect(canonicalContentScopeSchema.safeParse({
       version: 1,
       include: malformed,
       exclude: malformed,
     }).error?.issues).toHaveLength(2);
-    expect(elementReads).toBe(0);
 
     const boundedMalformed = Array.from(
       { length: CONTENT_SCOPE_MAX_GLOBS },
@@ -159,22 +148,30 @@ describe("ContentScope contract", () => {
   });
 
   test("validates only passive descriptor snapshots for outer proxies and array elements", () => {
-    let objectGetCalls = 0;
+    let objectTrapCalls = 0;
     const trappedObject = new Proxy(
       { version: 1, include: ["**/*.md"], exclude: [] },
       {
         get() {
-          objectGetCalls += 1;
+          objectTrapCalls += 1;
           throw new Error("outer get trap must not run");
+        },
+        getOwnPropertyDescriptor() {
+          objectTrapCalls += 1;
+          throw new Error("outer descriptor trap must not run");
+        },
+        ownKeys() {
+          objectTrapCalls += 1;
+          throw new Error("outer ownKeys trap must not run");
         },
       },
     );
     expect(defineContentScope(trappedObject)).toMatchObject({
-      ok: true,
-      scope: { version: 1, include: ["**/*.md"], exclude: [] },
+      ok: false,
+      errors: [{ code: "invalid-shape" }],
     });
-    expect(canonicalContentScopeSchema.safeParse(trappedObject).success).toBe(true);
-    expect(objectGetCalls).toBe(0);
+    expect(canonicalContentScopeSchema.safeParse(trappedObject).success).toBe(false);
+    expect(objectTrapCalls).toBe(0);
 
     let elementGetterCalls = 0;
     const activeArray = ["placeholder"];
@@ -193,6 +190,51 @@ describe("ContentScope contract", () => {
     });
     expect(canonicalContentScopeSchema.safeParse(activeElement).success).toBe(false);
     expect(elementGetterCalls).toBe(0);
+  });
+
+  test("rejects a 100k-key array Proxy before any hostile trap and bounds plain extra-key errors", () => {
+    let proxyTrapCalls = 0;
+    const virtualKeys = Array.from({ length: 100_000 }, (_, index) => String(index));
+    const lyingArray = new Proxy([], {
+      get(target, property, receiver) {
+        proxyTrapCalls += 1;
+        if (property === "length") return 1;
+        return Reflect.get(target, property, receiver);
+      },
+      getOwnPropertyDescriptor(target, property) {
+        proxyTrapCalls += 1;
+        if (property === "length") return Reflect.getOwnPropertyDescriptor(target, property);
+        return { configurable: true, enumerable: true, value: "bad\\glob", writable: true };
+      },
+      ownKeys() {
+        proxyTrapCalls += 1;
+        return ["length", ...virtualKeys];
+      },
+    });
+    const proxyInput = { version: 1, include: lyingArray, exclude: [] };
+    expect(defineContentScope(proxyInput)).toMatchObject({
+      ok: false,
+      errors: [{ code: "invalid-shape", path: "include" }],
+    });
+    expect(canonicalContentScopeSchema.safeParse(proxyInput).success).toBe(false);
+    expect(proxyTrapCalls).toBe(0);
+
+    const extraKeys: Record<string, unknown> = {
+      version: 1,
+      include: ["**/*.md"],
+      exclude: [],
+    };
+    for (let index = 0; index < 100_000; index += 1) extraKeys[`extra-${index}`] = index;
+    const extraResult = defineContentScope(extraKeys);
+    expect(extraResult).toMatchObject({
+      ok: false,
+      errors: [{ code: "invalid-shape", path: "$" }],
+    });
+    if (!extraResult.ok) {
+      expect(extraResult.errors).toHaveLength(1);
+      expect(Object.isFrozen(extraResult.errors)).toBe(true);
+    }
+    expect(canonicalContentScopeSchema.safeParse(extraKeys).error?.issues).toHaveLength(1);
   });
 });
 
