@@ -19,7 +19,6 @@ import {
   type OpenVaultError,
   type Vault,
 } from "../vault";
-import type { OpenVaultRuntimeError } from "../engine/host/vault-runtime";
 import type { DiagnosticEffect } from "../core/effect";
 import type { FirstPartyViewEntry } from "./view-catalog";
 
@@ -36,6 +35,11 @@ export type RuntimeOpenFailureInfo = {
   readonly errorDetail?: string | undefined;
 };
 
+type RuntimeOpenFailure = Extract<
+  OpenVaultError,
+  { readonly kind: "runtime-open-failed" }
+>["cause"];
+
 /**
  * Preserve the capability-policy operator detail without exposing arbitrary
  * nested runtime errors. The runtime closes rich parser failures through the
@@ -43,7 +47,7 @@ export type RuntimeOpenFailureInfo = {
  * other failure intentionally remains kind-only.
  */
 export function runtimeOpenFailureInfo(
-  error: OpenVaultRuntimeError,
+  error: RuntimeOpenFailure,
 ): RuntimeOpenFailureInfo {
   return error.kind === "capability-policy-load-failed"
     ? Object.freeze({ errorKind: error.kind, errorDetail: error.cause })

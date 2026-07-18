@@ -622,6 +622,11 @@ both the CLI's `--json` mode and the MCP tools emit. The layer's contract:
 - **One collector per verb; no parallel serialization.** A new consumer
   surface wraps these modules the way `src/mcp/server.ts` does; it does not
   re-derive the documents from the runtime.
+- **Public-wrapper lifecycle stays public.** `src/surface/adapter.ts` owns the
+  shared open-use-close lifecycle and derives runtime failure information from
+  the public `OpenVaultError`; it never imports `src/engine/host/` directly.
+  Runtime-aware operator collectors such as status and check may still open
+  host internals because reporting those internals is their explicit contract.
 - **Dependency direction:** adapters (`src/cli/`, `src/mcp/`) import
   `src/surface/`; `src/surface/` imports the engine/store layers and never
   imports an adapter.

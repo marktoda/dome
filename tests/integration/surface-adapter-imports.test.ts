@@ -11,6 +11,8 @@
 //      CLI's static graph adapter-free).
 //   3. The surface layer is below adapters — nothing under src/surface/
 //      imports src/cli/, src/mcp/, or src/http/.
+//   4. Shared public-Vault adapter plumbing stays on the public wrapper seam —
+//      src/surface/adapter.ts never reaches through it into engine/host.
 
 import { Glob } from "bun";
 import { describe, expect, test } from "bun:test";
@@ -72,6 +74,12 @@ const RULES: ReadonlyArray<Rule> = [
     name: "src/surface must not import src/http",
     fromGlob: "src/surface/**/*.ts",
     forbiddenPrefix: "src/http/",
+    exemptFiles: new Set(),
+  },
+  {
+    name: "src/surface/adapter must not bypass the public Vault wrapper",
+    fromGlob: "src/surface/adapter.ts",
+    forbiddenPrefix: "src/engine/host/",
     exemptFiles: new Set(),
   },
   {
