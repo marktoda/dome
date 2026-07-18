@@ -65,7 +65,16 @@ export type InspectSetupVaultOptions = Readonly<{
   caps?: Partial<SetupVaultInspectionCaps> | undefined;
   externalFingerprintEvidence?: ReadonlyArray<SetupFingerprintEvidence> | undefined;
   runGit?: SetupGitRunner | undefined;
+  proofCheckpoint?: ((phase: SetupInspectionProofPhase) => Promise<void>) | undefined;
 }>;
+
+export type SetupInspectionProofPhase =
+  | "target-1"
+  | "git-1"
+  | "tree-1"
+  | "git-2"
+  | "tree-2"
+  | "git-3";
 
 type FileEvidence = Readonly<{
   path: string;
@@ -102,6 +111,14 @@ type IndexEntry = Readonly<{ path: string; mode: string; oid: string }>;
 
 type BlockerCode = VaultAssessment["blockers"][number]["code"];
 
+type TargetInspection = Readonly<{
+  exists: boolean;
+  isDirectory: boolean;
+  empty: boolean;
+  inspectable: boolean;
+  proofSha256: string;
+}>;
+
 /**
  * Inspect only the selected path. An ancestor repository is conflict evidence,
  * never the selected vault's Git boundary. No path is created or followed.
@@ -114,23 +131,49 @@ export async function inspectSetupVaultSource(
   const caps = inspectionCaps(options.caps);
   const blockers = new Map<BlockerCode, VaultAssessment["blockers"][number]>();
   const addBlocker = blockerCollector(blockers);
-  const initialBlockers = new Map<BlockerCode, VaultAssessment["blockers"][number]>();
-  const addInitialBlocker = blockerCollector(initialBlockers);
+  const firstBlockers = new Map<BlockerCode, VaultAssessment["blockers"][number]>();
+  const addFirstBlocker = blockerCollector(firstBlockers);
+  const secondBlockers = new Map<BlockerCode, VaultAssessment["blockers"][number]>();
+  const addSecondBlocker = blockerCollector(secondBlockers);
 
-  const target = await inspectTarget(targetPath, addBlocker);
+  const initialTarget = await inspectTarget(targetPath, addFirstBlocker);
+  await options.proofCheckpoint?.("target-1");
   const runGit = options.runGit ?? runGitReadOnly;
-  const initialRawGit = await inspectGit(targetPath, target.exists, target.inspectable, caps, runGit, addInitialBlocker);
-  const initialTree = target.inspectable && target.isDirectory
-    ? await inspectTreeSafely(targetPath, initialRawGit, caps, addInitialBlocker)
+  const initialRawGit = await inspectGit(
+    targetPath, initialTarget.exists, initialTarget.inspectable, caps, runGit, addFirstBlocker,
+  );
+  await options.proofCheckpoint?.("git-1");
+  const initialTree = initialTarget.inspectable && initialTarget.isDirectory
+    ? await inspectTreeSafely(targetPath, initialRawGit, caps, addFirstBlocker)
     : Object.freeze([] as FileEvidence[]);
-  const initialGit = finalizeGitDirtyState(initialRawGit, initialTree, addInitialBlocker);
-  const finalRawGit = await inspectGit(targetPath, target.exists, target.inspectable, caps, runGit, addBlocker);
-  const tree = target.inspectable && target.isDirectory
-    ? await inspectTreeSafely(targetPath, finalRawGit, caps, addBlocker)
+  await options.proofCheckpoint?.("tree-1");
+  const initialGit = finalizeGitDirtyState(initialRawGit, initialTree, addFirstBlocker);
+  const middleRawGit = await inspectGit(
+    targetPath, initialTarget.exists, initialTarget.inspectable, caps, runGit, addSecondBlocker,
+  );
+  await options.proofCheckpoint?.("git-2");
+  const tree = initialTarget.inspectable && initialTarget.isDirectory
+    ? await inspectTreeSafely(targetPath, middleRawGit, caps, addSecondBlocker)
     : Object.freeze([] as FileEvidence[]);
-  const git = finalizeGitDirtyState(finalRawGit, tree, addBlocker);
-  if (JSON.stringify(gitProof(initialGit)) !== JSON.stringify(gitProof(git)) ||
-    JSON.stringify(initialTree) !== JSON.stringify(tree)) {
+  await options.proofCheckpoint?.("tree-2");
+  const middleGit = finalizeGitDirtyState(middleRawGit, tree, addSecondBlocker);
+  const finalRawGit = await inspectGit(
+    targetPath, initialTarget.exists, initialTarget.inspectable, caps, runGit, addBlocker,
+  );
+  await options.proofCheckpoint?.("git-3");
+  let git = finalizeGitDirtyState(finalRawGit, tree, addBlocker);
+  const target = await inspectTarget(targetPath, addBlocker);
+  const stable = JSON.stringify(gitProof(initialGit)) === JSON.stringify(gitProof(middleGit)) &&
+    JSON.stringify(gitProof(middleGit)) === JSON.stringify(gitProof(git)) &&
+    JSON.stringify(initialTree) === JSON.stringify(tree) &&
+    initialTarget.proofSha256 === target.proofSha256;
+  if (stable) mergeBlockers(secondBlockers, blockers);
+  else {
+    mergeSafetyBlockers(secondBlockers, blockers);
+    for (const code of ["dirty-worktree", "active-git-operation", "detached-head", "unborn-repository"] as const) {
+      blockers.delete(code);
+    }
+    git = Object.freeze({ ...git, state: "ambiguous" });
     addBlocker("ambiguous-state", "The vault changed during setup inspection.",
       "Wait for concurrent changes to finish, then reassess.");
   }
@@ -152,7 +195,13 @@ export async function inspectSetupVaultSource(
   const fingerprint = hashJson({
     schema: "dome.setup.worktree-fingerprint/v1",
     targetPath,
-    target: { exists: target.exists, isDirectory: target.isDirectory, empty: target.empty, inspectable: target.inspectable },
+    target: {
+      exists: target.exists,
+      isDirectory: target.isDirectory,
+      empty: target.empty,
+      inspectable: target.inspectable,
+      proofSha256: target.proofSha256,
+    },
     classification: { kind, blockers: blockerList },
     git: {
       direct: git.direct,
@@ -199,8 +248,9 @@ export async function inspectSetupVaultSource(
 async function inspectTarget(
   targetPath: string,
   addBlocker: (code: BlockerCode, message: string, nextAction: string) => void,
-): Promise<Readonly<{ exists: boolean; isDirectory: boolean; empty: boolean; inspectable: boolean }>> {
-  const pathIssue = await firstUnsafePathComponent(targetPath);
+): Promise<TargetInspection> {
+  const componentProof = await inspectSelectedPathComponents(targetPath);
+  const pathIssue = componentProof.issue;
   if (pathIssue !== null) {
     if (pathIssue.kind === "symlink") {
       addBlocker("symlink-ambiguity", `The selected vault path is redirected at ${pathIssue.path}.`,
@@ -211,29 +261,50 @@ async function inspectTarget(
     }
     try {
       await lstat(targetPath);
-      return Object.freeze({ exists: true, isDirectory: false, empty: false, inspectable: false });
+      return targetInspection(componentProof.evidence, {
+        exists: true, isDirectory: false, empty: false, inspectable: false,
+      });
     } catch (error) {
       if (!hasCode(error, "ENOENT") && !hasCode(error, "ENOTDIR")) throw error;
-      return Object.freeze({ exists: false, isDirectory: false, empty: true, inspectable: false });
+      return targetInspection(componentProof.evidence, {
+        exists: false, isDirectory: false, empty: true, inspectable: false,
+      });
     }
   }
   let info: Awaited<ReturnType<typeof lstat>>;
   try { info = await lstat(targetPath); }
   catch (error) {
     if (!hasCode(error, "ENOENT")) throw error;
-    return Object.freeze({ exists: false, isDirectory: false, empty: true, inspectable: true });
+    return targetInspection(componentProof.evidence, {
+      exists: false, isDirectory: false, empty: true, inspectable: true,
+    });
   }
   if (!info.isDirectory()) {
     addBlocker("unsafe-path", "The selected vault is not a directory.",
       "Choose a directory, then reassess.");
-    return Object.freeze({ exists: true, isDirectory: false, empty: false, inspectable: false });
+    return targetInspection(componentProof.evidence, {
+      exists: true, isDirectory: false, empty: false, inspectable: false,
+    });
   }
-  return Object.freeze({
+  const empty = (await readdir(targetPath)).length === 0;
+  const after = await lstat(targetPath);
+  if (!sameFilesystemIdentity(info, after)) {
+    addBlocker("ambiguous-state", "The selected vault changed during target inspection.",
+      "Wait for concurrent changes to finish, then reassess.");
+  }
+  return targetInspection(componentProof.evidence, {
     exists: true,
     isDirectory: true,
-    empty: (await readdir(targetPath)).length === 0,
+    empty,
     inspectable: true,
   });
+}
+
+function targetInspection(
+  componentEvidence: ReadonlyArray<unknown>,
+  value: Omit<TargetInspection, "proofSha256">,
+): TargetInspection {
+  return Object.freeze({ ...value, proofSha256: hashJson({ componentEvidence, ...value }) });
 }
 
 async function inspectGit(
@@ -295,10 +366,6 @@ async function inspectGit(
       throw new Error("Git common directory is redirected");
     }
     operationMarkers = await inspectGitOperations(gitDir, commonDir);
-    if (operationMarkers.length > 0) {
-      addBlocker("active-git-operation", "A Git operation or conflict is active in the selected vault.",
-        "Finish or abort the Git operation, then reassess.");
-    }
     const branchResult = await runGit(["symbolic-ref", "--quiet", "--short", "HEAD"], targetPath, caps);
     const headResult = await runGit(["rev-parse", "--verify", "HEAD"], targetPath, caps);
     const branch = branchResult.exitCode === 0 ? oneLine(branchResult.stdout, "Git branch") : null;
@@ -322,15 +389,18 @@ async function inspectGit(
     const index = parseIndex(stage.stdout, caps.entries);
     if (index.unmerged) {
       operationMarkers.push("unmerged-index");
-      addBlocker("active-git-operation", "A Git operation or conflict is active in the selected vault.",
-        "Finish or abort the Git operation, then reassess.");
     }
     operationMarkers.sort(compareStrings);
+    const infoExcludeSha256 = await optionalFileHash(join(commonDir, "info", "exclude"), caps);
     const headTree = head === null
       ? new Map<string, IndexEntry>()
       : parseHeadTree((await requiredGit(runGit,
         ["ls-tree", "-r", "-z", "--full-tree", "HEAD"], targetPath, caps)).stdout, caps.entries);
     const stagedDirty = !sameIndexEntries(index.entries, headTree);
+    if (operationMarkers.length > 0) {
+      addBlocker("active-git-operation", "A Git operation or conflict is active in the selected vault.",
+        "Finish or abort the Git operation, then reassess.");
+    }
     let state: VaultAssessment["git"]["state"];
     if (operationMarkers.length > 0) state = "operation-active";
     else if (head === null && branch !== null) state = "unborn";
@@ -348,12 +418,14 @@ async function inspectGit(
       operationMarkers: Object.freeze(operationMarkers), tracked, untracked, ignored,
       ignoredPrefixes: Object.freeze(ignoredPrefixes), indexEntries: index.entries, stagedDirty,
       gitEntrySha256, indexSha256: sha256(stage.stdout), dirtySha256: null,
-      infoExcludeSha256: await optionalFileHash(join(commonDir, "info", "exclude"), caps),
+      infoExcludeSha256,
     });
   } catch (error) {
     if (operationMarkers.length > 0) {
+      addBlocker("ambiguous-state", `Git failed after operation markers were observed: ${message(error)}`,
+        "Repair or finish the Git operation, then reassess.");
       return Object.freeze({
-        ...empty(), state: "operation-active", direct: true, gitEntrySha256,
+        ...empty(), state: "ambiguous", direct: true, gitEntrySha256,
         operationMarkers: Object.freeze(operationMarkers.sort(compareStrings)),
       });
     }
@@ -757,6 +829,12 @@ function filesystemIdentityHash(
   });
 }
 
+function pathComponentIdentityHash(
+  info: Pick<Awaited<ReturnType<typeof lstat>>, "dev" | "ino" | "mode">,
+): string {
+  return hashJson({ dev: info.dev, ino: info.ino, mode: info.mode });
+}
+
 async function optionalFileHash(path: string, caps: SetupVaultInspectionCaps): Promise<string | null> {
   let info: Awaited<ReturnType<typeof lstat>>;
   try { info = await lstat(path); }
@@ -850,7 +928,10 @@ function cleanGitEnvironment(): Record<string, string> {
   const environment: Record<string, string> = {
     PATH: process.env.PATH ?? "/usr/bin:/bin",
     GIT_OPTIONAL_LOCKS: "0",
+    GIT_NO_LAZY_FETCH: "1",
     GIT_TERMINAL_PROMPT: "0",
+    GIT_ALLOW_PROTOCOL: "",
+    GIT_PROTOCOL_FROM_USER: "0",
     GIT_PAGER: "cat",
     GIT_CONFIG_NOSYSTEM: "1",
     GIT_CONFIG_SYSTEM: "/dev/null",
@@ -907,27 +988,65 @@ function blockerCollector(
   };
 }
 
+function mergeBlockers(
+  source: ReadonlyMap<BlockerCode, VaultAssessment["blockers"][number]>,
+  target: Map<BlockerCode, VaultAssessment["blockers"][number]>,
+): void {
+  for (const [code, blocker] of source) target.set(code, blocker);
+}
+
+function mergeSafetyBlockers(
+  source: ReadonlyMap<BlockerCode, VaultAssessment["blockers"][number]>,
+  target: Map<BlockerCode, VaultAssessment["blockers"][number]>,
+): void {
+  for (const code of ["symlink-ambiguity", "unsafe-path"] as const) {
+    const blocker = source.get(code);
+    if (blocker !== undefined) target.set(code, blocker);
+  }
+}
+
 async function firstUnsafePathComponent(
   path: string,
 ): Promise<Readonly<{ path: string; kind: "symlink" | "non-directory" }> | null> {
+  return (await inspectSelectedPathComponents(path)).issue;
+}
+
+async function inspectSelectedPathComponents(path: string): Promise<Readonly<{
+  issue: Readonly<{ path: string; kind: "symlink" | "non-directory" }> | null;
+  evidence: ReadonlyArray<Readonly<{ path: string; kind: string; identitySha256: string | null }>>;
+}>> {
   const absolute = resolve(path);
   const root = parse(absolute).root;
   const components = absolute.slice(root.length).split("/").filter(Boolean);
   let current = root;
+  const evidence: Array<Readonly<{ path: string; kind: string; identitySha256: string | null }>> = [];
   for (const [index, component] of components.entries()) {
     current = join(current, component);
     try {
       const info = await lstat(current);
-      if (info.isSymbolicLink()) return Object.freeze({ path: current, kind: "symlink" });
+      const kind = info.isSymbolicLink() ? "symlink" : info.isDirectory() ? "directory" :
+        info.isFile() ? "file" : "special";
+      const identitySha256 = index === components.length - 1 ? filesystemIdentityHash(info) :
+        pathComponentIdentityHash(info);
+      evidence.push(Object.freeze({ path: current, kind, identitySha256 }));
+      if (info.isSymbolicLink()) {
+        return Object.freeze({ issue: Object.freeze({ path: current, kind: "symlink" }), evidence: Object.freeze(evidence) });
+      }
       if (index < components.length - 1 && !info.isDirectory()) {
-        return Object.freeze({ path: current, kind: "non-directory" });
+        return Object.freeze({
+          issue: Object.freeze({ path: current, kind: "non-directory" }),
+          evidence: Object.freeze(evidence),
+        });
       }
     } catch (error) {
-      if (hasCode(error, "ENOENT")) return null;
+      if (hasCode(error, "ENOENT")) {
+        evidence.push(Object.freeze({ path: current, kind: "missing", identitySha256: null }));
+        return Object.freeze({ issue: null, evidence: Object.freeze(evidence) });
+      }
       throw error;
     }
   }
-  return null;
+  return Object.freeze({ issue: null, evidence: Object.freeze(evidence) });
 }
 
 async function findAncestorGitRoot(

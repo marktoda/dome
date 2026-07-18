@@ -119,10 +119,11 @@ argument vector, and introduces platform-specific process behavior without
 closing the remaining race. The inspector therefore uses the smaller native
 fallback: directories are held open with `O_DIRECTORY | O_NOFOLLOW`, regular
 files use `O_NOFOLLOW`, and every file, link, and directory has exact pre/post
-device/inode/mode/size/mtime/ctime/link-count proofs; two bounded sorted scans
-must be identical; and identical final Git HEAD, index, tracked, untracked,
-ignored, and ignore-rule evidence brackets them. A nested directory becoming a
-symlink is blocked and never traversed in the second scan. This is fail-closed
+device/inode/mode/size/mtime/ctime/link-count proofs. The complete order is
+`Target1 → Git1 → Tree1 → Git2 → Tree2 → Git3 → Target2`: all three Git proofs,
+both bounded sorted trees, and both target/component proofs must be identical.
+A nested directory becoming a symlink is blocked and never traversed in the
+second scan. This is fail-closed
 for normal cooperative concurrency. It does not claim a kernel-enforced
 snapshot against a malicious process racing individual syscalls; apply must
 still repeat revision validation immediately before mutation.
@@ -134,7 +135,10 @@ configuration, prompts, optional locks, hooks, filesystem monitors, pagers,
 external excludes, and external attributes disabled. Staged and worktree
 dirtiness are derived from index/HEAD plumbing plus Dome's own `O_NOFOLLOW`
 byte and mode proofs; setup never invokes `status`, diff drivers, textconv, or
-clean/smudge filters. The fixed command inventory cannot invoke a credential or
+clean/smudge filters. `GIT_NO_LAZY_FETCH=1` and a deny-all transport policy
+make a missing partial-clone/promisor object an ambiguity blocker rather than a
+fetch; no upload-pack, credential helper, or network transport is attempted.
+The fixed command inventory cannot invoke a credential or
 network operation. The vault inspector does not read
 credentials, call a model, access the network, open the Dome runtime, or
 modify Git, files, services, or durable state. Apply compares both revision

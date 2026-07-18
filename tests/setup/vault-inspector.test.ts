@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmod, link, mkdir, mkdtemp, realpath, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import { chmod, link, mkdir, mkdtemp, realpath, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -8,6 +8,11 @@ import {
   inspectSetupVaultSource,
   type SetupGitRunner,
 } from "../../src/setup/vault-inspector";
+import {
+  VAULT_ASSESSMENT_SCHEMA,
+  validateVaultAssessment,
+  type VaultAssessment,
+} from "../../src/setup/contracts";
 
 const temporaryRoots: string[] = [];
 
@@ -30,6 +35,45 @@ describe("read-only setup vault inspector", () => {
     const inspected = await inspectSetupVaultSource(existing);
     expect(inspected.kind).toBe("existing-non-git-vault");
     expect(inspected.markdown).toEqual({ tracked: [], untracked: ["Note.md"] });
+  });
+
+  test("fails closed when a missing or empty target is created or populated after Target1", async () => {
+    const root = await temporary();
+    const missing = join(root, "missing");
+    const created = await inspectSetupVaultSource(missing, {
+      proofCheckpoint: async (phase) => {
+        if (phase === "target-1") await mkdir(missing);
+      },
+    });
+    expect(created.kind).toBe("unsafe-or-ambiguous-state");
+    expect(created.blockers.map((blocker) => blocker.code)).toEqual(["ambiguous-state"]);
+
+    const empty = join(root, "empty");
+    await mkdir(empty);
+    const populated = await inspectSetupVaultSource(empty, {
+      proofCheckpoint: async (phase) => {
+        if (phase === "target-1") await writeFile(join(empty, "Appeared.md"), "appeared\n");
+      },
+    });
+    expect(populated.kind).toBe("unsafe-or-ambiguous-state");
+    expect(populated.blockers.map((blocker) => blocker.code)).toEqual(["ambiguous-state"]);
+  });
+
+  test("fails closed when a selected-path component becomes a symlink after Target1", async () => {
+    const root = await temporary();
+    const parent = join(root, "direct");
+    const moved = join(root, "moved");
+    const vault = join(parent, "vault");
+    await mkdir(vault, { recursive: true });
+    const inspected = await inspectSetupVaultSource(vault, {
+      proofCheckpoint: async (phase) => {
+        if (phase !== "target-1") return;
+        await rename(parent, moved);
+        await symlink(moved, parent);
+      },
+    });
+    expect(inspected.kind).toBe("unsafe-or-ambiguous-state");
+    expect(inspected.blockers.map((blocker) => blocker.code)).toEqual(["ambiguous-state", "symlink-ambiguity"]);
   });
 
   test("uses only a direct repository boundary and blocks an ancestor repository", async () => {
@@ -324,6 +368,25 @@ describe("read-only setup vault inspector", () => {
     expect([...new Set(commands)].sort()).toEqual(["ls-files", "ls-tree", "rev-parse", "symbolic-ref"]);
   });
 
+  test("does not lazily fetch a missing promisor object or launch its upload process", async () => {
+    const root = await gitFixture();
+    const marker = join(root, ".git", "lazy-fetch-ran");
+    const uploadPack = join(root, ".git", "hostile-upload-pack.sh");
+    await writeFile(uploadPack, `#!/bin/sh\ntouch '${marker}'\nexit 1\n`);
+    await chmod(uploadPack, 0o755);
+    await git(root, "config", "remote.origin.url", root);
+    await git(root, "config", "remote.origin.promisor", "true");
+    await git(root, "config", "remote.origin.uploadpack", uploadPack);
+    await git(root, "config", "extensions.partialClone", "origin");
+    const tree = await git(root, "rev-parse", "HEAD^{tree}");
+    await unlink(join(root, ".git", "objects", tree.slice(0, 2), tree.slice(2)));
+
+    const inspected = await inspectSetupVaultSource(root);
+    expect(inspected.git.state).toBe("ambiguous");
+    expect(inspected.blockers.map((blocker) => blocker.code)).toEqual(["ambiguous-state"]);
+    expect(await Bun.file(marker).exists()).toBe(false);
+  });
+
   test("fails closed when a nested directory becomes a symlink between coherent scans", async () => {
     const root = await gitFixture();
     const notes = join(root, "Notes");
@@ -345,10 +408,40 @@ describe("read-only setup vault inspector", () => {
     const inspected = await inspectSetupVaultSource(root, { runGit: runner });
     expect(inspected.kind).toBe("unsafe-or-ambiguous-state");
     expect(inspected.blockers.map((blocker) => blocker.code)).toEqual([
-      "ambiguous-state", "dirty-worktree", "symlink-ambiguity",
+      "ambiguous-state", "symlink-ambiguity",
     ]);
     expect(inspected.markdown.tracked).toEqual(["Notes/Owned.md", "README.md"]);
     expect(inspected.markdown.untracked).not.toContain("Notes/Escaped.md");
+  });
+
+  test("fails closed when the Git index changes after Git2", async () => {
+    const root = await gitFixture();
+    const inspected = await inspectSetupVaultSource(root, {
+      proofCheckpoint: async (phase) => {
+        if (phase !== "git-2") return;
+        await writeFile(join(root, "README.md"), "# Changed after Git2\n");
+        await git(root, "add", "README.md");
+      },
+    });
+    expect(inspected.git.state).toBe("ambiguous");
+    expect(inspected.kind).toBe("unsafe-or-ambiguous-state");
+    expect(inspected.blockers.map((blocker) => blocker.code)).toEqual(["ambiguous-state"]);
+  });
+
+  test("turns marker-plus-late-failure into a contract-valid ambiguous assessment", async () => {
+    const root = await gitFixture();
+    await mkdir(join(root, ".git", "rebase-merge"));
+    const runner: SetupGitRunner = async (args, cwd, caps) => {
+      if (args[0] === "ls-tree") {
+        return { exitCode: 1, stdout: Buffer.alloc(0), stderr: "injected after marker" };
+      }
+      return await nativeGitRunner(args, cwd, caps);
+    };
+    const inspected = await inspectSetupVaultSource(root, { runGit: runner });
+    expect(inspected.git.state).toBe("ambiguous");
+    expect(inspected.git.operationMarkers).toContain("rebase-merge");
+    expect(inspected.blockers.map((blocker) => blocker.code)).toEqual(["ambiguous-state"]);
+    expect(validateInspectionAssessment(inspected).git.state).toBe("ambiguous");
   });
 
   test("classifies a late Git proof failure as ambiguous", async () => {
@@ -426,6 +519,50 @@ async function git(cwd: string, ...args: string[]): Promise<string> {
   ]);
   if (exitCode !== 0) throw new Error(`git ${args.join(" ")} failed: ${stderr}`);
   return stdout.trim();
+}
+
+function validateInspectionAssessment(
+  inspected: Awaited<ReturnType<typeof inspectSetupVaultSource>>,
+): VaultAssessment {
+  return validateVaultAssessment({
+    schema: VAULT_ASSESSMENT_SCHEMA,
+    target: { path: inspected.targetPath, kind: inspected.kind },
+    revision: { head: inspected.git.head, worktreeFingerprint: inspected.worktreeFingerprint },
+    host: { platform: "darwin", architecture: "arm64", supported: true },
+    product: {
+      packageName: "@marktoda/dome",
+      packageVersion: "0.4.0",
+      sourceCommit: "1".repeat(40),
+      productManifestSha256: "2".repeat(64),
+      packagedHome: {
+        artifactId: "3".repeat(64),
+        productVersion: "0.4.0",
+        buildCommit: "1".repeat(40),
+        manifestSha256: "4".repeat(64),
+      },
+    },
+    prerequisites: [
+      { id: "bun", status: "available", version: "1.2.13" },
+      { id: "git", status: "available", version: "2.50.1" },
+    ],
+    git: { state: inspected.git.state, branch: inspected.git.branch },
+    dome: inspected.dome,
+    installedHome: {
+      state: "absent",
+      artifactId: null,
+      productVersion: null,
+      buildCommit: null,
+      manifestSha256: null,
+      selectedVaultPath: null,
+    },
+    markdown: {
+      tracked: inspected.markdown.tracked,
+      untracked: inspected.markdown.untracked,
+      proposedScope: { version: 1, include: ["**/*.md"], exclude: [".dome/**"] },
+    },
+    actions: [],
+    blockers: inspected.blockers,
+  });
 }
 
 const nativeGitRunner: SetupGitRunner = async (args, cwd, caps) => {
