@@ -246,6 +246,40 @@ describe("openProjectionDb", () => {
     expect(row.built_at).toBeNull();
   });
 
+  it("never publishes a projection schema without projection_meta during reset", async () => {
+    const r = await openProjectionDb({
+      path: dbPath,
+      extensionSet: EMPTY_EXT,
+      processorVersions: EMPTY_PROCS,
+      capabilityPolicyHash: POLICY_A,
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    handles.push(r.value.db);
+
+    // This is the detached-serve startup race at its owning seam: serve writes
+    // its heartbeat, starts the initial rebuild, and a concurrent status
+    // process reads through an already-open runtime handle. With DROP and
+    // CREATE in separate transactions, one reset makes this observer fail
+    // deterministically with `no such table: projection_meta`.
+    const observation = await observeProjectionMetaWhile({ root, dbPath }, () => {
+      resetProjectionDb(r.value.db);
+    });
+
+    expect({
+      exitCode: observation.exitCode,
+      payload: observation.payload,
+    }).toEqual({
+      exitCode: 0,
+      payload: {
+        reads: expect.any(Number),
+        code: null,
+        message: null,
+      },
+    });
+    expect(observation.payload.reads).toBeGreaterThan(0);
+  }, { timeout: 10_000 });
+
   it("rebuilds when stored meta is current but table columns are stale", async () => {
     mkdirSync(join(root, ".dome", "state"), { recursive: true });
     const raw = new Database(dbPath);
@@ -296,12 +330,29 @@ describe("openProjectionDb", () => {
       raw.close();
     }
 
-    const r = await openProjectionDb({
-      path: dbPath,
-      extensionSet: EMPTY_EXT,
-      processorVersions: EMPTY_PROCS,
-      capabilityPolicyHash: POLICY_A,
+    // Shape-repair during open uses the same schema-publication primitive as
+    // an explicit rebuild reset; keep both callers on the atomic seam.
+    const observed = await observeProjectionMetaWhile({ root, dbPath }, () =>
+      openProjectionDb({
+        path: dbPath,
+        extensionSet: EMPTY_EXT,
+        processorVersions: EMPTY_PROCS,
+        capabilityPolicyHash: POLICY_A,
+      })
+    );
+    expect({
+      exitCode: observed.exitCode,
+      payload: observed.payload,
+    }).toEqual({
+      exitCode: 0,
+      payload: {
+        reads: expect.any(Number),
+        code: null,
+        message: null,
+      },
     });
+    expect(observed.payload.reads).toBeGreaterThan(0);
+    const r = observed.value;
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     handles.push(r.value.db);
@@ -532,6 +583,84 @@ async function waitUntil(predicate: () => boolean, timeoutMs: number): Promise<b
     await Bun.sleep(5);
   }
   return predicate();
+}
+
+type ProjectionMetaObservation = {
+  readonly exitCode: number;
+  readonly payload: {
+    readonly reads: number;
+    readonly code: string | null;
+    readonly message: string | null;
+  };
+};
+
+async function observeProjectionMetaWhile<T>(
+  input: { readonly root: string; readonly dbPath: string },
+  action: () => T | Promise<T>,
+): Promise<ProjectionMetaObservation & { readonly value: T }> {
+  const readyPath = join(input.root, "observer-ready");
+  const stopPath = join(input.root, "observer-stop");
+  const resultPath = join(input.root, "observer-result.json");
+  const observer = Bun.spawn({
+    cmd: [process.execPath, "-e", `
+      import { Database } from "bun:sqlite";
+      import { existsSync } from "node:fs";
+      const [dbPath, readyPath, stopPath, resultPath] = process.argv.slice(-4);
+      const db = new Database(dbPath);
+      db.run("PRAGMA busy_timeout = 5000");
+      let reads = 0;
+      try {
+        db.query("SELECT schema_hash FROM projection_meta LIMIT 1").get();
+        reads += 1;
+        await Bun.write(readyPath, "ready");
+        while (!existsSync(stopPath)) {
+          db.query("SELECT schema_hash FROM projection_meta LIMIT 1").get();
+          reads += 1;
+        }
+        await Bun.write(resultPath, JSON.stringify({
+          reads,
+          code: null,
+          message: null,
+        }));
+      } catch (error) {
+        await Bun.write(resultPath, JSON.stringify({
+          reads,
+          code: typeof error === "object" && error !== null && "code" in error
+            ? String(error.code)
+            : null,
+          message: error instanceof Error ? error.message : String(error),
+        }));
+        process.exitCode = 2;
+      } finally {
+        db.close();
+      }
+    `, input.dbPath, readyPath, stopPath, resultPath],
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  let value!: T;
+  let exitCode: number | null = null;
+  try {
+    if (!(await waitUntil(() => existsSync(readyPath), 2_000))) {
+      throw new Error("projection-meta observer did not become ready");
+    }
+    value = await action();
+  } finally {
+    await Bun.write(stopPath, "stop").catch(() => {});
+    exitCode = await Promise.race([
+      observer.exited,
+      Bun.sleep(2_000).then(() => null),
+    ]);
+    if (exitCode === null) {
+      observer.kill("SIGKILL");
+      exitCode = await observer.exited;
+    }
+  }
+
+  const payload = JSON.parse(readFileSync(resultPath, "utf8")) as
+    ProjectionMetaObservation["payload"];
+  return { exitCode, payload, value };
 }
 
 describe("computeExtensionSetHash", () => {

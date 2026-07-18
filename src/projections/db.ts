@@ -583,14 +583,27 @@ async function openProjectionDbAttempt(
     (storedSchemaHash !== null && storedSchemaHash !== currentSchemaHash) ||
     (hasExistingProjectionState && !schemaShapeMatches);
 
-  // 4. If schema changed, wipe everything; if fresh, just apply DDL; if
-  //    matched, apply DDL idempotently (CREATE ... IF NOT EXISTS is safe
-  //    and defensive against a partial schema left by a prior crash).
+  // 4. If schema changed, wipe + recreate + seed meta as one transaction.
+  //    Concurrent status/read surfaces may already own a healthy handle, so
+  //    publishing the DROP before the CREATE would expose a committed
+  //    no-table generation to those readers. Fresh initialization also seeds
+  //    meta in the schema transaction. If matched, apply DDL idempotently
+  //    (CREATE ... IF NOT EXISTS is safe and defensive against a partial
+  //    schema left by a prior crash).
   try {
     if (isSchemaChanged) {
-      applyDdlInTransaction(raw, DROP_DDL);
+      publishEmptyProjectionGeneration(raw, {
+        dropExisting: true,
+        schemaHash: currentSchemaHash,
+      });
+    } else if (isFresh) {
+      publishEmptyProjectionGeneration(raw, {
+        dropExisting: false,
+        schemaHash: currentSchemaHash,
+      });
+    } else {
+      applyDdlInTransaction(raw, DDL);
     }
-    applyDdlInTransaction(raw, DDL);
   } catch (e) {
     raw.close();
     if (retryDdlBusy && isSqliteBusy(e)) {
@@ -603,13 +616,12 @@ async function openProjectionDbAttempt(
     return err({ kind: "schema-init-failed", cause: errorMessage(e) });
   }
 
-  // 5. Read the existing meta row (if any) — present when we didn't wipe.
-  //    On fresh or schema-changed paths, no meta row exists yet; we insert
-  //    one with NULL cache keys.
+  // 5. Read the existing meta row (if any) — present when we did not
+  //    initialize or replace the schema. Fresh/schema-changed paths seeded
+  //    their NULL-key meta row inside the schema transaction above.
   let priorMeta: ProjectionMeta | null;
   try {
     if (isFresh || isSchemaChanged) {
-      insertFreshMetaRow(raw, currentSchemaHash);
       priorMeta = null;
     } else {
       priorMeta = readMetaRow(raw);
@@ -703,9 +715,10 @@ async function openProjectionDbAttempt(
  * outside this database.
  */
 export function resetProjectionDb(db: ProjectionDb): void {
-  applyDdlInTransaction(db.raw, DROP_DDL);
-  applyDdlInTransaction(db.raw, DDL);
-  insertFreshMetaRow(db.raw, computeSchemaHash());
+  publishEmptyProjectionGeneration(db.raw, {
+    dropExisting: true,
+    schemaHash: computeSchemaHash(),
+  });
 }
 
 /**
@@ -789,6 +802,33 @@ export function projectionRequiresRebuild(
 }
 
 // ----- internals ------------------------------------------------------------
+
+/**
+ * Publish a fresh canonical projection generation in one SQLite transaction.
+ * Existing readers see either the complete prior generation or the complete
+ * empty generation with its NULL-key meta row; no committed table-absence
+ * window is observable between DROP and CREATE.
+ */
+function publishEmptyProjectionGeneration(
+  db: Database,
+  opts: {
+    readonly dropExisting: boolean;
+    readonly schemaHash: string;
+  },
+): void {
+  db.run("BEGIN");
+  try {
+    if (opts.dropExisting) {
+      for (const statement of DROP_DDL) db.run(statement);
+    }
+    for (const statement of DDL) db.run(statement);
+    insertFreshMetaRow(db, opts.schemaHash);
+    db.run("COMMIT");
+  } catch (error) {
+    db.run("ROLLBACK");
+    throw error;
+  }
+}
 
 function isSqliteBusy(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error &&

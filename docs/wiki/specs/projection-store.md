@@ -362,6 +362,15 @@ before dropping and recreating projection tables, so concurrent CLI/view
 commands cannot interleave `resetProjectionDb` and effect routing into
 duplicated facts or FTS rows.
 
+The schema reset itself publishes one atomic SQLite generation: reverse-order
+DROP, canonical CREATE, and the fresh `projection_meta` row with NULL cache
+keys commit in one transaction. A concurrent read surface therefore sees
+either the complete prior generation or the complete empty/stale generation,
+never a committed interval where `projection_meta` or another projection table
+does not exist. Processor replay happens after that transaction and the NULL
+cache keys keep the generation honestly stale until `markProjectionBuilt`
+stamps the adopted commit and runtime hashes.
+
 The engine may run this same rebuild path automatically after adoption when a
 projection-global config file changes. For example, editing
 `.dome/page-types.yaml` can clear or create frontmatter diagnostics for pages
@@ -395,6 +404,8 @@ schema hash: it catches old or partially migrated `projection.db` files whose
 Missing required projection columns are treated the same as a schema mismatch:
 wipe the rebuildable projection tables, recreate the current schema, and report
 the projection as stale so the host/CLI can rebuild from adopted markdown.
+The wipe, recreate, and fresh NULL-key meta seed are committed atomically for
+the same concurrent-reader guarantee as an explicit rebuild reset.
 
 This is what [[wiki/gotchas/projection-schema-skew]] documents — and the automatic rebuild is the mitigation. The user never edits schemas; they just see a "rebuilding..." message after a SDK upgrade.
 
