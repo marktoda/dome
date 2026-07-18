@@ -8,6 +8,7 @@ import {
   ROOT_TEST_AREA_ORDER,
   ROOT_TEST_TIMEOUT_EXIT_CODE,
   rootTestCommand,
+  rootTestRequiresForcedExit,
   rootTestSignalExitCode,
   rootTestTimeoutDiagnostic,
   superviseRootTestChild,
@@ -68,6 +69,7 @@ describe("root test runner", () => {
     const child: RootTestChild = {
       exited: Promise.resolve(7),
       kill: (signal = 15) => { signals.push(signal); },
+      unref: () => {},
     };
 
     expect(await superviseRootTestChild(child, { timeoutMs: 1, shutdownGraceMs: 1 }))
@@ -85,6 +87,7 @@ describe("root test runner", () => {
         signals.push(signal);
         if (signal === 9) resolveExit(137);
       },
+      unref: () => {},
     };
     let waitCount = 0;
     const waitWithin: RootTestWaitWithin = async <T>(promise: Promise<T>) => {
@@ -115,6 +118,7 @@ describe("root test runner", () => {
         signals.push(signal);
         if (signal === 15) resolveExit(143);
       },
+      unref: () => {},
     };
 
     expect(await superviseRootTestChild(child, {
@@ -130,6 +134,66 @@ describe("root test runner", () => {
       observedExitCode: 143,
     });
     expect(signals).toEqual([15]);
+  });
+
+  test("preserves SIGINT before bounded TERM and KILL escalation", async () => {
+    let resolveExit!: (exitCode: number) => void;
+    const signals: number[] = [];
+    const child: RootTestChild = {
+      exited: new Promise<number>((resolve) => { resolveExit = resolve; }),
+      kill: (signal = 15) => {
+        signals.push(signal);
+        if (signal === 15) resolveExit(143);
+      },
+      unref: () => {},
+    };
+    let waits = 0;
+    const waitWithin: RootTestWaitWithin = async <T>(promise: Promise<T>) => {
+      waits += 1;
+      if (waits === 2) return { kind: "timeout" };
+      return { kind: "settled", value: await promise };
+    };
+
+    expect(await superviseRootTestChild(child, {
+      interrupted: Promise.resolve("SIGINT"),
+      waitWithin,
+    })).toEqual({
+      kind: "interrupted",
+      signal: "SIGINT",
+      termination: "sigterm",
+      observedExitCode: 143,
+    });
+    expect(signals).toEqual([2, 15]);
+  });
+
+  test("unrefs an unobservable child after every owned kill attempt", async () => {
+    const signals: number[] = [];
+    let unrefs = 0;
+    const child: RootTestChild = {
+      exited: new Promise<number>(() => {}),
+      kill: (signal = 15) => {
+        signals.push(signal);
+        throw new Error("kill observer failed");
+      },
+      unref: () => { unrefs += 1; },
+    };
+    const alwaysTimeout: RootTestWaitWithin = async () => ({ kind: "timeout" });
+
+    expect(await superviseRootTestChild(child, {
+      timeoutMs: 300_000,
+      shutdownGraceMs: 5_000,
+      waitWithin: alwaysTimeout,
+    })).toEqual({
+      kind: "timed-out",
+      termination: "unobserved",
+      observedExitCode: null,
+    });
+    expect(signals).toEqual([15, 9]);
+    expect(unrefs).toBe(1);
+    expect(rootTestRequiresForcedExit(124)).toBeTrue();
+    expect(rootTestRequiresForcedExit(130)).toBeTrue();
+    expect(rootTestRequiresForcedExit(143)).toBeTrue();
+    expect(rootTestRequiresForcedExit(1)).toBeFalse();
   });
 
   test("renders the exact timed-out file and bounded cleanup result", () => {

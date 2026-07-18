@@ -139,7 +139,8 @@ coverage without carrying one test file's scheduler, SQLite, server, or
 lifecycle state into another file. A file that does not exit within five
 minutes is reported by exact path; the runner requests TERM, waits a bounded
 grace period, then escalates to KILL so one failed teardown cannot consume the
-entire CI job. Run
+entire CI job. An owner interrupt is forwarded as INT before the same bounded
+TERM-to-KILL fallback. Run
 `bun run check:pwa` separately for the PWA package.
 
 Useful narrower gates include `bun test tests/invariants` and

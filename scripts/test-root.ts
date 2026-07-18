@@ -30,9 +30,10 @@ export const ROOT_TEST_TIMEOUT_EXIT_CODE = 124;
 export type RootTestChild = Readonly<{
   exited: Promise<number>;
   kill: (signal?: number) => void;
+  unref: () => void;
 }>;
 
-export type RootTestTermination = "sigterm" | "sigkill" | "unobserved";
+export type RootTestTermination = "sigint" | "sigterm" | "sigkill" | "unobserved";
 
 export type RootTestChildOutcome =
   | Readonly<{ kind: "exited"; exitCode: number }>
@@ -59,6 +60,10 @@ export type RootTestWaitWithin = <T>(
 
 export function rootTestSignalExitCode(signal: RootTestSignal): 130 | 143 {
   return signal === "SIGINT" ? 130 : 143;
+}
+
+export function rootTestRequiresForcedExit(exitCode: number): boolean {
+  return exitCode === ROOT_TEST_TIMEOUT_EXIT_CODE || exitCode === 130 || exitCode === 143;
 }
 
 export function rootTestTimeoutDiagnostic(input: Readonly<{
@@ -125,6 +130,7 @@ export async function superviseRootTestChild(
       exitObservation,
       shutdownGraceMs,
       waitWithin,
+      first.value.signal === "SIGINT" ? 2 : 15,
     );
     return Object.freeze({
       kind: "interrupted" as const,
@@ -137,6 +143,7 @@ export async function superviseRootTestChild(
     exitObservation,
     shutdownGraceMs,
     waitWithin,
+    15,
   );
   return Object.freeze({ kind: "timed-out" as const, ...termination });
 }
@@ -263,6 +270,7 @@ export async function runRootTests(repoRoot: string = REPO_ROOT): Promise<number
         exitObservation,
         ROOT_TEST_SHUTDOWN_GRACE_MS,
         waitWithinDeadline,
+        15,
       );
     }
   }
@@ -276,27 +284,38 @@ async function terminateRootTestChild(
   exitObservation: Promise<Readonly<{ kind: "exited"; exitCode: number }>>,
   shutdownGraceMs: number,
   waitWithin: RootTestWaitWithin,
+  initialSignal: 2 | 15,
 ): Promise<Readonly<{
   termination: RootTestTermination;
   observedExitCode: number | null;
 }>> {
-  try { child.kill(15); } catch {}
-  const terminated = await waitWithin(exitObservation, shutdownGraceMs);
-  if (terminated.kind === "settled") {
-    return Object.freeze({
-      termination: "sigterm" as const,
-      observedExitCode: terminated.value.exitCode,
-    });
+  const signals: ReadonlyArray<Readonly<{
+    number: 2 | 9 | 15;
+    termination: Exclude<RootTestTermination, "unobserved">;
+  }>> = initialSignal === 2
+    ? [
+        { number: 2, termination: "sigint" },
+        { number: 15, termination: "sigterm" },
+        { number: 9, termination: "sigkill" },
+      ]
+    : [
+        { number: 15, termination: "sigterm" },
+        { number: 9, termination: "sigkill" },
+      ];
+  for (const signal of signals) {
+    try { child.kill(signal.number); } catch {}
+    const observed = await waitWithin(exitObservation, shutdownGraceMs);
+    if (observed.kind === "settled") {
+      return Object.freeze({
+        termination: signal.termination,
+        observedExitCode: observed.value.exitCode,
+      });
+    }
   }
-
-  try { child.kill(9); } catch {}
-  const killed = await waitWithin(exitObservation, shutdownGraceMs);
-  if (killed.kind === "settled") {
-    return Object.freeze({
-      termination: "sigkill" as const,
-      observedExitCode: killed.value.exitCode,
-    });
-  }
+  // A broken exit observer must not retain the runner's event loop after the
+  // owned TERM/KILL sequence. The main entrypoint force-exits timeout/signal
+  // outcomes; unref covers imported callers and a kill implementation throw.
+  try { child.unref(); } catch {}
   return Object.freeze({ termination: "unobserved" as const, observedExitCode: null });
 }
 
@@ -354,7 +373,10 @@ function compareStrings(left: string, right: string): number {
 
 if (import.meta.main) {
   runRootTests().then(
-    (exitCode) => { process.exitCode = exitCode; },
+    (exitCode) => {
+      if (rootTestRequiresForcedExit(exitCode)) process.exit(exitCode);
+      process.exitCode = exitCode;
+    },
     (error) => {
       console.error(`root tests: ${error instanceof Error ? error.message : String(error)}`);
       process.exitCode = 1;

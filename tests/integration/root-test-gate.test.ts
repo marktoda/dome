@@ -29,6 +29,7 @@ test("local, CI, and contributor root gates use the per-file runner", async () =
   expect(runner).toContain('process.on("SIGTERM"');
   expect(runner).toContain("await superviseRootTestChild(child, { interrupted })");
   expect(runner).toContain("ROOT_TEST_FILE_TIMEOUT_MS = 5 * 60_000");
-  expect(runner).toContain("child.kill(15)");
-  expect(runner).toContain("child.kill(9)");
+  expect(runner).toContain("child.kill(signal.number)");
+  expect(runner).toContain("child.unref()");
+  expect(runner).toContain("process.exit(exitCode)");
 });
