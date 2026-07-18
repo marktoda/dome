@@ -43,6 +43,12 @@ fails closed.
 filesystem loads, revision-bound reads, setup inspection, and scaffold
 validation. `foundConfig` derives only from the base config, and the resolved
 scope—not its storage location—participates in the capability-policy hash.
+The long-running `dome serve` host treats both policy documents as runtime
+inputs. An adopted overlay change therefore closes and reopens the runtime;
+the changed policy hash makes the projection cache stale and the adoption
+host rebuilds it before stamping the new adopted revision. No separate
+projection-global path list entry is required: that list owns candidate-bound
+configuration whose meaning is not already represented in a cache key.
 
 `version` is the literal `1`. `include` contains at least one glob; `include`
 and `exclude` each contain at most 64 globs. Persisted and revision-bound

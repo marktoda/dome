@@ -20,6 +20,7 @@
 // callers don't pass `signal` and rely on the OS-signal handlers.
 
 import { afterEach, describe, expect, test } from "bun:test";
+import { Database } from "bun:sqlite";
 import { mkdtempSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -35,6 +36,10 @@ import { externalActionEffect } from "../../src/core/effect";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
 import { commit, currentSha, initRepo } from "../../src/git";
 import { getAdoptedRef } from "../../src/adopted-ref";
+import {
+  computeCapabilityPolicyHash,
+  loadCapabilityPolicy,
+} from "../../src/engine/core/capability-policy";
 import { openLedgerDb } from "../../src/ledger/db";
 import {
   getRun,
@@ -167,6 +172,21 @@ extensions:
 }
 
 const fixtures: Fixture[] = [];
+
+function readProjectionPolicyHash(vaultPath: string): string | null {
+  const db = new Database(join(vaultPath, ".dome", "state", "projection.db"), {
+    readonly: true,
+    create: false,
+  });
+  try {
+    return db.query<{ capability_policy_hash: string | null }, []>(
+      "SELECT capability_policy_hash FROM projection_meta LIMIT 1",
+    ).get()?.capability_policy_hash ?? null;
+  } finally {
+    db.close();
+  }
+}
+
 afterEach(async () => {
   restoreConsole();
   while (fixtures.length > 0) {
@@ -406,6 +426,76 @@ describe("runServe smoke", () => {
       }),
     );
   }, 25_000);
+
+  test("reloads a committed content-scope overlay and rebuilds under its new policy hash", async () => {
+    const initialScope = `content_scope:\n  version: 1\n  include: ["notes/**/*.md"]\n  exclude: [".dome/**", ".git/**"]\n`;
+    const nextScope = `content_scope:\n  version: 1\n  include: ["wiki/**/*.md"]\n  exclude: [".dome/**", ".git/**"]\n`;
+    const f = await makeFixture({
+      extraInitialFiles: { ".dome/content-scope.yaml": initialScope },
+    });
+    fixtures.push(f);
+    silenceConsole();
+
+    const initialPolicy = await loadCapabilityPolicy(f.vaultPath);
+    if (!initialPolicy.ok) throw new Error(initialPolicy.error);
+    const initialPolicyHash = computeCapabilityPolicyHash(initialPolicy.value);
+
+    const controller = new AbortController();
+    const servePromise = runServe(
+      {
+        vault: f.vaultPath,
+        bundlesRoot: f.bundlesRoot,
+        pollIntervalMs: 20,
+      },
+      {
+        signal: controller.signal,
+        operationalIntervalMs: 20,
+      },
+    );
+
+    let serveCode: number | null = null;
+    try {
+      await waitFor(
+        async () => (await getAdoptedRef(f.vaultPath, "main")) === f.initialSha,
+        2000,
+      );
+      await waitFor(
+        async () => readProjectionPolicyHash(f.vaultPath) === initialPolicyHash,
+        2000,
+      );
+
+      await writeFile(
+        join(f.vaultPath, ".dome", "content-scope.yaml"),
+        nextScope,
+        "utf8",
+      );
+      const scopeSha = await commit({
+        path: f.vaultPath,
+        message: "narrow content scope\n",
+        files: [".dome/content-scope.yaml"],
+      });
+      const nextPolicy = await loadCapabilityPolicy(f.vaultPath);
+      if (!nextPolicy.ok) throw new Error(nextPolicy.error);
+      expect(nextPolicy.value.contentScope?.include).toEqual(["wiki/**/*.md"]);
+      const nextPolicyHash = computeCapabilityPolicyHash(nextPolicy.value);
+      expect(nextPolicyHash).not.toBe(initialPolicyHash);
+
+      await waitFor(
+        async () => (await getAdoptedRef(f.vaultPath, "main")) === scopeSha,
+        3000,
+      );
+      await waitFor(
+        async () => readProjectionPolicyHash(f.vaultPath) === nextPolicyHash,
+        3000,
+      );
+    } finally {
+      controller.abort();
+      serveCode = await servePromise;
+    }
+
+    expect(serveCode).toBe(0);
+    expect(captured.out).toContain("dome serve: reloaded runtime configuration");
+  }, 15_000);
 
   test("drains due operational work while HEAD is already in sync", async () => {
     const f = await makeFixture();

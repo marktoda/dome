@@ -92,6 +92,7 @@ const DEFAULT_POLL_INTERVAL_MS = 500;
 const DEFAULT_OPERATIONAL_INTERVAL_MS = 1000;
 const DEFAULT_DAEMON_START_TIMEOUT_MS = 10_000;
 const RUNTIME_CONFIG_PATH = ".dome/config.yaml";
+const RUNTIME_CONTENT_SCOPE_PATH = ".dome/content-scope.yaml";
 const RUNTIME_MODEL_PROVIDER_PATH = ".dome/model-provider.ts";
 const RUNTIME_EXTENSIONS_PREFIX = ".dome/extensions/";
 const DOME_BIN = resolve(import.meta.dir, "../../../bin/dome");
@@ -712,6 +713,7 @@ async function driftTouchesRuntimeInputs(input: {
 function isRuntimeInputPath(path: string): boolean {
   return (
     path === RUNTIME_CONFIG_PATH ||
+    path === RUNTIME_CONTENT_SCOPE_PATH ||
     path === RUNTIME_MODEL_PROVIDER_PATH ||
     path.startsWith(RUNTIME_EXTENSIONS_PREFIX)
   );
