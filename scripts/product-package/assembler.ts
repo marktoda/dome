@@ -27,6 +27,11 @@ import {
 } from "../../src/product-package/manifest";
 import { preparePrivateDirectoryPublication } from "../../src/platform/private-directory-publication";
 import { verifyPackedProductArchive } from "./archive";
+import {
+  runBoundedReleaseCommand,
+  type ReleaseCommandResult,
+  type ReleaseCommandOptions,
+} from "../release-command";
 
 export {
   PRODUCT_PACKAGE_CAPS,
@@ -74,7 +79,7 @@ export type ProductPackageAssemblerDependencies = Readonly<{
   publish(input: Readonly<{ source: string; target: string }>): Promise<void>;
 }>;
 
-export type ProductPackageCommandResult = Readonly<{ stdout: Buffer; stderr: Buffer; exitCode: number }>;
+export type ProductPackageCommandResult = ReleaseCommandResult;
 type CommandResult = ProductPackageCommandResult;
 type TreeEntry = Readonly<{ mode: "100644" | "100755"; type: "blob"; object: string; size: number; path: string }>;
 
@@ -507,62 +512,14 @@ function assertNoSecretContent(path: string, bytes: Uint8Array): void {
   }
 }
 
-export type BoundedCommandOptions = Readonly<{
-  timeoutMs: number;
-  maxStdoutBytes: number;
-  maxStderrBytes: number;
-  env?: Readonly<Record<string, string | undefined>>;
-}>;
+export type BoundedCommandOptions = ReleaseCommandOptions;
 
 export async function runBoundedProductCommand(
   command: ReadonlyArray<string>,
   cwd: string,
   options: BoundedCommandOptions,
 ): Promise<CommandResult> {
-  const child = Bun.spawn([...command], { cwd, env: options.env ?? process.env, stdout: "pipe", stderr: "pipe" });
-  const collect = async (stream: ReadableStream<Uint8Array>, maxBytes: number, label: string): Promise<Buffer> => {
-    const reader = stream.getReader();
-    const chunks: Uint8Array[] = [];
-    let bytes = 0;
-    try {
-      for (;;) {
-        const next = await reader.read();
-        if (next.done) break;
-        bytes += next.value.byteLength;
-        if (bytes > maxBytes) throw new Error(`${command[0]} ${label} exceeded its byte budget`);
-        chunks.push(next.value);
-      }
-      return Buffer.concat(chunks, bytes);
-    } finally {
-      reader.releaseLock();
-    }
-  };
-  const settled = Promise.all([
-    collect(child.stdout, options.maxStdoutBytes, "stdout"),
-    collect(child.stderr, options.maxStderrBytes, "stderr"),
-    child.exited,
-  ]);
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => reject(new Error(`${command[0]} timed out after ${options.timeoutMs}ms`)), options.timeoutMs);
-  });
-  try {
-    const [stdout, stderr, exitCode] = await Promise.race([settled, timeout]);
-    if (exitCode !== 0) {
-      const diagnostic = (stderr.byteLength === 0 ? stdout : stderr).toString("utf8").trim();
-      throw new Error(`${command[0]} failed (${exitCode}): ${diagnostic}`);
-    }
-    return Object.freeze({ stdout, stderr, exitCode });
-  } catch (error) {
-    try { child.kill("SIGKILL"); } catch {}
-    await Promise.race([
-      settled.then(() => undefined, () => undefined),
-      new Promise<void>((resolveDrain) => setTimeout(resolveDrain, 2_000)),
-    ]);
-    throw error;
-  } finally {
-    if (timer !== undefined) clearTimeout(timer);
-  }
+  return await runBoundedReleaseCommand(command, cwd, options);
 }
 
 export async function runProductPackageCommandForTests(

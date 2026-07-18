@@ -7,6 +7,7 @@ import {
   type PackedProductAcceptanceDependencies,
 } from "../../scripts/packed-product-rehearsal";
 import type { InstalledProductEvidence } from "../../src/product-package/installed-product";
+import { formatReleaseProgress, runReleasePhase } from "../../scripts/release-progress";
 
 describe("packed-product v2 rehearsal", () => {
   test("portable orchestration retires every producer input before installed checks and cannot issue evidence", async () => {
@@ -36,10 +37,63 @@ describe("packed-product v2 rehearsal", () => {
     for (const required of [
       "BUN_INSTALL_GLOBAL_DIR", "BUN_INSTALL_BIN", "BUN_INSTALL_CACHE_DIR",
       '"install", "-g", product.tarball', '"--production", "--ignore-scripts", "--backend=copyfile"',
-      "rm(producer, { recursive: true })", "rm(productOutput, { recursive: true })", "rm(installCache, { recursive: true })",
-      "rm(producerHome, { recursive: true, force: true })",
+      'removeOwnedDirectory(producer, "producer repository")',
+      'removeOwnedDirectory(productOutput, "product build output")',
+      'removeOwnedDirectory(installCache, "Bun install cache")',
+      'removeOwnedDirectory(producerHome, "producer home and XDG state")',
       "src\", \"product-package\", \"installed-product.ts", "HTTP_PROXY: \"http://127.0.0.1:1\"",
     ]) expect(source).toContain(required);
+  });
+
+  test("release phases expose only bounded content-free progress and preserve operation failures", async () => {
+    const events: Array<Readonly<{ phase: string; state: string; elapsedMs: number }>> = [];
+    const value = await runReleasePhase("installed-chromium-acceptance", (event) => { events.push(event); }, async () => 42);
+    expect(value).toBe(42);
+    expect(events.map(({ phase, state }) => ({ phase, state }))).toEqual([
+      { phase: "installed-chromium-acceptance", state: "started" },
+      { phase: "installed-chromium-acceptance", state: "completed" },
+    ]);
+    for (const event of events) {
+      expect(formatReleaseProgress(event as Parameters<typeof formatReleaseProgress>[0]))
+        .toMatch(/^packed-product-rehearsal: phase=[a-z0-9-]+ state=(?:started|completed|failed) elapsed_ms=\d+$/);
+    }
+
+    const primary = new Error("primary release failure");
+    await expect(runReleasePhase("verify-consumer", () => { throw new Error("reporter failure"); }, async () => {
+      throw primary;
+    })).rejects.toBe(primary);
+    expect(await runReleasePhase("verify-cli", () => { throw new Error("reporter failure"); }, async () => "ok"))
+      .toBe("ok");
+    await expect(runReleasePhase("OWNER/path", undefined, async () => "unreachable"))
+      .rejects.toThrow("release progress phase is invalid");
+    await expect(runReleasePhase("a".repeat(129), undefined, async () => "unreachable"))
+      .rejects.toThrow("release progress phase is invalid");
+    expect(() => formatReleaseProgress({
+      phase: "verify-cli", state: "forged", elapsedMs: 0,
+    } as never)).toThrow("release progress state is invalid");
+  });
+
+  test("async reporter rejection is observed for every state without changing the release outcome", async () => {
+    const unhandled: unknown[] = [];
+    const reported: string[] = [];
+    const onUnhandled = (error: unknown): void => { unhandled.push(error); };
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const reporter = async ({ state }: { readonly state: string }): Promise<void> => {
+        reported.push(state);
+        throw new Error(`async reporter ${state}`);
+      };
+      expect(await runReleasePhase("verify-cli", reporter, async () => "ok")).toBe("ok");
+      const primary = new Error("primary release failure");
+      await expect(runReleasePhase("verify-consumer", reporter, async () => {
+        throw primary;
+      })).rejects.toBe(primary);
+      await Bun.sleep(0);
+      expect(reported).toEqual(["started", "completed", "started", "failed"]);
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
   });
 });
 

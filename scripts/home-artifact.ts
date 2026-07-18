@@ -57,6 +57,8 @@ import {
 } from "./home-installed-upgrade-rehearsal";
 import { parsePwaShellHashedAssetPath } from "./home-pwa-shell";
 import { reconstructHomePredecessorArtifact } from "./home-predecessor-artifact";
+import { runReleasePhase, type ReleaseProgressReporter } from "./release-progress";
+import { runBoundedReleaseCommand } from "./release-command";
 import { readFrozenN1Manifest } from "../tests/fixtures/home-upgrade/n-1/freeze-n1";
 import {
   createNormalizedHomeArtifactTarHeader,
@@ -96,6 +98,7 @@ const ACTIVATION_EVIDENCE_SUFFIX = ".installed-upgrade-evidence.json";
 export const HOME_ARTIFACT_READINESS_TIMEOUT_MS = HOME_PAIRING_READINESS_TIMEOUT_MS;
 const HOME_ARTIFACT_SHUTDOWN_TIMEOUT_MS = 5_000;
 const HOME_ARTIFACT_DIAGNOSTIC_LIMIT = 2_048;
+const HOME_ARTIFACT_COMMAND_TIMEOUT_MS = 5 * 60_000;
 const ACTIVATION_SCENARIOS = Object.freeze([
   "ready-success",
   "stopped-precommit-crash",
@@ -113,6 +116,7 @@ export function homeArtifactReleaseClaimForTests(): typeof HOME_ARTIFACT_RELEASE
 type BuildOptions = {
   readonly repoRoot?: string;
   readonly outputDir?: string;
+  readonly reportProgress?: ReleaseProgressReporter;
   /** Distribution-only seam: sign copied executables after assembly and before inventory/manifest creation. */
   readonly beforeManifest?: (input: Readonly<{
     artifactRoot: string;
@@ -242,6 +246,8 @@ export async function buildHomeArtifact(options: BuildOptions = {}): Promise<{
   readonly evidenceSha256: string;
   readonly manifest: HomeArtifactManifest;
 }> {
+  const reportProgress = options.reportProgress;
+  const beforeManifest = options.beforeManifest;
   const repoRoot = resolve(options.repoRoot ?? REPO_ROOT);
   const outputDir = resolve(options.outputDir ?? join(repoRoot, "dist"));
   const pkg = JSON.parse(await readFile(join(repoRoot, "package.json"), "utf8")) as {
@@ -261,7 +267,11 @@ export async function buildHomeArtifact(options: BuildOptions = {}): Promise<{
   if (process.platform !== "darwin" || process.arch !== "arm64") {
     throw new Error(`Dome Home v1 artifact must be built on darwin-arm64, got ${process.platform}-${process.arch}`);
   }
-  await assertInstalledHomeUpgradeHostPreconditions();
+  await runReleasePhase(
+    "home-host-preflight",
+    reportProgress,
+    async () => await assertInstalledHomeUpgradeHostPreconditions(),
+  );
   const artifactName = `dome-home-${pkg.version}-darwin-arm64`;
   let candidateMetadata: Readonly<{
     manifest: HomeArtifactManifest;
@@ -279,19 +289,24 @@ export async function buildHomeArtifact(options: BuildOptions = {}): Promise<{
       join(repoRoot, "pwa", "dist"),
     ],
     assemble: async ({ directory, archive }) => {
-      const downloadedRuntime = await downloadPinnedRuntime();
+      const downloadedRuntime = await runReleasePhase(
+        "home-download-runtime", reportProgress, downloadPinnedRuntime,
+      );
       let downloadedAge: Awaited<ReturnType<typeof downloadPinnedAge>>;
       try {
-        downloadedAge = await downloadPinnedAge();
+        downloadedAge = await runReleasePhase("home-download-age", reportProgress, downloadPinnedAge);
       } catch (error) {
         await rm(downloadedRuntime.temporary, { recursive: true, force: true });
         throw error;
       }
       const runtimePath = downloadedRuntime.path;
       try {
-        await run([runtimePath, "install", "--frozen-lockfile"], repoRoot);
-        await run([runtimePath, "install", "--frozen-lockfile"], join(repoRoot, "pwa"));
-        await run([runtimePath, "run", "build"], join(repoRoot, "pwa"));
+        await runReleasePhase("home-sdk-install", reportProgress, async () =>
+          await run([runtimePath, "install", "--frozen-lockfile"], repoRoot));
+        await runReleasePhase("home-pwa-install", reportProgress, async () =>
+          await run([runtimePath, "install", "--frozen-lockfile"], join(repoRoot, "pwa")));
+        await runReleasePhase("home-pwa-build", reportProgress, async () =>
+          await run([runtimePath, "run", "build"], join(repoRoot, "pwa")));
         const pwaDist = join(repoRoot, "pwa", "dist");
         if (!existsSync(join(pwaDist, "index.html"))) {
           throw new Error("PWA build is missing pwa/dist/index.html");
@@ -330,18 +345,18 @@ export async function buildHomeArtifact(options: BuildOptions = {}): Promise<{
         await cp(join(repoRoot, "bun.lock"), join(directory, "app", "bun.lock"));
 
         await writeFile(join(directory, "bin", "dome"), domeWrapper(), { mode: 0o755 });
-        await run([
+        await runReleasePhase("home-production-install", reportProgress, async () => await run([
           join(directory, "runtime", "bun"),
           "install",
           "--production",
           "--frozen-lockfile",
           "--ignore-scripts",
           "--backend=copyfile",
-        ], join(directory, "app"));
+        ], join(directory, "app")));
 
         await normalizeArtifactModes(directory);
         await assertSourceSnapshot(repoRoot, sourceHead, dirname(directory));
-        const codeSigning = options.beforeManifest === undefined ? undefined : await options.beforeManifest({
+        const codeSigning = beforeManifest === undefined ? undefined : await beforeManifest({
           artifactRoot: directory,
           sources: Object.freeze({
             bun: runtimePath,
@@ -374,17 +389,29 @@ export async function buildHomeArtifact(options: BuildOptions = {}): Promise<{
         ]);
       }
     },
-    verifyArtifact: async ({ directory }) => { await verifyHomeArtifact(directory); },
+    verifyArtifact: async ({ directory }) => {
+      await runReleasePhase(
+        "home-verify-artifact", reportProgress, async () => await verifyHomeArtifact(directory),
+      );
+    },
     rehearseArchive: async ({ directory, archive }) => {
-      await rehearseHomeArtifact(archive);
+      await runReleasePhase(
+        "home-archive-rehearsal", reportProgress, async () => await rehearseHomeArtifact(archive),
+      );
       if (candidateMetadata === undefined) throw new Error("Home artifact candidate metadata was not assembled");
-      activationReceipt = await activateHomeArtifactCandidate({
-        repoRoot,
-        sourceHead,
-        directory,
-        archive,
-        expectedCandidate: candidateMetadata.identity,
-      });
+      const expectedCandidate = candidateMetadata.identity;
+      activationReceipt = await runReleasePhase(
+        "home-installed-upgrade",
+        reportProgress,
+        async () => await activateHomeArtifactCandidate({
+          repoRoot,
+          sourceHead,
+          directory,
+          archive,
+          expectedCandidate,
+          ...(reportProgress === undefined ? {} : { reportProgress }),
+        }),
+      );
     },
   });
   if (candidateMetadata === undefined || activationReceipt === undefined) {
@@ -524,6 +551,7 @@ async function activateHomeArtifactCandidate(input: Readonly<{
   directory: string;
   archive: string;
   expectedCandidate: HomeArtifactActivationIdentityBinding["candidate"];
+  reportProgress?: ReleaseProgressReporter;
 }>): Promise<Readonly<{ evidenceSha256: string }>> {
   const artifactName = basename(input.directory);
   const stagingOutput = dirname(input.directory);
@@ -563,7 +591,7 @@ async function activateHomeArtifactCandidate(input: Readonly<{
       predecessorArchive: predecessor.archive,
       candidateArchive: input.archive,
       frozenFixtureRoot,
-    }),
+    }, input.reportProgress === undefined ? {} : { reportProgress: input.reportProgress }),
     bindIdentity: async (predecessor, evidence) => {
       assertInstalledEvidenceEnvelope(evidence);
       const binding = expectedCandidateActivationBinding(input.expectedCandidate, predecessor);
@@ -1100,23 +1128,16 @@ async function run(
   cwd: string,
   environment?: Readonly<Record<string, string>>,
 ): Promise<{ stdout: string; stderr: string }> {
-  const child = Bun.spawn([...command], {
-    cwd,
-    stdout: "pipe",
-    stderr: "pipe",
+  const result = await runBoundedReleaseCommand(command, cwd, {
+    timeoutMs: HOME_ARTIFACT_COMMAND_TIMEOUT_MS,
+    maxStdoutBytes: 4 * 1024 * 1024,
+    maxStderrBytes: 4 * 1024 * 1024,
     ...(environment === undefined ? {} : { env: { ...process.env, ...environment } }),
   });
-  const [exitCode, stdout, stderr] = await Promise.all([
-    child.exited,
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-  ]);
-  if (exitCode !== 0) {
-    throw new Error(
-      `${command.map((part) => JSON.stringify(part)).join(" ")} failed (${exitCode})\n${stdout}${stderr}`,
-    );
-  }
-  return { stdout, stderr };
+  return {
+    stdout: result.stdout.toString("utf8"),
+    stderr: result.stderr.toString("utf8"),
+  };
 }
 
 function offlineEnvironment(): Record<string, string> {

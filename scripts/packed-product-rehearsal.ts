@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 import { createHash } from "node:crypto";
-import { lstat, mkdir, mkdtemp, readFile, realpath, readdir, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, realpath, readdir, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { tmpdir } from "node:os";
@@ -18,6 +18,11 @@ import {
   verifyInstalledConsumerWorkflow,
   type InstalledConsumerEvidence,
 } from "./installed-consumer-rehearsal";
+import {
+  formatReleaseProgress,
+  runReleasePhase,
+  type ReleaseProgressReporter,
+} from "./release-progress";
 
 const REPO_ROOT = resolve(import.meta.dir, "..");
 const EXPORTS = Object.freeze([RELEASE_PACKAGE_NAME, `${RELEASE_PACKAGE_NAME}/cli`, `${RELEASE_PACKAGE_NAME}/mcp`]);
@@ -85,7 +90,11 @@ export async function runPackedProductAcceptanceForTests(
 }
 
 /** Hardwired release rehearsal: exact package build, isolated global install, then source-free proof. */
-export async function rehearsePackedProduct(input: Readonly<{ repoRoot?: string }> = {}): Promise<PackedProductReport> {
+export async function rehearsePackedProduct(input: Readonly<{
+  repoRoot?: string;
+  reportProgress?: ReleaseProgressReporter;
+}> = {}): Promise<PackedProductReport> {
+  const report = input.reportProgress;
   const repoRoot = await realpath(resolve(input.repoRoot ?? REPO_ROOT));
   const temporary = await realpath(await mkdtemp(join(tmpdir(), "dome-packed-product-v2-")));
   let primary: unknown;
@@ -116,24 +125,34 @@ export async function rehearsePackedProduct(input: Readonly<{ repoRoot?: string 
       mkdir(producerHome, { recursive: true, mode: 0o700 }),
     ]);
 
-    const sourceStatus = await command(["git", "status", "--porcelain=v1", "--untracked-files=all"], repoRoot, 15_000, 1024 * 1024);
-    if (sourceStatus.stdout.byteLength !== 0) throw new Error("packed-product rehearsal requires a clean source repository");
-    const sourceCommit = (await command(["git", "rev-parse", "HEAD"], repoRoot, 15_000, 128)).stdout.toString("utf8").trim();
-    if (!/^[0-9a-f]{40}$/.test(sourceCommit)) throw new Error("packed-product rehearsal source commit is invalid");
-    await command(["git", "clone", "--local", "--no-hardlinks", "--no-checkout", repoRoot, producer], temporary, 120_000);
-    await command(["git", "-c", "commit.gpgsign=false", "checkout", "--detach", sourceCommit], producer, 30_000);
+    const sourceCommit = await runReleasePhase("source-preflight", report, async () => {
+      const sourceStatus = await command(["git", "status", "--porcelain=v1", "--untracked-files=all"], repoRoot, 15_000, 1024 * 1024);
+      if (sourceStatus.stdout.byteLength !== 0) throw new Error("packed-product rehearsal requires a clean source repository");
+      const commit = (await command(["git", "rev-parse", "HEAD"], repoRoot, 15_000, 128)).stdout.toString("utf8").trim();
+      if (!/^[0-9a-f]{40}$/.test(commit)) throw new Error("packed-product rehearsal source commit is invalid");
+      return commit;
+    });
+    await runReleasePhase("producer-clone", report, async () => {
+      await command(["git", "clone", "--local", "--no-hardlinks", "--no-checkout", repoRoot, producer], temporary, 120_000);
+      await command(["git", "-c", "commit.gpgsign=false", "checkout", "--detach", sourceCommit], producer, 30_000);
+    });
     const producerEnv = isolatedEnvironment({
       home: producerHome,
       cache: producerCache,
       path: `${dirname(process.execPath)}:/usr/bin:/bin:/usr/sbin:/sbin`,
     });
-    await command([
+    await runReleasePhase("producer-sdk-install", report, async () => await command([
       process.execPath, "install", "--frozen-lockfile", "--ignore-scripts", "--backend=copyfile",
-    ], producer, 5 * 60_000, 4 * 1024 * 1024, producerEnv);
-    await command([
+    ], producer, 5 * 60_000, 4 * 1024 * 1024, producerEnv));
+    await runReleasePhase("producer-pwa-install", report, async () => await command([
       process.execPath, "install", "--frozen-lockfile", "--ignore-scripts", "--backend=copyfile",
-    ], join(producer, "pwa"), 5 * 60_000, 4 * 1024 * 1024, producerEnv);
-    const product = await assembleCompleteProductPackage({ repoRoot: producer, outputDir: productOutput });
+    ], join(producer, "pwa"), 5 * 60_000, 4 * 1024 * 1024, producerEnv));
+    const product = await runReleasePhase("product-assembly", report, async () =>
+      await assembleCompleteProductPackage({
+        repoRoot: producer,
+        outputDir: productOutput,
+        ...(report === undefined ? {} : { reportProgress: report }),
+      }));
     validatePackResult(product.packed);
     const tarballBytes = await readBoundedFile(product.tarball, PRODUCT_PACKAGE_CAPS.packedBytes);
     const tarballSha256 = sha256(tarballBytes);
@@ -154,11 +173,11 @@ export async function rehearsePackedProduct(input: Readonly<{ repoRoot?: string 
     let installedEvidence: InstalledProductEvidence | undefined;
     const portable = await runPackedProductAcceptanceForTests({
       install: async () => {
-        await command([
+        await runReleasePhase("global-install", report, async () => await command([
           process.execPath, "install", "-g", product.tarball,
           "--production", "--ignore-scripts", "--backend=copyfile", "--linker=hoisted",
           "--registry=https://registry.npmjs.org",
-        ], probe, 10 * 60_000, 4 * 1024 * 1024, baseEnv);
+        ], probe, 10 * 60_000, 4 * 1024 * 1024, baseEnv));
         await assertGlobalInstallLinks(prefix, globalDir, globalBin, installedRoot, domeBin);
         const installedPackage = JSON.parse(await readFile(join(installedRoot, "package.json"), "utf8"));
         if (JSON.stringify(validateReleasePackageManifest(installedPackage)) !== JSON.stringify(EXPORTS)) {
@@ -166,67 +185,83 @@ export async function rehearsePackedProduct(input: Readonly<{ repoRoot?: string 
         }
       },
       retireInputs: async () => {
-        await Promise.all([
-          rm(producer, { recursive: true }),
-          rm(productOutput, { recursive: true }),
-          rm(installCache, { recursive: true }),
-          rm(producerCache, { recursive: true, force: true }),
-          rm(producerHome, { recursive: true, force: true }),
-        ]);
+        await runReleasePhase("retire-producer-inputs", report, async () => await Promise.all([
+          removeOwnedDirectory(producer, "producer repository"),
+          removeOwnedDirectory(productOutput, "product build output"),
+          removeOwnedDirectory(installCache, "Bun install cache"),
+          removeOwnedDirectory(producerCache, "producer dependency cache"),
+          removeOwnedDirectory(producerHome, "producer home and XDG state"),
+        ]));
       },
       assertInputsUnavailable: async () => {
-        await Promise.all([
+        await runReleasePhase("prove-producer-retired", report, async () => await Promise.all([
           assertAbsent(producer, "producer repository"),
           assertAbsent(productOutput, "product build output"),
           assertAbsent(product.tarball, "packed tarball"),
           assertAbsent(installCache, "Bun install cache"),
           assertAbsent(producerCache, "producer dependency cache"),
           assertAbsent(producerHome, "producer home and XDG state"),
-        ]);
+        ]));
       },
       verifyInstalled: async () => {
-        const installedVerifier = pathToFileURL(join(installedRoot, "src", "product-package", "installed-product.ts")).href;
-        const program = [
-          `import { verifyInstalledProduct } from ${JSON.stringify(installedVerifier)};`,
-          `const evidence = await verifyInstalledProduct(${JSON.stringify({ packageRoot: installedRoot, temporaryParent: probe })});`,
-          `process.stdout.write(JSON.stringify(evidence));`,
-        ].join("\n");
-        const path = join(probe, "verify-installed-product.ts");
-        await writeFile(path, program, { flag: "wx", mode: 0o600 });
-        const result = await command([process.execPath, path], probe, 10 * 60_000, 4 * 1024 * 1024, offlineEnv(baseEnv));
-        installedEvidence = JSON.parse(result.stdout.toString("utf8")) as InstalledProductEvidence;
-        if (installedEvidence.manifest.package.sourceCommit !== sourceCommit ||
-          installedEvidence.manifestSha256 !== sha256(Buffer.from(`${JSON.stringify(product.manifest, null, 2)}\n`))) {
-          throw new Error("installed product manifest differs from assembled product evidence");
-        }
-        return installedEvidence;
+        return await runReleasePhase("verify-installed-product", report, async () => {
+          const installedVerifier = pathToFileURL(
+            join(installedRoot, "src", "product-package", "installed-product.ts"),
+          ).href;
+          const program = [
+            `import { verifyInstalledProduct } from ${JSON.stringify(installedVerifier)};`,
+            `const evidence = await verifyInstalledProduct(${JSON.stringify({ packageRoot: installedRoot, temporaryParent: probe })});`,
+            `process.stdout.write(JSON.stringify(evidence));`,
+          ].join("\n");
+          const path = join(probe, "verify-installed-product.ts");
+          await writeFile(path, program, { flag: "wx", mode: 0o600 });
+          const result = await command(
+            [process.execPath, path], probe, 10 * 60_000, 4 * 1024 * 1024, offlineEnv(baseEnv),
+          );
+          installedEvidence = JSON.parse(result.stdout.toString("utf8")) as InstalledProductEvidence;
+          if (installedEvidence.manifest.package.sourceCommit !== sourceCommit ||
+            installedEvidence.manifestSha256 !==
+              sha256(Buffer.from(`${JSON.stringify(product.manifest, null, 2)}\n`))) {
+            throw new Error("installed product manifest differs from assembled product evidence");
+          }
+          return installedEvidence;
+        });
       },
       verifyExports: async () => {
-        const path = join(probe, "verify-exports.ts");
-        await writeFile(path, `${EXPORTS.map((specifier) => `await import(${JSON.stringify(specifier)});`).join("\n")}\n`, {
-          flag: "wx", mode: 0o600,
+        return await runReleasePhase("verify-exports", report, async () => {
+          const path = join(probe, "verify-exports.ts");
+          await writeFile(
+            path,
+            `${EXPORTS.map((specifier) => `await import(${JSON.stringify(specifier)});`).join("\n")}\n`,
+            { flag: "wx", mode: 0o600 },
+          );
+          await command([process.execPath, path], probe, 2 * 60_000, 1024 * 1024, {
+            ...offlineEnv(baseEnv), NODE_PATH: join(globalDir, "node_modules"),
+          });
+          return EXPORTS;
         });
-        await command([process.execPath, path], probe, 2 * 60_000, 1024 * 1024, {
-          ...offlineEnv(baseEnv), NODE_PATH: join(globalDir, "node_modules"),
-        });
-        return EXPORTS;
       },
       verifyCli: async () => {
-        const result = await command([domeBin, "--help"], probe, 60_000, 1024 * 1024, offlineEnv(baseEnv));
+        const result = await runReleasePhase("verify-cli", report, async () =>
+          await command([domeBin, "--help"], probe, 60_000, 1024 * 1024, offlineEnv(baseEnv)));
         if (!result.stdout.toString("utf8").includes("Dome vault compiler")) {
           throw new Error("global dome --help did not render the Dome CLI");
         }
       },
-      verifyConsumer: async () => await verifyInstalledConsumerWorkflow({
-        domeBin,
-        installedRoot,
-        workspace: probe,
-        env: offlineEnv(baseEnv),
-        run: async (argv, cwd, env) => {
-          const result = await command(argv, cwd, 2 * 60_000, 4 * 1024 * 1024, env);
-          return Object.freeze({ stdout: result.stdout.toString("utf8") });
-        },
-      }),
+      verifyConsumer: async () => await runReleasePhase(
+        "verify-consumer",
+        report,
+        async () => await verifyInstalledConsumerWorkflow({
+          domeBin,
+          installedRoot,
+          workspace: probe,
+          env: offlineEnv(baseEnv),
+          run: async (argv, cwd, env) => {
+            const result = await command(argv, cwd, 2 * 60_000, 4 * 1024 * 1024, env);
+            return Object.freeze({ stdout: result.stdout.toString("utf8") });
+          },
+        }),
+      ),
     });
     if (installedEvidence === undefined) throw new Error("installed product evidence was not produced");
     return Object.freeze({
@@ -252,7 +287,11 @@ export async function rehearsePackedProduct(input: Readonly<{ repoRoot?: string 
     primary = error;
     throw error;
   } finally {
-    try { await rm(temporary, { recursive: true, force: true }); }
+    try {
+      await runReleasePhase(
+        "temporary-cleanup", report, async () => await removeOwnedDirectory(temporary, "rehearsal temporary root"),
+      );
+    }
     catch (cleanup) {
       if (primary !== undefined) throw new AggregateError([primary, cleanup], "packed-product rehearsal and cleanup both failed");
       throw cleanup;
@@ -347,6 +386,11 @@ async function assertAbsent(path: string, label: string): Promise<void> {
   throw new Error(`${label} remains available during installed-product verification`);
 }
 
+async function removeOwnedDirectory(path: string, label: string): Promise<void> {
+  await command(["/bin/rm", "-rf", "--", path], tmpdir(), 2 * 60_000, 1_024 * 1_024);
+  await assertAbsent(path, label);
+}
+
 function contains(root: string, candidate: string): boolean {
   const path = relative(resolve(root), resolve(candidate));
   return path === "" || (path !== ".." && !path.startsWith(`..${sep}`));
@@ -357,7 +401,9 @@ function sha256(bytes: Uint8Array): string {
 }
 
 async function main(): Promise<void> {
-  const report = await rehearsePackedProduct();
+  const report = await rehearsePackedProduct({
+    reportProgress: (progress) => { process.stderr.write(`${formatReleaseProgress(progress)}\n`); },
+  });
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 }
 

@@ -143,7 +143,7 @@ describe("Dome Home artifact", () => {
     const source = await readFile(join(import.meta.dir, "..", "..", "scripts", "home-artifact.ts"), "utf8");
     expect(source).toContain('const shippedBun = join(directory, "runtime", "bun");');
     expect(source).toContain("shippedModelProviderSource,\n          shippedBun,\n");
-    const signing = source.indexOf("const codeSigning = options.beforeManifest");
+    const signing = source.indexOf("const codeSigning = beforeManifest");
     const alias = source.indexOf("await link(shippedBun, join(directory, HOME_RUNTIME_LAUNCH_ALIAS_PATH))");
     const metadata = source.indexOf("const manifest = await writeArtifactMetadataForRelease");
     expect(signing).toBeGreaterThan(-1);

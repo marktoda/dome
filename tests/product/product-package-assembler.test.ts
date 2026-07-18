@@ -1,5 +1,6 @@
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import {
   chmod,
   lstat,
@@ -18,6 +19,7 @@ import { create as createTar } from "tar";
 
 import {
   assembleProductPackageForTests,
+  runBoundedProductCommand,
   runProductPackageCommandForTests,
   type ProductPackageAssemblerDependencies,
 } from "../../scripts/product-package/assembler";
@@ -187,6 +189,291 @@ describe("complete product package assembler", () => {
         process.execPath, "-e", "setInterval(() => {}, 1000)",
       ], fixture.repo, 20)).rejects.toThrow("timed out");
     } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  test("bounded subprocesses terminate a trapping descendant and close inherited pipes", async () => {
+    const fixture = await repositoryFixture();
+    const pidPath = join(fixture.temporary, "descendant.pid");
+    let ownedPids: number[] = [];
+    const program = [
+      `const child = Bun.spawn([process.execPath, "-e", ${JSON.stringify("process.on('SIGTERM', () => {}); setInterval(() => {}, 1_000)")}], { stdout: "inherit", stderr: "inherit" });`,
+      `await Bun.write(${JSON.stringify(pidPath)}, JSON.stringify([process.pid, child.pid]));`,
+      "process.on('SIGTERM', () => {});",
+      "setInterval(() => {}, 1_000);",
+    ].join("\n");
+    try {
+      const startedAt = Date.now();
+      await expect(runProductPackageCommandForTests([
+        process.execPath, "-e", program,
+      ], fixture.repo, 50)).rejects.toThrow("timed out");
+      expect(Date.now() - startedAt).toBeLessThan(5_000);
+      expect(existsSync(pidPath)).toBeTrue();
+      ownedPids = JSON.parse(await readFile(pidPath, "utf8")) as number[];
+      expect(ownedPids).toHaveLength(2);
+      for (const pid of ownedPids) {
+        expect(Number.isInteger(pid)).toBeTrue();
+        let alive = true;
+        for (let attempt = 0; attempt < 40 && alive; attempt += 1) {
+          try {
+            process.kill(pid, 0);
+            await Bun.sleep(25);
+          } catch {
+            alive = false;
+          }
+        }
+        expect(alive).toBeFalse();
+      }
+    } finally {
+      for (const pid of ownedPids) try { process.kill(pid, "SIGKILL"); } catch {}
+      await fixture.cleanup();
+    }
+  });
+
+  test("bounded subprocess input is synchronously snapshotted and rejects proxies or accessors", async () => {
+    const fixture = await repositoryFixture();
+    let traps = 0;
+    const command = new Proxy([process.execPath, "-e", "process.exit(0)"], {
+      get() { traps += 1; throw new Error("command trap executed"); },
+    });
+    try {
+      await expect(runBoundedProductCommand(command, fixture.repo, {
+        timeoutMs: 1_000,
+        maxStdoutBytes: 1_024,
+        maxStderrBytes: 1_024,
+      })).rejects.toThrow("argv is invalid");
+      expect(traps).toBe(0);
+
+      const accessorOptions = {} as Record<string, unknown>;
+      Object.defineProperty(accessorOptions, "timeoutMs", { enumerable: true, get: () => 1_000 });
+      Object.defineProperty(accessorOptions, "maxStdoutBytes", { enumerable: true, value: 1_024 });
+      Object.defineProperty(accessorOptions, "maxStderrBytes", { enumerable: true, value: 1_024 });
+      await expect(runBoundedProductCommand(
+        [process.execPath, "-e", "process.exit(0)"],
+        fixture.repo,
+        accessorOptions as never,
+      )).rejects.toThrow("options are invalid");
+
+      const hostileEnvironment = new Proxy({}, { ownKeys() { traps += 1; throw new Error("env trap executed"); } });
+      await expect(runBoundedProductCommand([process.execPath, "-e", "process.exit(0)"], fixture.repo, {
+        timeoutMs: 1_000,
+        maxStdoutBytes: 1_024,
+        maxStderrBytes: 1_024,
+        env: hostileEnvironment as Record<string, string>,
+      })).rejects.toThrow("environment is invalid");
+      expect(traps).toBe(0);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  test("bounded subprocesses retain immutable argv and environment snapshots after spawn", async () => {
+    const fixture = await repositoryFixture();
+    const command = [
+      process.execPath,
+      "-e",
+      "await Bun.sleep(20); process.stdout.write(`${process.env.DOME_RELEASE_SNAPSHOT}:${process.env.__proto__}`)",
+    ];
+    const env = { ...process.env, DOME_RELEASE_SNAPSHOT: "captured" } as Record<string, string>;
+    Object.defineProperty(env, "__proto__", {
+      value: "literal-env-entry", enumerable: true, configurable: true, writable: true,
+    });
+    try {
+      const pending = runBoundedProductCommand(command, fixture.repo, {
+        timeoutMs: 1_000,
+        maxStdoutBytes: 1_024,
+        maxStderrBytes: 1_024,
+        env,
+      });
+      command[0] = "mutated-owner-path";
+      env.DOME_RELEASE_SNAPSHOT = "mutated";
+      expect((await pending).stdout.toString("utf8")).toBe("captured:literal-env-entry");
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  test("output overflow kills and drains the direct child and its inherited-pipe descendant", async () => {
+    const fixture = await repositoryFixture();
+    const pidPath = join(fixture.temporary, "overflow-pids.json");
+    let ownedPids: number[] = [];
+    const program = [
+      `const child = Bun.spawn([process.execPath, "-e", ${JSON.stringify("setInterval(() => {}, 1_000)")}], { stdout: "inherit", stderr: "inherit" });`,
+      `await Bun.write(${JSON.stringify(pidPath)}, JSON.stringify([process.pid, child.pid]));`,
+      `process.stdout.write("x".repeat(2_048));`,
+      "setInterval(() => {}, 1_000);",
+    ].join("\n");
+    try {
+      await expect(runBoundedProductCommand([process.execPath, "-e", program], fixture.repo, {
+        timeoutMs: 1_000,
+        maxStdoutBytes: 1_024,
+        maxStderrBytes: 1_024,
+      })).rejects.toThrow("stdout exceeded its byte budget");
+      ownedPids = JSON.parse(await readFile(pidPath, "utf8")) as number[];
+      for (const pid of ownedPids) {
+        let alive = true;
+        for (let attempt = 0; attempt < 40 && alive; attempt += 1) {
+          try { process.kill(pid, 0); await Bun.sleep(25); }
+          catch { alive = false; }
+        }
+        expect(alive).toBeFalse();
+      }
+    } finally {
+      for (const pid of ownedPids) try { process.kill(pid, "SIGKILL"); } catch {}
+      await fixture.cleanup();
+    }
+  });
+
+  test("nonzero direct exit promptly kills a descendant holding inherited pipes", async () => {
+    const fixture = await repositoryFixture();
+    const pidPath = join(fixture.temporary, "nonzero-pids.json");
+    let ownedPids: number[] = [];
+    const program = [
+      `const child = Bun.spawn([process.execPath, "-e", ${JSON.stringify("setInterval(() => {}, 1_000)")}], { stdout: "inherit", stderr: "inherit" });`,
+      `await Bun.write(${JSON.stringify(pidPath)}, JSON.stringify([process.pid, child.pid]));`,
+      "process.exit(7);",
+    ].join("\n");
+    try {
+      const startedAt = Date.now();
+      let failure: unknown;
+      try {
+        await runBoundedProductCommand([process.execPath, "-e", program], fixture.repo, {
+          timeoutMs: 2_000,
+          maxStdoutBytes: 1_024,
+          maxStderrBytes: 1_024,
+        });
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toBeInstanceOf(Error);
+      expect((failure as Error).message).toBe(`${process.execPath} failed (7): `);
+      expect(Date.now() - startedAt).toBeLessThan(1_000);
+      ownedPids = JSON.parse(await readFile(pidPath, "utf8")) as number[];
+      for (const pid of ownedPids) {
+        let alive = true;
+        for (let attempt = 0; attempt < 40 && alive; attempt += 1) {
+          try { process.kill(pid, 0); await Bun.sleep(25); }
+          catch { alive = false; }
+        }
+        expect(alive).toBeFalse(); // Neither the direct Bun nor its Bun descendant may linger.
+      }
+    } finally {
+      for (const pid of ownedPids) try { process.kill(pid, "SIGKILL"); } catch {}
+      await fixture.cleanup();
+    }
+  });
+
+  test("proxied abort signals are rejected without executing traps", async () => {
+    const fixture = await repositoryFixture();
+    let traps = 0;
+    const signal = new Proxy(new AbortController().signal, {
+      getPrototypeOf() { traps += 1; throw new Error("signal trap executed"); },
+    });
+    try {
+      await expect(runBoundedProductCommand([process.execPath, "-e", "process.exit(0)"], fixture.repo, {
+        timeoutMs: 1_000,
+        maxStdoutBytes: 1_024,
+        maxStderrBytes: 1_024,
+        signal,
+      })).rejects.toThrow("signal is invalid");
+      expect(traps).toBe(0);
+      await expect(runBoundedProductCommand([process.execPath, "-e", "process.exit(0)"], fixture.repo, {
+        timeoutMs: 1_000,
+        maxStdoutBytes: 1_024,
+        maxStderrBytes: 1_024,
+        signal: Object.create(AbortSignal.prototype) as AbortSignal,
+      })).rejects.toThrow("signal is invalid");
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  test("genuine abort signal own accessors cannot affect a successful command", async () => {
+    const fixture = await repositoryFixture();
+    const controller = new AbortController();
+    const accesses: string[] = [];
+    poisonAbortSignalSurface(controller.signal, (name) => { accesses.push(name); });
+    try {
+      const result = await runBoundedProductCommand(
+        [process.execPath, "-e", "await Bun.sleep(20); process.stdout.write('ok')"],
+        fixture.repo,
+        {
+          timeoutMs: 1_000,
+          maxStdoutBytes: 1_024,
+          maxStderrBytes: 1_024,
+          signal: controller.signal,
+        },
+      );
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout.toString("utf8")).toBe("ok");
+      expect(accesses).toEqual([]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  test("mid-flight abort signal mutation cannot mask a command failure", async () => {
+    const fixture = await repositoryFixture();
+    const controller = new AbortController();
+    const accesses: string[] = [];
+    try {
+      const pending = runBoundedProductCommand(
+        [process.execPath, "-e", "await Bun.sleep(30); process.stderr.write('expected'); process.exit(9)"],
+        fixture.repo,
+        {
+          timeoutMs: 1_000,
+          maxStdoutBytes: 1_024,
+          maxStderrBytes: 1_024,
+          signal: controller.signal,
+        },
+      );
+      poisonAbortSignalSurface(controller.signal, (name) => { accesses.push(name); });
+      let failure: unknown;
+      try { await pending; } catch (error) { failure = error; }
+      expect(failure).toBeInstanceOf(Error);
+      expect((failure as Error).message).toBe(`${process.execPath} failed (9): expected`);
+      expect(accesses).toEqual([]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  test("mid-flight abort signal mutation preserves abort and process cleanup", async () => {
+    const fixture = await repositoryFixture();
+    const controller = new AbortController();
+    const accesses: string[] = [];
+    const pidPath = join(fixture.temporary, "abort-mutation.pid");
+    let ownedPid: number | undefined;
+    try {
+      const pending = runBoundedProductCommand(
+        [process.execPath, "-e", `await Bun.write(${JSON.stringify(pidPath)}, String(process.pid)); await Bun.sleep(10_000)`],
+        fixture.repo,
+        {
+          timeoutMs: 2_000,
+          maxStdoutBytes: 1_024,
+          maxStderrBytes: 1_024,
+          signal: controller.signal,
+        },
+      );
+      for (let attempt = 0; attempt < 40 && !existsSync(pidPath); attempt += 1) await Bun.sleep(25);
+      expect(existsSync(pidPath)).toBeTrue();
+      ownedPid = Number.parseInt(await readFile(pidPath, "utf8"), 10);
+      poisonAbortSignalSurface(controller.signal, (name) => { accesses.push(name); });
+      controller.abort();
+      let failure: unknown;
+      try { await pending; } catch (error) { failure = error; }
+      expect(failure).toBeInstanceOf(Error);
+      expect((failure as Error).message).toBe(`${process.execPath} was aborted`);
+      expect(accesses).toEqual([]);
+      let alive = true;
+      for (let attempt = 0; attempt < 40 && alive; attempt += 1) {
+        try { process.kill(ownedPid, 0); await Bun.sleep(25); }
+        catch { alive = false; }
+      }
+      expect(alive).toBeFalse();
+    } finally {
+      if (ownedPid !== undefined) try { process.kill(ownedPid, "SIGKILL"); } catch {}
       await fixture.cleanup();
     }
   });
@@ -511,6 +798,18 @@ function homeManifest(sourceCommit: string): HomeArtifactManifest {
 
 async function git(cwd: string, args: string[]): Promise<string> {
   return await command(["git", ...args], cwd);
+}
+
+function poisonAbortSignalSurface(signal: AbortSignal, onAccess: (name: string) => void): void {
+  for (const name of ["aborted", "addEventListener", "removeEventListener"]) {
+    Object.defineProperty(signal, name, {
+      configurable: true,
+      get() {
+        onAccess(name);
+        throw new Error(`caller-owned ${name} accessor executed`);
+      },
+    });
+  }
 }
 
 async function command(argv: string[], cwd: string): Promise<string> {

@@ -9,6 +9,7 @@ import {
 import { materializeHomeArtifactArchive } from "../src/product-host/home-artifact-archive";
 import { publishDirectoryExclusive } from "../src/platform/exclusive-rename";
 import { buildHomeArtifact } from "./home-artifact";
+import type { ReleaseProgressReporter } from "./release-progress";
 
 const REPO_ROOT = resolve(import.meta.dir, "..");
 
@@ -20,8 +21,10 @@ export type CompleteProductPackage = Omit<PortableProductPackageAssembly, "evide
 export async function assembleCompleteProductPackage(input: Readonly<{
   repoRoot?: string;
   outputDir: string;
+  reportProgress?: ReleaseProgressReporter;
 }>): Promise<CompleteProductPackage> {
   const repoRoot = resolve(input.repoRoot ?? REPO_ROOT);
+  const reportProgress = input.reportProgress;
   const portable = await assembleProductPackageForTests({
     repoRoot,
     outputDir: resolve(input.outputDir),
@@ -29,6 +32,7 @@ export async function assembleCompleteProductPackage(input: Readonly<{
     buildHome: async ({ repoRoot: buildRoot, outputDir }) => await buildHomeArtifact({
       repoRoot: buildRoot,
       outputDir,
+      ...(reportProgress === undefined ? {} : { reportProgress }),
     }),
     inspectHome: async (archiveInput) => await materializeHomeArtifactArchive(archiveInput),
     publish: async ({ source, target }) => await publishDirectoryExclusive({ source, target }),

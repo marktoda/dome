@@ -36,6 +36,8 @@ import {
 import { runHomePwaChromiumAcceptance } from "./home-pwa-chromium-acceptance";
 import { runHomePwaUpdateRehearsal } from "./home-pwa-update-rehearsal";
 import { parsePwaShellHashedAssetPath } from "./home-pwa-shell";
+import { runReleasePhase, type ReleaseProgressReporter } from "./release-progress";
+import { isReleaseAbortRequested, runBoundedReleaseCommand } from "./release-command";
 import {
   assertInstalledFunctionalClosure,
   prepareInstalledFunctionalClosure,
@@ -56,6 +58,8 @@ const HOST = "127.0.0.1";
 const PORT = 3663;
 const PREDECESSOR_INSTALL_TIMEOUT_MS = 60_000;
 const PREDECESSOR_LATE_READINESS_TIMEOUT_MS = 30_000;
+const INSTALLED_HTTP_TIMEOUT_MS = 30_000;
+const INSTALLED_COMMAND_TIMEOUT_MS = 5 * 60_000;
 const INSTALLED_TEMPORARY_CLEANUP_TIMEOUT_MS = 120_000;
 const INSTALLED_TEMPORARY_PREFIX = "dome-installed-upgrade-";
 const FROZEN_PREDECESSOR_ARTIFACT_ID = "911d5219bd5888f8a45fbfb0bbcf6da57b54e3a0ffcf8077bd2d843327747096";
@@ -223,9 +227,11 @@ type RehearsalOperations<TPrepared> = Readonly<{
 /** Run the only adapter permitted to return installed rehearsal evidence. */
 export async function rehearseInstalledHomeUpgrade(
   input: InstalledHomeUpgradeRehearsalInput,
+  options: Readonly<{ reportProgress?: ReleaseProgressReporter }> = {},
 ): Promise<InstalledHomeUpgradeRehearsalResult> {
-  const operations = realOperations();
-  const prepared = await orchestrate(input, operations);
+  const reportProgress = options.reportProgress;
+  const operations = realOperations(reportProgress);
+  const prepared = await orchestrate(input, operations, reportProgress);
   const uid = process.getuid?.();
   if (process.platform !== "darwin" || process.arch !== "arm64" || uid === undefined) {
     throw new Error("installed evidence host identity changed after rehearsal");
@@ -264,19 +270,22 @@ export async function rehearseInstalledHomeUpgrade(
 export async function exerciseInstalledUpgradeOrchestrationForTests<TPrepared>(
   input: InstalledHomeUpgradeRehearsalInput,
   operations: RehearsalOperations<TPrepared>,
+  options: Readonly<{ reportProgress?: ReleaseProgressReporter }> = {},
 ): Promise<NonEvidenceInstalledUpgradeResult> {
-  await orchestrate(input, operations);
+  const reportProgress = options.reportProgress;
+  await orchestrate(input, operations, reportProgress);
   return Object.freeze({ evidence: false, scenarios: SCENARIOS });
 }
 
 async function orchestrate<TPrepared>(
   input: InstalledHomeUpgradeRehearsalInput,
   operations: RehearsalOperations<TPrepared>,
+  reportProgress?: ReleaseProgressReporter,
 ): Promise<TPrepared> {
   let prepared: TPrepared | null = null;
   const causes: Array<Readonly<{ label: string; error: unknown }>> = [];
   try {
-    prepared = await operations.prepare(input);
+    prepared = await runReleasePhase("installed-prepare", reportProgress, async () => await operations.prepare(input));
   } catch (error) {
     causes.push({ label: "prepare", error });
   }
@@ -284,9 +293,15 @@ async function orchestrate<TPrepared>(
     for (const scenario of SCENARIOS) {
       let runError: unknown | null = null;
       let scenarioCleanupError: unknown | null = null;
-      try { await operations.runScenario(scenario, prepared); }
+      try {
+        await runReleasePhase(`installed-${scenario}`, reportProgress, async () =>
+          await operations.runScenario(scenario, prepared!));
+      }
       catch (error) { runError = error; }
-      try { await operations.cleanupScenario(scenario, prepared); }
+      try {
+        await runReleasePhase(`installed-${scenario}-cleanup`, reportProgress, async () =>
+          await operations.cleanupScenario(scenario, prepared!));
+      }
       catch (error) { scenarioCleanupError = error; }
       if (runError !== null) causes.push({ label: `run:${scenario}`, error: runError });
       if (scenarioCleanupError !== null) {
@@ -298,7 +313,7 @@ async function orchestrate<TPrepared>(
   try {
     // On success, the result retains only immutable manifest summaries. The
     // extracted roots are still destroyed before installed evidence returns.
-    await operations.cleanup(prepared);
+    await runReleasePhase("installed-global-cleanup", reportProgress, async () => await operations.cleanup(prepared));
   } catch (error) {
     causes.push({ label: "global-cleanup", error });
   }
@@ -333,7 +348,7 @@ function renderInstalledOrchestrationCauses(
   }).join(separator);
 }
 
-function realOperations(): RehearsalOperations<PreparedArtifacts> {
+function realOperations(reportProgress?: ReleaseProgressReporter): RehearsalOperations<PreparedArtifacts> {
   const scenarios = new Map<InstalledHomeUpgradeScenario, ScenarioContext>();
   let cleanupSafe = true;
   return Object.freeze({
@@ -341,7 +356,7 @@ function realOperations(): RehearsalOperations<PreparedArtifacts> {
     runScenario: async (name, prepared) => {
       const context = await createScenario(name, prepared, () => { cleanupSafe = false; });
       scenarios.set(name, context);
-      await runRealScenario(context, prepared);
+      await runRealScenario(context, prepared, reportProgress);
     },
     cleanupScenario: async (name) => {
       const context = scenarios.get(name);
@@ -978,7 +993,7 @@ async function observeLatePredecessorReadiness(input: Readonly<{
 }>, signal: AbortSignal): Promise<boolean> {
   let response: Response;
   try {
-    response = await fetch(`http://${HOST}:${PORT}/pair/status`, {
+    response = await fetchInstalled(`http://${HOST}:${PORT}/pair/status`, {
       cache: "no-store",
       signal,
     });
@@ -1003,10 +1018,14 @@ async function observeLatePredecessorReadiness(input: Readonly<{
   return true;
 }
 
-async function runRealScenario(context: ScenarioContext, prepared: PreparedArtifacts): Promise<void> {
+async function runRealScenario(
+  context: ScenarioContext,
+  prepared: PreparedArtifacts,
+  reportProgress?: ReleaseProgressReporter,
+): Promise<void> {
   switch (context.name) {
     case "ready-success":
-      await readySuccess(context, prepared);
+      await readySuccess(context, prepared, reportProgress);
       break;
     case "stopped-precommit-crash":
       await stoppedPrecommitCrash(context, prepared);
@@ -1018,7 +1037,11 @@ async function runRealScenario(context: ScenarioContext, prepared: PreparedArtif
   await assertOwnerSubstrate(context);
 }
 
-async function readySuccess(context: ScenarioContext, prepared: PreparedArtifacts): Promise<void> {
+async function readySuccess(
+  context: ScenarioContext,
+  prepared: PreparedArtifacts,
+  reportProgress?: ReleaseProgressReporter,
+): Promise<void> {
   await packagedBackup(context, prepared.candidateRoot);
   await assertTerminalStatus(context, prepared.candidateRoot, prepared.predecessor, "ready");
   await assertFrozenState(context, "n1");
@@ -1031,33 +1054,38 @@ async function readySuccess(context: ScenarioContext, prepared: PreparedArtifact
   await assertPwa();
   const functionalClosure = installedFunctionalClosureBoundary(context);
   const functionalCanary = await prepareInstalledFunctionalClosure(functionalClosure);
-  await runHomePwaChromiumAcceptance({
-    baseUrl: `http://${HOST}:${PORT}/`,
-    expected: {
-      productVersion: prepared.candidate.product.version,
-      vaultName: basename(context.vault),
-      functionalCanary,
-    },
-    mintPairingCode: async (deviceName, signal) => await mintChromiumPairingCode(
-      context,
-      prepared.candidateRoot,
-      deviceName,
-      signal,
-    ),
-    revokeDevice: async (deviceName, signal) => await revokeChromiumDevice(
-      context,
-      prepared.candidateRoot,
-      deviceName,
-      signal,
-    ),
-    assertLogicalCapture: async (text, captureId, signal) =>
-      await assertChromiumLogicalCapture(context, text, captureId, signal),
-    assertTaskSettlement: async (commit, signal) =>
-      await assertInstalledFunctionalClosure(functionalClosure, functionalCanary, commit, signal),
-  });
-  await runHomePwaUpdateRehearsal({
-    staticRoot: join(prepared.candidateRoot, "app", "pwa", "dist"),
-  });
+  await runReleasePhase("installed-chromium-acceptance", reportProgress, async () =>
+    await runHomePwaChromiumAcceptance({
+      baseUrl: `http://${HOST}:${PORT}/`,
+      expected: {
+        productVersion: prepared.candidate.product.version,
+        vaultName: basename(context.vault),
+        functionalCanary,
+      },
+      mintPairingCode: async (deviceName, signal) => await mintChromiumPairingCode(
+        context,
+        prepared.candidateRoot,
+        deviceName,
+        signal,
+      ),
+      revokeDevice: async (deviceName, signal) => await revokeChromiumDevice(
+        context,
+        prepared.candidateRoot,
+        deviceName,
+        signal,
+      ),
+      assertLogicalCapture: async (text, captureId, signal) =>
+        await assertChromiumLogicalCapture(context, text, captureId, signal),
+      assertTaskSettlement: async (commit, signal) =>
+        await assertInstalledFunctionalClosure(functionalClosure, functionalCanary, commit, signal),
+    }));
+  await runReleasePhase(
+    "installed-pwa-update",
+    reportProgress,
+    async () => await runHomePwaUpdateRehearsal({
+      staticRoot: join(prepared.candidateRoot, "app", "pwa", "dist"),
+    }),
+  );
 }
 
 async function stoppedPrecommitCrash(context: ScenarioContext, prepared: PreparedArtifacts): Promise<void> {
@@ -1144,7 +1172,7 @@ async function pairFreshDevice(
     "--vault", context.vault, "--json",
   ], context.root, context.environment);
   const pairingCode = stringField(grant, "pairingCode");
-  const response = await fetch(`http://${HOST}:${PORT}/pair`, {
+  const response = await fetchInstalled(`http://${HOST}:${PORT}/pair`, {
     method: "POST",
     headers: { "content-type": "application/json", origin: `http://${HOST}:${PORT}` },
     body: JSON.stringify({ code: pairingCode }),
@@ -1165,7 +1193,7 @@ function installedFunctionalClosureBoundary(context: ScenarioContext): Functiona
     readHome: async (pathname, signal) => {
       if (context.activeDevice === null) throw new Error("functional acceptance requires an active host device");
       try {
-        const response = await fetch(`http://${HOST}:${PORT}${pathname}`, {
+        const response = await fetchInstalled(`http://${HOST}:${PORT}${pathname}`, {
           headers: { cookie: context.activeDevice.cookie },
           signal,
         });
@@ -1309,10 +1337,10 @@ async function assertLiveCredentialTruth(
   if (context.activeDevice === null || context.revokedDevice === null) {
     throw new Error("fresh live credential evidence is incomplete");
   }
-  const active = await fetch(`http://${HOST}:${PORT}/readyz`, {
+  const active = await fetchInstalled(`http://${HOST}:${PORT}/readyz`, {
     headers: { cookie: context.activeDevice.cookie },
   });
-  const revoked = await fetch(`http://${HOST}:${PORT}/readyz`, {
+  const revoked = await fetchInstalled(`http://${HOST}:${PORT}/readyz`, {
     headers: { cookie: context.revokedDevice.cookie },
   });
   const activeBody = active.status === 200 ? asRecord(await active.json(), "active readiness") : null;
@@ -1373,7 +1401,7 @@ async function assertFrozenState(context: ScenarioContext, expectedSchema: "n1" 
 
 async function readinessTick(context: ScenarioContext): Promise<string> {
   if (context.activeDevice === null) throw new Error("readiness tick requires an active device");
-  const response = await fetch(`http://${HOST}:${PORT}/readyz`, {
+  const response = await fetchInstalled(`http://${HOST}:${PORT}/readyz`, {
     headers: { cookie: context.activeDevice.cookie },
   });
   if (response.status !== 200) throw new Error(`readiness tick unavailable (${response.status})`);
@@ -1587,7 +1615,7 @@ async function assertTerminalStatus(
 }
 
 async function assertPwa(): Promise<void> {
-  const response = await fetch(`http://${HOST}:${PORT}/`);
+  const response = await fetchInstalled(`http://${HOST}:${PORT}/`);
   const html = await response.text();
   if (!response.ok || !html.includes('id="root"')) {
     throw new Error(`installed Home did not serve its PWA shell (${response.status})`);
@@ -1598,7 +1626,7 @@ async function assertPwa(): Promise<void> {
   } catch {
     throw new Error("installed PWA shell did not reference a hashed asset");
   }
-  const asset = await fetch(new URL(assetPath, `http://${HOST}:${PORT}/`));
+  const asset = await fetchInstalled(new URL(assetPath, `http://${HOST}:${PORT}/`));
   if (!asset.ok || (await asset.arrayBuffer()).byteLength === 0) {
     throw new Error(`installed Home did not serve PWA asset ${assetPath}`);
   }
@@ -1718,6 +1746,25 @@ function isolatedEnvironment(home: string): Record<string, string> {
   } as Record<string, string>;
 }
 
+async function fetchInstalled(
+  input: string | URL,
+  init: RequestInit = {},
+  timeoutMs = INSTALLED_HTTP_TIMEOUT_MS,
+): Promise<Response> {
+  if (!Number.isInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > INSTALLED_HTTP_TIMEOUT_MS) {
+    throw new Error("installed HTTP timeout is invalid");
+  }
+  const deadline = AbortSignal.timeout(timeoutMs);
+  const signal = init.signal == null ? deadline : AbortSignal.any([init.signal, deadline]);
+  return await fetch(input, { ...init, signal });
+}
+
+/** Portable exact-hang seam: the response body remains owned by the deadline. */
+export async function exerciseInstalledHttpTimeoutForTests(url: string, timeoutMs: number): Promise<void> {
+  const response = await fetchInstalled(url, {}, timeoutMs);
+  await response.arrayBuffer();
+}
+
 async function runJson(
   command: ReadonlyArray<string>,
   cwd: string,
@@ -1806,29 +1853,27 @@ async function runRawAllowFailure(
   environment: Readonly<Record<string, string | undefined>>,
   signal?: AbortSignal,
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-  if (abortSignalIsSet(signal)) throw new Error("installed Chromium acceptance command aborted");
-  const child = Bun.spawn([...command], {
-    cwd,
-    env: environment,
-    stdout: "pipe",
-    stderr: "pipe",
-    ...(signal === undefined ? {} : { signal, killSignal: "SIGKILL" as const }),
-  });
-  const settled = await Promise.allSettled([
-    child.exited,
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-  ]);
-  if (abortSignalIsSet(signal)) throw new Error("installed Chromium acceptance command aborted");
-  const [exitCode, stdout, stderr] = settled;
-  if (exitCode?.status !== "fulfilled" || stdout?.status !== "fulfilled" || stderr?.status !== "fulfilled") {
-    throw new Error("installed command output did not settle");
+  if (isReleaseAbortRequested(signal)) throw new Error("installed Chromium acceptance command aborted");
+  let result: Awaited<ReturnType<typeof runBoundedReleaseCommand>>;
+  try {
+    result = await runBoundedReleaseCommand(command, cwd, {
+      timeoutMs: INSTALLED_COMMAND_TIMEOUT_MS,
+      maxStdoutBytes: 4 * 1024 * 1024,
+      maxStderrBytes: 4 * 1024 * 1024,
+      env: environment,
+      allowFailure: true,
+      ...(signal === undefined ? {} : { signal }),
+    });
+  } catch (error) {
+    if (isReleaseAbortRequested(signal)) throw new Error("installed Chromium acceptance command aborted");
+    throw error;
   }
-  return { exitCode: exitCode.value, stdout: stdout.value, stderr: stderr.value };
-}
-
-function abortSignalIsSet(signal: AbortSignal | undefined): boolean {
-  return signal?.aborted === true;
+  if (isReleaseAbortRequested(signal)) throw new Error("installed Chromium acceptance command aborted");
+  return {
+    exitCode: result.exitCode,
+    stdout: result.stdout.toString("utf8"),
+    stderr: result.stderr.toString("utf8"),
+  };
 }
 
 /** Portable abort seam for the installed Chromium adapter; emits no installed evidence. */

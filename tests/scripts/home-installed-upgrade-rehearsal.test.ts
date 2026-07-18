@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { lstat, mkdir, mkdtemp, realpath, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
+import { createServer } from "node:http";
 
 import {
   assertInstalledBackupRestoreCanaryForTests,
@@ -11,6 +12,7 @@ import {
   classifyPredecessorInstallForTests,
   classifyInstalledHomeDrainForTests,
   exerciseAbortableInstalledCommandForTests,
+  exerciseInstalledHttpTimeoutForTests,
   exerciseInstalledUpgradeOrchestrationForTests,
   exercisePredecessorInstallTimeoutForTests,
   hasExactHomePwaCaptureIdentityForTests,
@@ -879,9 +881,44 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
 
   test("SIGKILLs and drains an aborted installed Chromium child", async () => {
     const controller = new AbortController();
+    const accesses: string[] = [];
     const running = exerciseAbortableInstalledCommandForTests(controller.signal);
+    for (const name of ["aborted", "addEventListener", "removeEventListener"]) {
+      Object.defineProperty(controller.signal, name, {
+        configurable: true,
+        get() {
+          accesses.push(name);
+          throw new Error(`caller-owned ${name} accessor executed`);
+        },
+      });
+    }
     setTimeout(() => controller.abort(), 10);
     await expect(running).rejects.toThrow("installed Chromium acceptance command aborted");
+    expect(accesses).toEqual([]);
+  });
+
+  test("bounds an installed HTTP response whose body never arrives", async () => {
+    const server = createServer((_request, response) => {
+      response.writeHead(200, { "content-type": "application/octet-stream" });
+      response.write("partial");
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    try {
+      const address = server.address();
+      if (address === null || typeof address === "string") throw new Error("HTTP fixture has no TCP address");
+      const startedAt = Date.now();
+      await expect(exerciseInstalledHttpTimeoutForTests(
+        `http://127.0.0.1:${address.port}/stalled`,
+        25,
+      )).rejects.toThrow();
+      expect(Date.now() - startedAt).toBeLessThan(2_000);
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 
   test("accepts one capture identity across canonical YAML quote removal", () => {
@@ -1260,6 +1297,7 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
 
   test("runs the three scenarios sequentially and cleans each boundary", async () => {
     const events: string[] = [];
+    const progress: string[] = [];
     let active = false;
     const result = await exerciseInstalledUpgradeOrchestrationForTests(INPUT, {
       prepare: async (input) => {
@@ -1278,6 +1316,8 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
         events.push(`scenario-clean:${name}`);
       },
       cleanup: async (prepared) => { events.push(`clean:${prepared?.token ?? "null"}`); },
+    }, {
+      reportProgress: ({ phase, state }) => { progress.push(`${phase}:${state}`); },
     });
 
     expect(result).toEqual({
@@ -1294,6 +1334,16 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
       "run:committed-exact-repair",
       "scenario-clean:committed-exact-repair",
       "clean:synthetic",
+    ]);
+    expect(progress).toEqual([
+      "installed-prepare:started", "installed-prepare:completed",
+      "installed-ready-success:started", "installed-ready-success:completed",
+      "installed-ready-success-cleanup:started", "installed-ready-success-cleanup:completed",
+      "installed-stopped-precommit-crash:started", "installed-stopped-precommit-crash:completed",
+      "installed-stopped-precommit-crash-cleanup:started", "installed-stopped-precommit-crash-cleanup:completed",
+      "installed-committed-exact-repair:started", "installed-committed-exact-repair:completed",
+      "installed-committed-exact-repair-cleanup:started", "installed-committed-exact-repair-cleanup:completed",
+      "installed-global-cleanup:started", "installed-global-cleanup:completed",
     ]);
   });
 

@@ -421,6 +421,24 @@ portable orchestration seam can return only `evidence: false`; only the
 hardwired real clone/build/global-install verifier promotes complete-product
 evidence. npm publication, tags, and a GitHub release remain outside this gate.
 
+The rehearsal emits live, content-free progress containing only a strictly shaped phase
+label, `started` / `completed` / `failed`, and elapsed milliseconds. Nested
+labels distinguish package production, Home assembly, each installed N-1→N
+scenario, installed Chromium acceptance, PWA update acceptance, global install,
+and source-less consumer verification without printing vault content, paths, or
+credentials. Release subprocesses share one bounded-command seam: argv,
+environment, and limits are synchronously snapshotted; each Unix command owns a
+private process group; timeout, abort, or output overflow kills and drains the
+direct child and descendants. Caller-owned abort signals are brand-checked and
+observed only through captured platform intrinsics, so accessors or mutation
+cannot change command truth or mask cleanup. Home build and installed-upgrade commands have a
+five-minute command bound, while installed loopback HTTP requests retain a
+30-second deadline through response-body consumption. A hosted failure must
+therefore name its last phase instead of remaining silent until the CI job cap.
+Progress reporting is best-effort: synchronous throws and asynchronous
+rejections are observed but never awaited and cannot change or mask the release
+operation's result.
+
 Managed publication copies that verified twin once to the direct, host-wide
 path `~/Library/Application Support/Dome/Home/runtime/Dome Home` while holding
 the global release-store owner. The file and its parent are fsynced, and every
