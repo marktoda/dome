@@ -76,6 +76,10 @@ const OID = commitOid("c".repeat(40));
 const DATABASES = [
   "answers.db", "proposals.db", "outbox.db", "runs.db", "request-receipts.db", "device-authority.db",
 ] as const;
+// Concurrent cutover recovery crosses the real six-store restore and the
+// production coordinator's bounded 30-second ownership wait. The test
+// watchdog must sit beyond that seam so fixture cleanup cannot race a waiter.
+const CONCURRENT_CUTOVER_TIMEOUT_MS = 35_000;
 
 function probationProof(transactionId: string) {
   return {
@@ -521,7 +525,7 @@ describe("Product Host pre-commit upgrade transaction", () => {
       expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeFalse();
       expect(await readHomeUpgradeBarrier(f.vault, f.deps)).toBeNull();
     } finally { await rm(f.root, { recursive: true, force: true }); }
-  });
+  }, { timeout: CONCURRENT_CUTOVER_TIMEOUT_MS });
 
   for (const crashAt of ["probation-recorded", "switching-recorded"] as const) {
     test(`composed cutover automatically rolls back and retries after ${crashAt}`, async () => {
