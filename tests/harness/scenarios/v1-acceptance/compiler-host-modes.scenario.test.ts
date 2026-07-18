@@ -7,7 +7,19 @@
 
 import { expect } from "bun:test";
 
-import { TestClock, scenario } from "../../index";
+import { TestClock, scenario, type Harness } from "../../index";
+
+const SCENARIO_TIMEOUT_MS = 120_000;
+const HOST_OFF_PROCESSOR_RUNS = 151;
+const HOST_ON_PROCESSOR_RUNS = 172;
+// These journeys deliberately exercise fixed-point cascades: their ledgers
+// prove 151 and 172 sequential processor runs respectively. Bound the tiny,
+// deterministic fixture at the child seam: 172 * 500ms = 86s, leaving the
+// scenario watchdog 34s for setup, Git, SQLite, CLI dispatch, and cleanup.
+// Exact run-count assertions below keep this deadline proof from drifting as
+// bundles change; both journeys also assert zero failed runs, so a child
+// timeout stays loud.
+const PROCESSOR_TIMEOUT_MS = 500;
 
 scenario(
   {
@@ -29,7 +41,7 @@ scenario(
       { kind: "route", route: "adoption" },
       { kind: "route", route: "view-command" },
     ],
-    timeoutMs: 30_000,
+    timeoutMs: SCENARIO_TIMEOUT_MS,
     harness: {
       clock: new TestClock("2026-01-07T10:00:00.000Z"),
       bundles: [
@@ -153,6 +165,7 @@ scenario(
     expect(queryPayload.matches.map((match) => match.path)).toContain(
       "wiki/projects/beta.md",
     );
+    expect(processorRunCount(h)).toBe(HOST_OFF_PROCESSOR_RUNS);
   },
 );
 
@@ -177,7 +190,7 @@ scenario(
       { kind: "route", route: "garden-schedule" },
       { kind: "route", route: "view-command" },
     ],
-    timeoutMs: 30_000,
+    timeoutMs: SCENARIO_TIMEOUT_MS,
     harness: {
       clock: new TestClock("2026-01-08T09:00:00.000Z"),
       bundles: [
@@ -285,11 +298,14 @@ scenario(
     expect(exportPayload.entries.map((entry) => entry.path)).toContain(
       "wiki/projects/alpha.md",
     );
+    expect(processorRunCount(h)).toBe(HOST_ON_PROCESSOR_RUNS);
   },
 );
 
 function v1DeterministicConfig(): string {
   return `
+engine:
+  processor_timeout_ms: ${PROCESSOR_TIMEOUT_MS}
 extensions:
   dome.markdown:
     enabled: true
@@ -335,6 +351,13 @@ extensions:
       proposals.read: true
       patch.propose: [".dome/config.yaml"]
 `;
+}
+
+function processorRunCount(h: Harness): number {
+  const row = h.ledger.raw
+    .query("SELECT COUNT(*) AS count FROM runs")
+    .get() as { readonly count: number } | null;
+  return row?.count ?? 0;
 }
 
 function dailyWithOpenTask(date: string): string {
