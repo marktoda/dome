@@ -680,8 +680,6 @@ scenario(
         timestamp: oldTimestamp,
       },
     });
-    const oldSync = await h.tick();
-    expect(oldSync.adopted).toBe(true);
 
     await h.userCommit({
       files: {
@@ -700,8 +698,11 @@ scenario(
         timestamp: newTimestamp,
       },
     });
-    const newSync = await h.tick();
-    expect(newSync.adopted).toBe(true);
+    // Keep both timestamped owner commits pending, then compile the whole
+    // range once. Today ranking needs each path's Git-derived human-change
+    // time; it does not need one complete compiler cycle per commit.
+    const sync = await h.tick();
+    expect(sync.adopted).toBe(true);
 
     const json = await h.runCli(["run", "today", "--date", "2026-01-05", "--json"]);
     expect(json.exitCode).toBe(0);
