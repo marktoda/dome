@@ -25,6 +25,8 @@ scenario(
     const seed = await h.tick();
     expect(seed.adopted).toBe(true);
 
+    // Keep the fixture at the prep processor's input normal form. Anchor
+    // stamping has dedicated lifecycle coverage and is not part of this view.
     await h.userCommit({
       files: {
         "wiki/dailies/2026-01-05.md": [
@@ -35,17 +37,17 @@ scenario(
           "",
           "# 2026-01-05",
           "",
-          "- [ ] Daily one",
-          "- [ ] Daily two",
-          "- [ ] Daily three",
+          "- [ ] Daily one ^tprep-daily-one",
+          "- [ ] Daily two ^tprep-daily-two",
+          "- [ ] Daily three ^tprep-daily-three",
           "",
         ].join("\n"),
         "wiki/projects/backlog.md": [
           "# Backlog",
           "",
-          "- [ ] #task Backlog one",
-          "- [ ] #task Backlog two",
-          "- [ ] #task Backlog three",
+          "- [ ] #task Backlog one ^tprep-backlog-one",
+          "- [ ] #task Backlog two ^tprep-backlog-two",
+          "- [ ] #task Backlog three ^tprep-backlog-three",
           "",
         ].join("\n"),
       },
