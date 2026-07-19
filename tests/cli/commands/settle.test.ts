@@ -12,11 +12,10 @@ import { dirname, join } from "node:path";
 
 import { runSettle } from "../../../src/cli/commands/settle";
 import {
-  commit,
   commitSingleFileOnHead,
-  initRepo,
   resolveRef,
 } from "../../../src/git";
+import { initializeMinimalDomeVault } from "../../support/minimal-dome-vault";
 
 // ----- Console capture -------------------------------------------------------
 
@@ -53,15 +52,7 @@ function tempDir(prefix: string): string {
 
 async function initVault(): Promise<string> {
   const vault = tempDir("dome-settle-cli-vault-");
-  await initRepo(vault);
-  await mkdir(join(vault, ".dome"), { recursive: true });
-  await writeFile(join(vault, ".dome", "config.yaml"), "{}\n", "utf8");
-  await commit({
-    path: vault,
-    files: [".dome/config.yaml"],
-    message: "fixture: initialize minimal Dome vault",
-    author: { name: "fixture", email: "fixture@local" },
-  });
+  await initializeMinimalDomeVault(vault);
   logs = [];
   errors = [];
   return vault;

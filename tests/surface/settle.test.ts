@@ -27,19 +27,17 @@ import {
   CLOSE_END,
   CLOSE_START,
 } from "../../assets/extensions/dome.daily/processors/daily-types";
-import { runInit } from "../../src/cli/commands/init";
 import { compilerHostLockPath } from "../../src/engine/host/compiler-host-lock";
 import { withExclusiveFileLock } from "../../src/engine/host/file-lock";
 import { generatedBlockMarkers } from "../../src/core/generated-block";
 import { commitSingleFileOnHead, log, readBlob, resolveRef } from "../../src/git";
 import { performSettle } from "../../src/surface/settle";
+import { initializeMinimalDomeVault } from "../support/minimal-dome-vault";
 
 // ----- Fixtures -------------------------------------------------------------
 
 let tempDirs: string[] = [];
 
-// `runInit` (the fixture scaffold) prints to the console; keep test output
-// pristine by capturing it, exactly as tests/cli/capture.test.ts does.
 const origLog = console.log;
 const origErr = console.error;
 
@@ -63,7 +61,7 @@ function tempDir(prefix: string): string {
 
 async function initVault(): Promise<string> {
   const vault = tempDir("dome-settle-vault-");
-  expect(await runInit({ path: vault })).toBe(0);
+  await initializeMinimalDomeVault(vault);
   return vault;
 }
 

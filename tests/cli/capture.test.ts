@@ -24,13 +24,13 @@ import {
   renderCaptureDocument,
   type CaptureStdin,
 } from "../../src/surface/capture";
-import { runInit } from "../../src/cli/commands/init";
 import { add, commitFilesOnHead, log, readBlob, resolveRef, statusMatrix } from "../../src/git";
 import {
   parseFrontmatter,
   reorderFrontmatterKeys,
   stringifyFrontmatter,
 } from "../../assets/extensions/dome.markdown/processors/frontmatter-normalization";
+import { initializeMinimalDomeVault } from "../support/minimal-dome-vault";
 
 // ----- Console capture ------------------------------------------------------
 
@@ -69,10 +69,10 @@ function tempDir(prefix: string): string {
   return dir;
 }
 
-/** Initialized Dome vault (git repo + scaffold commit + .dome/config.yaml). */
+/** Real minimal Dome vault; setup-product behavior is outside this suite. */
 async function initVault(): Promise<string> {
   const vault = tempDir("dome-capture-vault-");
-  expect(await runInit({ path: vault })).toBe(0);
+  await initializeMinimalDomeVault(vault);
   logs = [];
   errors = [];
   return vault;
@@ -325,10 +325,19 @@ describe("runCapture commit isolation", () => {
   test("dirty and staged working-tree changes are not swept into the capture commit", async () => {
     const vault = await initVault();
 
-    // Staged-but-uncommitted edit to a tracked file...
-    const agentsOriginal = await readFile(join(vault, "AGENTS.md"), "utf8");
-    await writeFile(join(vault, "AGENTS.md"), `${agentsOriginal}\nSTAGED EDIT\n`);
-    await add(vault, "AGENTS.md");
+    // Seed an ordinary tracked owner file, then leave an edit staged.
+    const ownerPath = "wiki/owner-note.md";
+    const ownerOriginal = "# Owner note\n";
+    await mkdir(join(vault, "wiki"), { recursive: true });
+    await writeFile(join(vault, ownerPath), ownerOriginal, "utf8");
+    await commitFilesOnHead({
+      path: vault,
+      files: [{ filepath: ownerPath, content: ownerOriginal }],
+      message: "fixture: owner note",
+      author: { name: "fixture", email: "fixture@local" },
+    });
+    await writeFile(join(vault, ownerPath), `${ownerOriginal}\nSTAGED EDIT\n`);
+    await add(vault, ownerPath);
     // ...plus an untracked draft.
     await mkdir(join(vault, "notes"), { recursive: true });
     await writeFile(join(vault, "notes/draft.md"), "loose draft\n", "utf8");
@@ -344,18 +353,18 @@ describe("runCapture commit isolation", () => {
         filepath: `inbox/raw/${STAMP}-the-capture.md`,
       }),
     ).toContain("the capture");
-    // ...but NOT the staged AGENTS.md edit and NOT the untracked draft.
+    // ...but NOT the staged owner edit and NOT the untracked draft.
     expect(
-      await readBlob({ path: vault, commit: head.oid, filepath: "AGENTS.md" }),
-    ).toBe(agentsOriginal);
+      await readBlob({ path: vault, commit: head.oid, filepath: ownerPath }),
+    ).toBe(ownerOriginal);
     expect(
       await readBlob({ path: vault, commit: head.oid, filepath: "notes/draft.md" }),
     ).toBe(null);
 
     // The staged edit is still staged and the draft is still untracked.
     const matrix = await statusMatrix(vault);
-    const agentsRow = matrix.find(([filepath]) => filepath === "AGENTS.md");
-    expect(agentsRow).toEqual(["AGENTS.md", 1, 2, 2]); // modified + staged
+    const ownerRow = matrix.find(([filepath]) => filepath === ownerPath);
+    expect(ownerRow).toEqual([ownerPath, 1, 2, 2]); // modified + staged
     const draftRow = matrix.find(([filepath]) => filepath === "notes/draft.md");
     expect(draftRow).toEqual(["notes/draft.md", 0, 2, 0]); // untracked
   });

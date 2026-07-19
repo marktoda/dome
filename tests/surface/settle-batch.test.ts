@@ -6,13 +6,13 @@ import { tmpdir } from "node:os";
 import { parseDocument } from "yaml";
 
 import { setAdoptedRef } from "../../src/adopted-ref";
-import { runInit } from "../../src/cli/commands/init";
 import { add, commitFilesOnHead, commitSingleFileOnHead, currentBranch, currentSha, log } from "../../src/git";
 import {
   performSettleBatch,
   SETTLE_BATCH_SCHEMA,
   type SettleBatchRequest,
 } from "../../src/surface/settle";
+import { initializeMinimalDomeVault } from "../support/minimal-dome-vault";
 
 let dirs: string[] = [];
 const originalLog = console.log;
@@ -33,7 +33,7 @@ afterEach(async () => {
 async function vault(): Promise<string> {
   const path = mkdtempSync(join(tmpdir(), "dome-settle-batch-"));
   dirs.push(path);
-  expect(await runInit({ path })).toBe(0);
+  await initializeMinimalDomeVault(path);
   return path;
 }
 
@@ -275,6 +275,7 @@ describe("performSettleBatch", () => {
 
   test("rejects a reviewed revision whose managed scope conflicts with inline scope", async () => {
     const path = await vault();
+    await commitFile(path, ".dome/config.yaml", `content_scope:\n  version: 1\n  include: ["wiki/**/*.md"]\n  exclude: [".dome/**", ".git/**"]\n`);
     await commitFile(path, ".dome/content-scope.yaml", `content_scope:\n  version: 1\n  include: ["notes/**/*.md"]\n  exclude: [".dome/**", ".git/**"]\n`);
     await commitFile(path, "wiki/a.md", "# A\n\n- [ ] #task keep A ^tscopeconflict\n");
     const revision = await adoptHead(path);
