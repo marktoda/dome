@@ -2897,6 +2897,17 @@ restore reports target, authority status/epoch, and publication durability. A
 post-publication parent-fsync failure is nonzero but truthfully reports
 `status: "restored"` and `durability: "uncertain"`.
 
+Every `age` and `age-keygen` invocation uses an exact argv with no shell and
+ignored stdin. The command deadline defaults to 30 minutes and the internal
+SDK dependency seam accepts only positive whole-millisecond overrides up to
+four hours. Stdout and stderr are drained concurrently and capped independently
+at 64 KiB. Exceeding either cap or the overall child-and-stream deadline sends
+TERM, escalates to KILL after a fixed grace, and boundedly reaps the exit and
+both pipes before returning an error. Spawn/timeout/limit/termination failures
+name only the fixed `age` or `age-keygen` role; nonzero tool detail is collapsed
+to one control-safe line and capped before it enters `dome.backup/v1`. No argv,
+identity contents, or unbounded child output is included in diagnostics.
+
 ### `dome http [--vault <path>] [--bundles-root <path>] [--port <port>] [--host <host>] [--token <token>] [--pair-code <code>] [--model <id>] [--static-dir <path>] [--allow-write] [--transcribe-cmd <cmd>] [--transcribe-key <key>] [--transcribe-url <url>] [--transcribe-model <model>]` *(hidden standalone compatibility adapter)*
 
 Runs the HTTP contracts outside the cohesive Product Host for compatibility,

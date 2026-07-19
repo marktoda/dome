@@ -34,6 +34,111 @@ describe("encrypted vault backup checkpoint", () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
+  test("bounds age helpers and keeps command failures control-safe", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-backup-command-"));
+    try {
+      const missing = await generateBackupIdentity({ output: join(root, "missing-identity") }, {
+        ageKeygenPath: join(root, "owner-secret", "missing-age-keygen"),
+        commandTimeoutMs: 1_000,
+      });
+      expect(missing.error).toBe("age-keygen could not start");
+
+      const hanging = await fakeBackupExecutable(root, "hanging-age-keygen", `
+process.on("SIGTERM", () => {});
+setInterval(() => {}, 1_000);
+`);
+      const timedOut = await generateBackupIdentity({ output: join(root, "timed-out-identity") }, {
+        ageKeygenPath: hanging,
+        commandTimeoutMs: 1_000,
+      });
+      expect(timedOut.error).toBe("age-keygen timed out after 1000ms");
+      expect(await pathPresent(join(root, "timed-out-identity"))).toBeFalse();
+
+      const flooding = await fakeBackupExecutable(root, "flooding-age-keygen", `
+for (;;) process.stdout.write("x".repeat(65_537));
+`);
+      const flooded = await generateBackupIdentity({ output: join(root, "flooded-identity") }, {
+        ageKeygenPath: flooding,
+        commandTimeoutMs: 3_000,
+      });
+      expect(flooded.error).toBe("age-keygen stdout exceeded 65536 bytes");
+      expect(await pathPresent(join(root, "flooded-identity"))).toBeFalse();
+
+      const nonzero = await fakeBackupExecutable(root, "nonzero-age-keygen", `
+process.stderr.write("unsafe\\nline\\t detail");
+process.exit(7);
+`);
+      const failed = await generateBackupIdentity({ output: join(root, "failed-identity") }, {
+        ageKeygenPath: nonzero,
+        commandTimeoutMs: 3_000,
+      });
+      expect(failed.error).toBe("age-keygen failed (7): unsafe line detail");
+
+      const verbose = await fakeBackupExecutable(root, "verbose-age-keygen", `
+process.stderr.write("d".repeat(1_000));
+process.exit(7);
+`);
+      const boundedDetail = await generateBackupIdentity({ output: join(root, "verbose-identity") }, {
+        ageKeygenPath: verbose,
+        commandTimeoutMs: 3_000,
+      });
+      expect(boundedDetail.error).toBe(`age-keygen failed (7): ${"d".repeat(512)}`);
+
+      const invalid = await generateBackupIdentity({ output: join(root, "invalid-identity") }, {
+        ageKeygenPath: nonzero,
+        commandTimeoutMs: 0,
+      });
+      expect(invalid.error).toBe("backup command timeout configuration is invalid");
+      const tooLarge = await generateBackupIdentity({ output: join(root, "too-large-identity") }, {
+        ageKeygenPath: nonzero,
+        commandTimeoutMs: 4 * 60 * 60 * 1_000 + 1,
+      });
+      expect(tooLarge.error).toBe("backup command timeout configuration is invalid");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("timed-out and flooding age encryption publish no archive or restore target", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-backup-age-command-"));
+    try {
+      const vault = await basicVault(root);
+      const home = await installedHome(vault, root, false);
+      const hanging = await fakeBackupExecutable(root, "hanging-age", `
+process.on("SIGTERM", () => {});
+setInterval(() => {}, 1_000);
+`);
+      const output = join(root, "timed-out.age");
+      const create = await createVaultBackup({ vaultPath: vault, output, recipient: "age1fixture" }, {
+        ...home.deps,
+        agePath: hanging,
+        commandTimeoutMs: 1_000,
+      });
+      expect(create.error).toBe("age timed out after 1000ms");
+      expect(await pathPresent(output)).toBeFalse();
+      expect((await readdir(root)).filter((name) => name.startsWith(".timed-out.age.tmp-"))).toEqual([]);
+
+      const validRoot = join(root, "valid");
+      await mkdir(validRoot);
+      const valid = await createRestorableBackupFixture(validRoot);
+      const flooding = await fakeBackupExecutable(root, "flooding-age", `
+for (;;) process.stdout.write("x".repeat(65_537));
+`);
+      const verify = await verifyVaultBackup({ archive: valid.archive, identity: valid.identity }, {
+        agePath: flooding,
+        commandTimeoutMs: 3_000,
+      });
+      expect(verify.error).toBe("age stdout exceeded 65536 bytes");
+
+      const target = join(root, "restore-target");
+      const restore = await restoreVaultBackup({ archive: valid.archive, identity: valid.identity, target }, {
+        agePath: flooding,
+        commandTimeoutMs: 3_000,
+      });
+      expect(restore.error).toBe("age stdout exceeded 65536 bytes");
+      expect(await pathPresent(target)).toBeFalse();
+      expect((await readdir(root)).filter((name) => name.startsWith(".restore-target.restore-"))).toEqual([]);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   test("tampered manifests and reconstructed Git mismatches publish no target", async () => {
     const root = await mkdtemp(join(tmpdir(), "dome-backup-validation-"));
     try {
@@ -687,6 +792,13 @@ async function fakeAgeTools(root: string): Promise<{ agePath: string; ageKeygenP
   await chmod(age, 0o755);
   await chmod(keygen, 0o755);
   return { agePath: age, ageKeygenPath: keygen };
+}
+
+async function fakeBackupExecutable(root: string, name: string, body: string): Promise<string> {
+  const command = join(root, name);
+  await writeFile(command, `#!${process.execPath}\n${body}`);
+  await chmod(command, 0o755);
+  return command;
 }
 
 async function extractArchiveForTest(archive: string, destination: string): Promise<void> {

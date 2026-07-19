@@ -2,6 +2,7 @@ import { arch, platform } from "node:os";
 import { resolve } from "node:path";
 
 import type { ContentScopeConfig } from "../core/content-scope";
+import { BoundedCommandError, runBoundedCommand } from "../platform/bounded-command";
 import { verifyHomeArtifactEvidence } from "../product-host/home-artifact";
 import {
   homeInstallationPaths,
@@ -180,45 +181,26 @@ export async function discoverGitVersion(options: Readonly<{
   if (command.length === 0 || !Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 30_000) {
     throw new Error("git --version probe configuration is invalid");
   }
-  let child: Bun.Subprocess<"ignore", "pipe", "pipe">;
+  let result;
   try {
-    child = Bun.spawn([...command], {
+    result = await runBoundedCommand({
+      argv: command,
+      timeoutMs,
+      outputLimitBytes: 1_024,
       env: { PATH: process.env.PATH ?? "/usr/bin:/bin", LC_ALL: "C" },
-      stdin: "ignore",
-      stdout: "pipe",
-      stderr: "pipe",
     });
   } catch (error) {
-    if (hasCode(error, "ENOENT")) return null;
+    if (error instanceof BoundedCommandError && error.kind === "spawn" && error.spawnCode === "ENOENT") return null;
     throw error;
   }
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const settled = Promise.all([
-    collectBounded(child.stdout, 1024, "git --version stdout"),
-    collectBounded(child.stderr, 1024, "git --version stderr"),
-    child.exited,
-  ]);
-  try {
-    const timeout = new Promise<never>((_resolve, reject) => {
-      timer = setTimeout(() => reject(new Error(`git --version timed out after ${timeoutMs}ms`)), timeoutMs);
-    });
-    const [stdoutBytes, stderrBytes, exitCode] = await Promise.race([settled, timeout]);
-    const stdout = stdoutBytes.toString("utf8");
-    const stderr = stderrBytes.toString("utf8");
-    if (exitCode === 127) return null;
-    if (exitCode !== 0) throw new Error(`git --version failed: ${stderr.trim() || `exit ${exitCode}`}`);
-    const match = /^git version ([0-9]+\.[0-9]+\.[0-9]+)(?:\s|$)/.exec(stdout.trim());
-    if (match?.[1] === undefined) throw new Error("git --version output is invalid");
-    return normalizeVersion(match[1]);
-  } catch (error) {
-    try { await terminate(child); }
-    catch (terminationError) {
-      throw new AggregateError([error, terminationError], "git --version probe and termination both failed");
-    }
-    throw error;
-  } finally {
-    if (timer !== undefined) clearTimeout(timer);
+  if (result.exitCode === 127) return null;
+  if (result.exitCode !== 0) {
+    const detail = safeProbeDetail(result.stderr);
+    throw new Error(`git --version failed: ${detail === "" ? `exit ${result.exitCode}` : detail}`);
   }
+  const match = /^git version ([0-9]+\.[0-9]+\.[0-9]+)(?:\s|$)/.exec(result.stdout.trim());
+  if (match?.[1] === undefined) throw new Error("git --version output is invalid");
+  return normalizeVersion(match[1]);
 }
 
 function emptyHome(state: "absent" | "upgrade-active" | "ambiguous"): SetupInstalledHomeEvidence {
@@ -236,43 +218,10 @@ function normalizeVersion(value: string): string {
   return value.trim().replace(/^v/, "");
 }
 
+function safeProbeDetail(value: string): string {
+  return value.replace(/[^\x20-\x7e]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 512);
+}
+
 function hasCode(error: unknown, code: string): boolean {
   return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === code;
-}
-
-async function collectBounded(
-  stream: ReadableStream<Uint8Array>,
-  maximum: number,
-  label: string,
-): Promise<Buffer> {
-  const reader = stream.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  try {
-    while (true) {
-      const next = await reader.read();
-      if (next.done) break;
-      total += next.value.byteLength;
-      if (total > maximum) throw new Error(`${label} exceeded ${maximum} bytes`);
-      chunks.push(next.value);
-    }
-    return Buffer.concat(chunks, total);
-  } finally {
-    try { await reader.cancel(); } catch {}
-    reader.releaseLock();
-  }
-}
-
-async function terminate(child: Bun.Subprocess<"ignore", "pipe", "pipe">): Promise<void> {
-  try { child.kill("SIGTERM"); } catch {}
-  if (await settles(child.exited, 250)) return;
-  try { child.kill("SIGKILL"); } catch {}
-  if (!await settles(child.exited, 1_000)) throw new Error("git --version process did not exit after SIGKILL");
-}
-
-async function settles(promise: Promise<number>, timeoutMs: number): Promise<boolean> {
-  return await Promise.race([
-    promise.then(() => true, () => true),
-    Bun.sleep(timeoutMs).then(() => false),
-  ]);
 }

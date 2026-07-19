@@ -24,6 +24,7 @@ import {
   validateStandaloneBackupRepository,
   type StandaloneBackupTreeEntry,
 } from "../git";
+import { BoundedCommandError, runBoundedCommand } from "../platform/bounded-command";
 import { publishDirectoryExclusive, publishPathExclusive } from "../platform/exclusive-rename";
 import { snapshotSqliteReadonly, validateSqliteSnapshot } from "../sqlite/snapshot";
 import {
@@ -64,6 +65,10 @@ const EXTERNAL_GIT_OBJECT_PATHS = [
   "objects/info/alternates",
   "objects/info/http-alternates",
 ] as const;
+const DEFAULT_BACKUP_COMMAND_TIMEOUT_MS = 30 * 60 * 1_000;
+const MAX_BACKUP_COMMAND_TIMEOUT_MS = 4 * 60 * 60 * 1_000;
+const BACKUP_COMMAND_OUTPUT_LIMIT_BYTES = 64 * 1024;
+const BACKUP_COMMAND_DIAGNOSTIC_CHARS = 512;
 
 export type BackupResult = {
   readonly schema: typeof BACKUP_SCHEMA;
@@ -152,6 +157,7 @@ export type BackupDeps = ServiceDeps & Pick<
 > & {
   readonly agePath?: string;
   readonly ageKeygenPath?: string;
+  readonly commandTimeoutMs?: number;
   readonly now?: () => Date;
   readonly beforeSourceRecheck?: (() => Promise<void>) | undefined;
   readonly syncBackupParent?: ((parent: string) => Promise<void>) | undefined;
@@ -170,9 +176,9 @@ export async function generateBackupIdentity(input: {
   const temporary = join(dirname(output), `.${basename(output)}.tmp-${process.pid}-${randomUUID()}`);
   try {
     await mkdir(dirname(output), { recursive: true });
-    await run([deps.ageKeygenPath ?? "age-keygen", "-o", temporary]);
+    await run([deps.ageKeygenPath ?? "age-keygen", "-o", temporary], deps, "age-keygen");
     await chmod(temporary, 0o600);
-    const recipient = (await run([deps.ageKeygenPath ?? "age-keygen", "-y", temporary])).stdout.trim();
+    const recipient = (await run([deps.ageKeygenPath ?? "age-keygen", "-y", temporary], deps, "age-keygen")).stdout.trim();
     if (!recipient.startsWith("age1")) throw new Error("age-keygen did not return an X25519 recipient");
     await rename(temporary, output);
     await fsyncPath(output);
@@ -419,7 +425,7 @@ async function stageVerifiedBackup(input: {
 }, deps: BackupDeps): Promise<{ readonly manifest: BackupManifest; readonly vault: string }> {
   const tarPath = join(input.staging, "payload.tar");
   const restored = join(input.staging, "restored");
-  await run([deps.agePath ?? "age", "--decrypt", "-i", input.identity, "-o", tarPath, input.archive]);
+  await run([deps.agePath ?? "age", "--decrypt", "-i", input.identity, "-o", tarPath, input.archive], deps, "age");
   const manifest = await validatePlainArchive(tarPath);
   await extractTarStrict(tarPath, restored);
   const vault = join(restored, "vault");
@@ -506,7 +512,7 @@ async function createWhileFenced(vault: string, output: string, recipient: strin
     const tarEntries = await writeTarTree(root, tarPath);
     assertTarMatchesManifest(tarEntries, manifest);
     await mkdir(dirname(output), { recursive: true });
-    await run([deps.agePath ?? "age", "-r", recipient, "-o", encrypted, tarPath]);
+    await run([deps.agePath ?? "age", "-r", recipient, "-o", encrypted, tarPath], deps, "age");
     await chmod(encrypted, 0o600);
     await fsyncPath(encrypted);
     const created: BackupResult = Object.freeze({
@@ -874,11 +880,40 @@ async function findMatching(root: string, predicate: (path: string) => boolean):
   return found;
 }
 
-async function run(command: ReadonlyArray<string>, cwd?: string): Promise<{ stdout: string; stderr: string }> {
-  const child = Bun.spawn([...command], { ...(cwd === undefined ? {} : { cwd }), stdout: "pipe", stderr: "pipe" });
-  const [exitCode, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
-  if (exitCode !== 0) throw new Error(`${basename(command[0] ?? "command")} failed (${exitCode}): ${stderr.trim() || stdout.trim()}`);
-  return { stdout, stderr };
+async function run(
+  command: ReadonlyArray<string>,
+  deps: BackupDeps,
+  label: "age" | "age-keygen",
+): Promise<{ stdout: string; stderr: string }> {
+  const timeoutMs = deps.commandTimeoutMs ?? DEFAULT_BACKUP_COMMAND_TIMEOUT_MS;
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > MAX_BACKUP_COMMAND_TIMEOUT_MS) {
+    throw new Error("backup command timeout configuration is invalid");
+  }
+  let result;
+  try {
+    result = await runBoundedCommand({
+      argv: command,
+      timeoutMs,
+      outputLimitBytes: BACKUP_COMMAND_OUTPUT_LIMIT_BYTES,
+    });
+  } catch (error) {
+    if (!(error instanceof BoundedCommandError)) throw error;
+    if (error.kind === "spawn") throw new Error(`${label} could not start`);
+    if (error.kind === "timeout") throw new Error(`${label} timed out after ${timeoutMs}ms`);
+    if (error.kind === "output-limit") {
+      throw new Error(`${label} ${error.stream ?? "output"} exceeded ${BACKUP_COMMAND_OUTPUT_LIMIT_BYTES} bytes`);
+    }
+    throw new Error(`${label} did not settle after forced termination`);
+  }
+  if (result.exitCode !== 0) {
+    const detail = safeCommandDetail(result.stderr) || safeCommandDetail(result.stdout);
+    throw new Error(`${label} failed (${result.exitCode})${detail === "" ? "" : `: ${detail}`}`);
+  }
+  return { stdout: result.stdout, stderr: result.stderr };
+}
+
+function safeCommandDetail(value: string): string {
+  return value.replace(/[^\x20-\x7e]+/g, " ").replace(/\s+/g, " ").trim().slice(0, BACKUP_COMMAND_DIAGNOSTIC_CHARS);
 }
 
 async function hashFile(path: string): Promise<string> {

@@ -209,6 +209,10 @@ describe("setup discovery adapters", () => {
       command: ["bun", "-e", "process.stdout.write('x'.repeat(2048))"],
       timeoutMs: 1_000,
     })).rejects.toThrow("exceeded 1024 bytes");
+    await expect(discoverGitVersion({
+      command: ["bun", "-e", "process.stderr.write('unsafe\\nline\\t detail'); process.exit(7)"],
+      timeoutMs: 1_000,
+    })).rejects.toThrow("git --version failed: unsafe line detail");
   });
 
   test("renders the exact proposed scope into the planned config bytes", () => {
