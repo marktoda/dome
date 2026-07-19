@@ -4,7 +4,6 @@ import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { runInit } from "../../src/cli/commands/init";
 import { openDeviceAuthority, type DeviceAuthority } from "../../src/device-authority/device-authority";
 import { createDomeHttpServer } from "../../src/http/server";
 import type { Vault } from "../../src/vault";
@@ -14,6 +13,7 @@ import {
   createRequestReceipts,
   type HttpRequestReceiptRecorder,
 } from "../../src/request-receipts/request-receipts";
+import { initializeMinimalDomeVault } from "../support/minimal-dome-vault";
 
 const ORIGIN = "https://dome.example";
 const PUBLIC_VAULT_ID = "vault-public-id";
@@ -56,9 +56,7 @@ describe("device mutation request receipts", () => {
     const f = await fixture();
     await mkdir(join(f.root, "private"));
     const vault = join(f.root, "private", "work-vault");
-    const originalLog = console.log;
-    console.log = () => {};
-    try { expect(await runInit({ path: vault })).toBe(0); } finally { console.log = originalLog; }
+    await initializeMinimalDomeVault(vault);
     const server = createDomeHttpServer({
       vaultPath: vault,
       publicVaultId: PUBLIC_VAULT_ID,
@@ -92,9 +90,7 @@ describe("device mutation request receipts", () => {
     const f = await fixture();
     try {
       const vault = join(f.root, "vault");
-      const originalLog = console.log;
-      console.log = () => {};
-      try { expect(await runInit({ path: vault })).toBe(0); } finally { console.log = originalLog; }
+      await initializeMinimalDomeVault(vault);
       const opened = await openRequestReceiptsDb({ path: join(f.root, "receipts.db") });
       if (!opened.ok) throw new Error(opened.error.kind);
       const receipts = createRequestReceipts(opened.value.db, { createId: () => "_receipt-1" });
@@ -158,9 +154,7 @@ describe("device mutation request receipts", () => {
   test("finalization failure returns non-retryable unknown with safe correlation", async () => {
     const f = await fixture();
     const vault = join(f.root, "vault");
-    const originalLog = console.log;
-    console.log = () => {};
-    try { expect(await runInit({ path: vault })).toBe(0); } finally { console.log = originalLog; }
+    await initializeMinimalDomeVault(vault);
     const admitted: unknown[] = [];
     const recorder: HttpRequestReceiptRecorder = {
       admit: (input) => {
