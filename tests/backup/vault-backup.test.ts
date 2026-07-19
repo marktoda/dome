@@ -19,64 +19,25 @@ import { vaultServiceSlug } from "../../src/surface/service-probe";
 const MULTI_TRANSACTION_SCENARIO_TIMEOUT_MS = 15_000;
 
 describe("encrypted vault backup checkpoint", () => {
-  // One keygen, one create, two direct verification paths, and eleven restore
-  // rehearsals need hosted-macOS headroom; production ownership remains bounded
-  // independently by its 30-second wait.
-  test("keygen, create, verify, and internal blank-target rehearsal need no native git", async () => {
-    const root = await mkdtemp(join(tmpdir(), "dome-backup-"));
+  test("creates a verifiable archive without native git", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-backup-create-"));
     try {
-      const tools = await fakeAgeTools(root);
-      const vault = join(root, "vault");
-      await mkdir(join(vault, ".dome", "state"), { recursive: true });
-      await initRepo(vault);
-      await writeFile(join(vault, ".dome", "config.yaml"), "version: 1\n");
-      await writeFile(join(vault, "index.md"), "# Vault\n");
-      await add(vault, ".dome/config.yaml");
-      await add(vault, "index.md");
-      await commit({ path: vault, message: "fixture" });
-      let walDb: Database | null = null;
-      for (const name of ["answers.db", "proposals.db", "outbox.db", "runs.db", "request-receipts.db", "projection.db"]) {
-        const db = new Database(join(vault, ".dome", "state", name));
-        if (name === "answers.db") {
-          db.run("PRAGMA journal_mode = WAL");
-          db.run("PRAGMA wal_autocheckpoint = 0");
-        }
-        db.run("CREATE TABLE evidence (value TEXT NOT NULL)");
-        db.query("INSERT INTO evidence VALUES (?)").run(name);
-        if (name === "answers.db") walDb = db;
-        else db.close();
-      }
-      const authorityOpened = await openDeviceAuthority({ path: join(vault, ".dome", "state", "device-authority.db") });
-      if (!authorityOpened.ok) throw new Error("device authority fixture failed");
-      const authority = authorityOpened.value.authority;
-      const oldGrant = authority.mintPairingGrant({ deviceName: "old-phone", capabilities: ["read"] });
-      if (oldGrant.kind !== "minted") throw new Error("pairing fixture failed");
-      const paired = authority.exchangePairingCode({ pairingCode: oldGrant.pairingCode });
-      if (paired.kind !== "paired") throw new Error("credential fixture failed");
-      const unusedGrant = authority.mintPairingGrant({ deviceName: "unused-phone", capabilities: ["read"] });
-      if (unusedGrant.kind !== "minted") throw new Error("unused grant fixture failed");
-      authority.close();
-      await writeFile(join(vault, ".dome", "state", "product-host-id"), "vault-fixture\n");
-      await writeFile(join(vault, ".dome", "state", "quarantined.json"), "{}\n");
-      const identity = join(root, "identity.txt");
-      const key = await generateBackupIdentity({ output: identity }, { ...tools });
+      const { archive, created, identity, key, tools } = await createRestorableBackupFixture(root);
       expect(key.status).toBe("created");
       expect((await stat(identity)).mode & 0o777).toBe(0o600);
-
-      const archive = join(root, "backup.dome.age");
-      const home = await installedHome(vault, root, false);
-      const priorPath = process.env.PATH;
-      process.env.PATH = "/path-without-git";
-      const created = await createVaultBackup({ vaultPath: vault, output: archive, recipient: key.recipient! }, { ...tools, ...home.deps });
-      process.env.PATH = priorPath;
-      walDb?.close();
       expect(created.status).toBe("created");
       expect((await inspectTar(archive)).some((entry) => entry.path === "vault/.git/HEAD")).toBeTrue();
       expect(created.restart).toBe("not-running");
       expect((await stat(archive)).mode & 0o777).toBe(0o600);
       const verified = await verifyVaultBackup({ archive, identity }, tools);
       expect(verified.status).toBe("verified");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
 
+  test("tampered manifests and reconstructed Git mismatches publish no target", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-backup-validation-"));
+    try {
+      const { archive, identity, tools } = await createRestorableBackupFixture(root);
       const tamperedTree = join(root, "tampered-tree");
       await extractArchiveForTest(archive, tamperedTree);
       const manifestPath = join(tamperedTree, "manifest.json");
@@ -89,8 +50,6 @@ describe("encrypted vault backup checkpoint", () => {
       expect(rejectedTamper.status).toBe("error");
       expect(rejectedTamper.error).toContain("presence disagrees");
 
-      const archiveHash = fileHash(await readFile(archive));
-      const identityHash = fileHash(await readFile(identity));
       const mismatchedTree = join(root, "mismatched-tree");
       await extractArchiveForTest(archive, mismatchedTree);
       const mismatchedBytes = Buffer.from("# Different working tree\n");
@@ -116,6 +75,19 @@ describe("encrypted vault backup checkpoint", () => {
       expect(rejectedMismatch.error).toContain("reconstructed working tree differs from committed Git: index.md");
       expect(await pathPresent(mismatchedTarget)).toBeFalse();
 
+      const corruptTarget = join(root, "corrupt-target");
+      const corruptRestore = await restoreVaultBackup({ archive: tampered, identity, target: corruptTarget }, tools);
+      expect(corruptRestore.status).toBe("error");
+      expect(await pathPresent(corruptTarget)).toBeFalse();
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("blank-target restore preserves Git and databases while invalidating old device authority", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-backup-restore-"));
+    try {
+      const { archive, identity, pairedCredential, tools, unusedPairingCode } = await createRestorableBackupFixture(root);
+      const archiveHash = fileHash(await readFile(archive));
+      const identityHash = fileHash(await readFile(identity));
       const restored = join(root, "restored");
       const existingEmpty = join(root, "existing-empty");
       await mkdir(existingEmpty);
@@ -143,18 +115,19 @@ describe("encrypted vault backup checkpoint", () => {
       }
       const restoredAuthority = await openDeviceAuthority({ path: join(restored, ".dome", "state", "device-authority.db") });
       if (!restoredAuthority.ok) throw new Error("restored device authority failed");
-      expect(restoredAuthority.value.authority.authenticate({ credential: paired.credential })).toEqual({ kind: "epoch-invalid" });
-      expect(restoredAuthority.value.authority.exchangePairingCode({ pairingCode: unusedGrant.pairingCode })).toEqual({ kind: "epoch-invalid" });
+      expect(restoredAuthority.value.authority.authenticate({ credential: pairedCredential })).toEqual({ kind: "epoch-invalid" });
+      expect(restoredAuthority.value.authority.exchangePairingCode({ pairingCode: unusedPairingCode })).toEqual({ kind: "epoch-invalid" });
       const freshGrant = restoredAuthority.value.authority.mintPairingGrant({ deviceName: "new-phone", capabilities: ["read"] });
       if (freshGrant.kind !== "minted") throw new Error("fresh grant failed");
       expect(restoredAuthority.value.authority.exchangePairingCode({ pairingCode: freshGrant.pairingCode }).kind).toBe("paired");
       restoredAuthority.value.authority.close();
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
 
-      const corruptTarget = join(root, "corrupt-target");
-      const corruptRestore = await restoreVaultBackup({ archive: tampered, identity, target: corruptTarget }, tools);
-      expect(corruptRestore.status).toBe("error");
-      expect(await pathPresent(corruptTarget)).toBeFalse();
-
+  test("pre-publication failures clean private state without replacing an external winner", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-backup-publication-"));
+    try {
+      const { archive, identity, tools } = await createRestorableBackupFixture(root);
       const failedTarget = join(root, "failed-target");
       const failedPublication = await restoreVaultBackup({ archive, identity, target: failedTarget }, {
         ...tools,
@@ -187,7 +160,15 @@ describe("encrypted vault backup checkpoint", () => {
       });
       expect(raced.status).toBe("error");
       expect(await readFile(join(racedTarget, "winner"), "utf8")).toBe("other restore\n");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
 
+  test("canonical target ownership serializes aliases and reports post-publication durability", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-backup-ownership-"));
+    try {
+      const { archive, identity, tools } = await createRestorableBackupFixture(root);
+      const archiveHash = fileHash(await readFile(archive));
+      const identityHash = fileHash(await readFile(identity));
       let enterPublisher!: () => void;
       let releasePublisher!: () => void;
       const entered = new Promise<void>((resolve) => { enterPublisher = resolve; });
@@ -230,7 +211,7 @@ describe("encrypted vault backup checkpoint", () => {
       expect(fileHash(await readFile(archive))).toBe(archiveHash);
       expect(fileHash(await readFile(identity))).toBe(identityHash);
     } finally { await rm(root, { recursive: true, force: true }); }
-  }, MULTI_TRANSACTION_SCENARIO_TIMEOUT_MS);
+  });
 
   test("fails closed on unknown state and still restarts a previously loaded Home", async () => {
     const root = await mkdtemp(join(tmpdir(), "dome-backup-restart-"));
@@ -548,6 +529,85 @@ describe("encrypted vault backup checkpoint", () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   }, MULTI_TRANSACTION_SCENARIO_TIMEOUT_MS);
 });
+
+async function createRestorableBackupFixture(root: string) {
+  const tools = await fakeAgeTools(root);
+  const vault = join(root, "vault");
+  await mkdir(join(vault, ".dome", "state"), { recursive: true });
+  await initRepo(vault);
+  await writeFile(join(vault, ".dome", "config.yaml"), "version: 1\n");
+  await writeFile(join(vault, "index.md"), "# Vault\n");
+  await add(vault, ".dome/config.yaml");
+  await add(vault, "index.md");
+  await commit({ path: vault, message: "fixture" });
+
+  let walDb: Database | null = null;
+  try {
+    for (const name of ["answers.db", "proposals.db", "outbox.db", "runs.db", "request-receipts.db", "projection.db"]) {
+      const db = new Database(join(vault, ".dome", "state", name));
+      if (name === "answers.db") {
+        db.run("PRAGMA journal_mode = WAL");
+        db.run("PRAGMA wal_autocheckpoint = 0");
+      }
+      db.run("CREATE TABLE evidence (value TEXT NOT NULL)");
+      db.query("INSERT INTO evidence VALUES (?)").run(name);
+      if (name === "answers.db") walDb = db;
+      else db.close();
+    }
+
+    const authorityOpened = await openDeviceAuthority({ path: join(vault, ".dome", "state", "device-authority.db") });
+    if (!authorityOpened.ok) throw new Error("device authority fixture failed");
+    const authority = authorityOpened.value.authority;
+    const deviceCredentials = (() => {
+      try {
+        const oldGrant = authority.mintPairingGrant({ deviceName: "old-phone", capabilities: ["read"] });
+        if (oldGrant.kind !== "minted") throw new Error("pairing fixture failed");
+        const paired = authority.exchangePairingCode({ pairingCode: oldGrant.pairingCode });
+        if (paired.kind !== "paired") throw new Error("credential fixture failed");
+        const unusedGrant = authority.mintPairingGrant({ deviceName: "unused-phone", capabilities: ["read"] });
+        if (unusedGrant.kind !== "minted") throw new Error("unused grant fixture failed");
+        return { pairedCredential: paired.credential, unusedPairingCode: unusedGrant.pairingCode };
+      } finally {
+        authority.close();
+      }
+    })();
+
+    await writeFile(join(vault, ".dome", "state", "product-host-id"), "vault-fixture\n");
+    await writeFile(join(vault, ".dome", "state", "quarantined.json"), "{}\n");
+    const identity = join(root, "identity.txt");
+    const key = await generateBackupIdentity({ output: identity }, tools);
+    if (key.status !== "created" || key.recipient === undefined) {
+      throw new Error(`backup identity fixture failed: ${key.error ?? key.status}`);
+    }
+    const recipient = key.recipient;
+
+    const archive = join(root, "backup.dome.age");
+    const home = await installedHome(vault, root, false);
+    const priorPath = process.env.PATH;
+    const created = await (async () => {
+      try {
+        process.env.PATH = "/path-without-git";
+        return await createVaultBackup({ vaultPath: vault, output: archive, recipient }, { ...tools, ...home.deps });
+      } finally {
+        if (priorPath === undefined) delete process.env.PATH;
+        else process.env.PATH = priorPath;
+      }
+    })();
+    if (created.status !== "created") throw new Error(`backup archive fixture failed: ${created.error ?? created.status}`);
+
+    return {
+      archive,
+      created,
+      identity,
+      key,
+      pairedCredential: deviceCredentials.pairedCredential,
+      tools,
+      unusedPairingCode: deviceCredentials.unusedPairingCode,
+    };
+  } finally {
+    walDb?.close();
+  }
+}
 
 async function basicVault(root: string): Promise<string> {
   const vault = join(root, "vault");
