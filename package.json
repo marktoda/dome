@@ -96,7 +96,7 @@
     "@types/bun": "latest",
     "@types/semver": "^7.7.1",
     "playwright-core": "1.61.1",
-    "tar": "7.5.19",
+    "tar": "7.5.20",
     "typescript": "^5.5.0"
   }
 }
