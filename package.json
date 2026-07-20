@@ -81,7 +81,7 @@
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.84",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "ai": "^6.0.206",
+    "ai": "^7.0.31",
     "commander": "^14.0.3",
     "gray-matter": "^4.0.3",
     "ignore": "^5.3.2",
